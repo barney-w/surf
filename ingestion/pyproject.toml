@@ -1,0 +1,37 @@
+[project]
+name = "surf-ingestion"
+version = "0.1.0"
+description = "Multi-Agent Orchestration Platform - Document Ingestion Pipeline"
+requires-python = ">=3.12"
+dependencies = [
+    "pymupdf",
+    "azure-search-documents",
+    "azure-storage-blob",
+    "azure-identity",
+    "openai",
+    "tiktoken",
+    "pydantic>=2.0",
+    "click",
+    "python-dotenv",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    "pyright",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.12"
