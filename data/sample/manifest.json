@@ -1,0 +1,78 @@
+{
+  "version": "1.0",
+  "description": "Sample document manifest for Surf evaluation tests",
+  "documents": [
+    {
+      "id": "hr-leave-policy",
+      "title": "Leave Policy",
+      "path": "hr-leave-policy.md",
+      "category": "hr",
+      "tags": ["leave", "annual-leave", "personal-leave", "long-service-leave", "parental-leave"],
+      "source": "Enterprise Agreement 2024",
+      "last_updated": "2025-01-15"
+    },
+    {
+      "id": "hr-onboarding-guide",
+      "title": "Employee Onboarding Guide",
+      "path": "hr-onboarding-guide.md",
+      "category": "hr",
+      "tags": ["onboarding", "new-starter", "induction"],
+      "source": "HR Procedures Manual",
+      "last_updated": "2025-02-01"
+    },
+    {
+      "id": "hr-performance-framework",
+      "title": "Performance Development Framework",
+      "path": "hr-performance-framework.md",
+      "category": "hr",
+      "tags": ["performance", "review", "development"],
+      "source": "Performance Development Policy",
+      "last_updated": "2024-11-20"
+    },
+    {
+      "id": "hr-flexible-work",
+      "title": "Flexible Work Arrangements Policy",
+      "path": "hr-flexible-work.md",
+      "category": "hr",
+      "tags": ["flexible-work", "remote", "work-from-home"],
+      "source": "Flexible Work Policy",
+      "last_updated": "2025-03-10"
+    },
+    {
+      "id": "hr-whs-policy",
+      "title": "Work Health and Safety Policy",
+      "path": "hr-whs-policy.md",
+      "category": "hr",
+      "tags": ["whs", "safety", "health"],
+      "source": "WHS Policy",
+      "last_updated": "2025-01-05"
+    },
+    {
+      "id": "hr-grievance-policy",
+      "title": "Grievance Resolution Policy",
+      "path": "hr-grievance-policy.md",
+      "category": "hr",
+      "tags": ["grievance", "complaint", "dispute"],
+      "source": "Grievance Resolution Policy",
+      "last_updated": "2024-09-15"
+    },
+    {
+      "id": "hr-salary-packaging",
+      "title": "Salary Packaging Information",
+      "path": "hr-salary-packaging.md",
+      "category": "hr",
+      "tags": ["salary", "packaging", "benefits"],
+      "source": "Salary Packaging Policy",
+      "last_updated": "2025-01-20"
+    },
+    {
+      "id": "hr-enterprise-agreement",
+      "title": "Enterprise Agreement Summary",
+      "path": "hr-enterprise-agreement.md",
+      "category": "hr",
+      "tags": ["enterprise-agreement", "conditions"],
+      "source": "Enterprise Agreement 2024",
+      "last_updated": "2024-07-01"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+[
+    {
+        "filename": "enterprise-agreement.pdf",
+        "domain": "hr",
+        "document_type": "agreement",
+        "title": "Enterprise Agreement 2024",
+        "version": "2024",
+        "effective_date": "2024-01-01",
+        "author": "Human Resources",
+        "tags": [
+            "enterprise-agreement",
+            "wages",
+            "conditions",
+            "leave",
+            "allowances",
+            "overtime",
+            "redundancy",
+            "dispute-resolution"
+        ]
+    },
+    {
+        "filename": "security-policy.pdf",
+        "domain": "it",
+        "document_type": "policy",
+        "title": "Security Policy",
+        "author": "Information Technology",
+        "tags": ["cyber-security", "security", "policy", "it"]
+    },
+    {
+        "filename": "code-of-conduct.pdf",
+        "domain": "hr",
+        "document_type": "policy",
+        "title": "Employee Code of Conduct",
+        "author": "People & Culture",
+        "tags": ["code-of-conduct", "conduct", "behaviour", "ethics", "hr"]
+    },
+    {
+        "filename": "risk-management-policy.pdf",
+        "domain": "hr",
+        "document_type": "policy",
+        "title": "Risk Management Policy",
+        "author": "Risk & Assurance",
+        "tags": ["risk", "risk-management", "governance"]
+    },
+    {
+        "filename": "records-management-policy.pdf",
+        "domain": "it",
+        "document_type": "policy",
+        "title": "Records Management Policy",
+        "author": "Information Technology",
+        "tags": ["records-management", "records", "data", "it", "policy"]
+    }
+]
