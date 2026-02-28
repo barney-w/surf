@@ -1,0 +1,154 @@
+# ---------------------------------------------------------------------------
+# Infrastructure Deployment: Bicep via az deployment group create
+# Project: Surf -- Multi-Agent Orchestration Platform
+# ---------------------------------------------------------------------------
+
+name: Infrastructure Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra-deploy.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+concurrency:
+  group: infra-deploy-${{ github.ref }}
+  cancel-in-progress: false   # never cancel in-flight infra deployments
+
+permissions:
+  id-token: write   # OIDC token for Azure auth
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Determine environment
+  # ---------------------------------------------------------------------------
+  resolve-env:
+    name: Resolve Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+    steps:
+      - name: Determine target environment
+        id: env
+        run: |
+          if [[ -n "${{ inputs.environment }}" ]]; then
+            echo "environment=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=dev" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Validate Bicep template
+  # ---------------------------------------------------------------------------
+  validate:
+    name: Validate
+    needs: resolve-env
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate Bicep deployment
+        run: |
+          az deployment group validate \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --template-file infra/main.bicep \
+            --parameters infra/environments/${{ needs.resolve-env.outputs.environment }}.bicepparam
+
+  # ---------------------------------------------------------------------------
+  # What-if (preview changes)
+  # ---------------------------------------------------------------------------
+  preview:
+    name: Preview (What-If)
+    needs: [resolve-env, validate]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: What-if deployment
+        run: |
+          az deployment group what-if \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --template-file infra/main.bicep \
+            --parameters infra/environments/${{ needs.resolve-env.outputs.environment }}.bicepparam
+
+  # ---------------------------------------------------------------------------
+  # Deploy infrastructure
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy
+    needs: [resolve-env, preview]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep template
+        run: |
+          az deployment group create \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --template-file infra/main.bicep \
+            --parameters infra/environments/${{ needs.resolve-env.outputs.environment }}.bicepparam \
+            --name "surf-${{ needs.resolve-env.outputs.environment }}-$(date +%Y%m%d%H%M%S)"
+
+  # ---------------------------------------------------------------------------
+  # Production approval gate
+  # ---------------------------------------------------------------------------
+  deploy-prod:
+    name: Deploy to Production
+    if: needs.resolve-env.outputs.environment == 'prod' || inputs.environment == 'prod'
+    needs: [resolve-env, preview]
+    runs-on: ubuntu-latest
+    environment:
+      name: prod  # GitHub environment with required reviewers configured
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep template to production
+        run: |
+          az deployment group create \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --template-file infra/main.bicep \
+            --parameters infra/environments/prod.bicepparam \
+            --name "surf-prod-$(date +%Y%m%d%H%M%S)"

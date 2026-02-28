@@ -1,0 +1,165 @@
+# ---------------------------------------------------------------------------
+# Ingestion CI/CD: lint, test, build, push, deploy
+# Project: Surf -- Multi-Agent Orchestration Platform
+# ---------------------------------------------------------------------------
+
+name: Ingestion CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - "release/**"
+    tags:
+      - "v*"
+    paths:
+      - "ingestion/**"
+      - ".github/workflows/ingestion-ci.yml"
+
+concurrency:
+  group: ingestion-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write   # OIDC token for Azure auth
+  contents: read
+
+env:
+  SERVICE_NAME: ingestion
+  WORKING_DIR: ingestion
+  IMAGE_NAME: surf-ingestion
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Ruff check
+        run: uv run ruff check .
+
+  # ---------------------------------------------------------------------------
+  # Test
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test
+    needs: lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run tests
+        run: uv run pytest --tb=short -q
+
+  # ---------------------------------------------------------------------------
+  # Determine environment
+  # ---------------------------------------------------------------------------
+  resolve-env:
+    name: Resolve Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+    steps:
+      - name: Determine target environment
+        id: env
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "environment=prod" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/heads/release/* ]]; then
+            echo "environment=staging" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=dev" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Build & Push Docker image to ACR
+  # ---------------------------------------------------------------------------
+  build-push:
+    name: Build & Push
+    needs: [test, resolve-env]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.environment }}
+    outputs:
+      image-tag: ${{ steps.meta.outputs.image-tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name ${{ vars.ACR_NAME }}
+
+      - name: Generate image tag
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE_TAG="${{ vars.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}"
+          echo "image-tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image
+        run: |
+          docker build \
+            -t "${{ steps.meta.outputs.image-tag }}" \
+            -f ${{ env.WORKING_DIR }}/Dockerfile \
+            ${{ env.WORKING_DIR }}
+          docker push "${{ steps.meta.outputs.image-tag }}"
+
+  # ---------------------------------------------------------------------------
+  # Deploy to Azure Container Apps
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy
+    needs: [resolve-env, build-push]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.environment }}
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Container Apps
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          containerAppName: ca-${{ env.SERVICE_NAME }}-surf-${{ needs.resolve-env.outputs.environment }}
+          resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}
+          imageToDeploy: ${{ needs.build-push.outputs.image-tag }}
