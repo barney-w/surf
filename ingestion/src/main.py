@@ -65,7 +65,13 @@ def _load_manifest(manifest_path: str | None) -> dict[str, dict]:
         data = json.load(fh)
     # Support both list-of-dicts (keyed by "filename") and dict-keyed formats
     if isinstance(data, list):
-        return {entry["filename"]: entry for entry in data}
+        result: dict[str, dict] = {}
+        for i, entry in enumerate(data):
+            if not isinstance(entry, dict) or "filename" not in entry:
+                msg = f"Manifest entry {i} must be a dict with a 'filename' key, got: {type(entry).__name__}"
+                raise click.ClickException(msg)
+            result[entry["filename"]] = entry
+        return result
     return data
 
 
@@ -190,8 +196,12 @@ async def _embed_and_index(chunks: list[Chunk], embed_batch_size: int = 16) -> i
 
     credential = DefaultAzureCredential()
 
+    openai_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+    if not openai_endpoint:
+        raise click.ClickException("AZURE_OPENAI_ENDPOINT environment variable is not set")
+
     openai_client = AzureOpenAI(
-        azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+        azure_endpoint=openai_endpoint,
         azure_ad_token_provider=lambda: credential.get_token(
             "https://cognitiveservices.azure.com/.default"
         ).token,
@@ -207,8 +217,12 @@ async def _embed_and_index(chunks: list[Chunk], embed_batch_size: int = 16) -> i
         texts, openai_client, batch_size=embed_batch_size, progress_callback=_report
     )
 
+    search_endpoint = os.environ.get("AZURE_SEARCH_ENDPOINT")
+    if not search_endpoint:
+        raise click.ClickException("AZURE_SEARCH_ENDPOINT environment variable is not set")
+
     search_client = SearchClient(
-        endpoint=os.environ["AZURE_SEARCH_ENDPOINT"],
+        endpoint=search_endpoint,
         index_name=_resolve_index_name(),
         credential=credential,
     )
@@ -333,13 +347,18 @@ def init_index(index_name: str | None) -> None:
         from azure.search.documents.indexes import SearchIndexClient
 
         credential = DefaultAzureCredential()
+        search_endpoint = os.environ.get("AZURE_SEARCH_ENDPOINT")
+        if not search_endpoint:
+            raise click.ClickException("AZURE_SEARCH_ENDPOINT environment variable is not set")
         index_client = SearchIndexClient(
-            endpoint=os.environ["AZURE_SEARCH_ENDPOINT"],
+            endpoint=search_endpoint,
             credential=credential,
         )
         resolved_index_name = _resolve_index_name(index_name)
         create_or_update_index(index_client, resolved_index_name)
         click.echo(f"Index ready: {resolved_index_name}")
+    except click.ClickException:
+        raise
     except Exception as exc:  # noqa: BLE001
         click.echo(f"Failed to initialize index: {exc}", err=True)
         sys.exit(1)
@@ -353,16 +372,21 @@ def status() -> None:
         from azure.search.documents.indexes import SearchIndexClient
 
         credential = DefaultAzureCredential()
+        search_endpoint = os.environ.get("AZURE_SEARCH_ENDPOINT")
+        if not search_endpoint:
+            raise click.ClickException("AZURE_SEARCH_ENDPOINT environment variable is not set")
         index_client = SearchIndexClient(
-            endpoint=os.environ["AZURE_SEARCH_ENDPOINT"],
+            endpoint=search_endpoint,
             credential=credential,
         )
-        index_name = _resolve_index_name()
-        stats = index_client.get_index_statistics(index_name)
+        resolved_name = _resolve_index_name()
+        stats = index_client.get_index_statistics(resolved_name)
         click.echo("Index statistics:")
-        click.echo(f"  Index name     : {index_name}")
+        click.echo(f"  Index name     : {resolved_name}")
         click.echo(f"  Document count : {stats.get('document_count', 'N/A')}")
         click.echo(f"  Storage size   : {stats.get('storage_size', 'N/A')} bytes")
+    except click.ClickException:
+        raise
     except Exception as exc:  # noqa: BLE001
         click.echo(f"Failed to retrieve index stats: {exc}", err=True)
         sys.exit(1)

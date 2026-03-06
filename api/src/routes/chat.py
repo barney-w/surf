@@ -23,6 +23,9 @@ from src.orchestrator.history import current_conversation_id, current_user_id
 
 logger = logging.getLogger(__name__)
 
+# Number of heartbeat ticks (5s each) before emitting phase(waiting).
+_HEARTBEAT_WAIT_TICKS = 2  # 10 seconds
+
 router = APIRouter(prefix="/api/v1", tags=["chat"])
 
 
@@ -38,6 +41,8 @@ async def _update_last_active_agent(
             conversation_id, user_id, agent_name
         )
     except Exception:
+        # Cosmos can raise various exceptions (CosmosHttpResponseError, network errors, etc.)
+        # — never let a metadata update failure break the request.
         logger.warning(
             "Could not update last_active_agent for conversation %s",
             conversation_id,
@@ -56,6 +61,7 @@ async def _persist_message(
         await conversation_service.add_message(conversation_id, user_id, message)  # type: ignore[union-attr]
         return True
     except Exception:
+        # Cosmos can raise various exceptions — never let persistence failure break the request.
         logger.warning(
             "Cosmos DB unavailable — could not persist message %s for conversation %s",
             message.id,
@@ -151,6 +157,7 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
     except HTTPException:
         raise
     except Exception:
+        # Cosmos can raise various exceptions — degrade gracefully.
         logger.warning(
             "Cosmos DB unavailable — continuing without persistence",
             exc_info=True,
@@ -358,7 +365,7 @@ class _MessageFieldExtractor:
         out: list[str] = []
         for ch in s:
             if self._escape:
-                out.append({"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f"}.get(ch, ch))
+                out.append({"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f", "u": ""}.get(ch, ch))
                 self._escape = False
             elif ch == "\\":
                 self._escape = True
@@ -410,7 +417,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         else:
             conversation = await conversation_service.create_conversation(user_id)
             conversation_id = conversation.id
-    except Exception:
+    except (ConnectionError, TimeoutError, OSError):
         logger.warning("Cosmos DB unavailable — continuing without persistence", exc_info=True)
         cosmos_available = False
 
@@ -479,7 +486,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
                 if kind == "heartbeat":
                     heartbeat_count += 1
-                    if heartbeat_count == 2 and not generating_announced:
+                    if heartbeat_count == _HEARTBEAT_WAIT_TICKS and not generating_announced:
                         # 10 seconds elapsed with no output — tell the client to show
                         # a "still working" message (e.g. during a 429 retry window).
                         yield _sse({"type": "phase", "phase": "waiting"})

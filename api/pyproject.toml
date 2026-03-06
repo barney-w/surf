@@ -2,6 +2,10 @@
 name = "surf-api"
 version = "0.1.0"
 description = "Multi-Agent Orchestration Platform - API Service"
+readme = "../README.md"
+license = "Apache-2.0"
+authors = [{ name = "surf contributors" }]
+keywords = ["ai", "agents", "rag", "fastapi", "azure"]
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

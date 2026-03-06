@@ -29,6 +29,10 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
 
+RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
 ENV PATH="/app/.venv/bin:$PATH"
 
 ENTRYPOINT ["python", "-m", "src.main"]

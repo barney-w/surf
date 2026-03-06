@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -71,7 +71,7 @@ class EnrichedAgentResponse(BaseModel):
     confidence: ConfidenceBreakdown
     verification: VerificationResult
     ui_hint: Literal["text", "table", "card", "list", "steps", "warning"] = "text"
-    structured_data: dict[str, Any] | None = None
+    structured_data: dict[str, str] | None = None
     follow_up_suggestions: list[str] = []
 
 

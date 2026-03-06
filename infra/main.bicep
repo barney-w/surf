@@ -70,8 +70,8 @@ param ingestionMinReplicas int = 0
 @description('Ingestion maximum replicas')
 param ingestionMaxReplicas int = 1
 
-@description('GPT-5.1 model capacity (thousands of TPM)')
-param gpt51Capacity int = 10
+@description('GPT-5.2 model capacity (thousands of TPM)')
+param gpt52Capacity int = 10
 
 @description('Embedding model capacity')
 param embeddingCapacity int = 10
@@ -112,7 +112,7 @@ module openAi 'modules/openai.bicep' = {
   params: {
     openAiName: 'oai-${baseName}'
     location: location
-    gpt51Capacity: gpt51Capacity
+    gpt52Capacity: gpt52Capacity
     embeddingCapacity: embeddingCapacity
     tags: tags
   }

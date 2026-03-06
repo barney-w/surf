@@ -39,5 +39,5 @@ param ingestionMinReplicas = 1
 param ingestionMaxReplicas = 3
 
 // OpenAI — production capacity
-param gpt4oCapacity = 80
+param gpt52Capacity = 80
 param embeddingCapacity = 50

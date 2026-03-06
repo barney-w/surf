@@ -42,10 +42,12 @@ def build_odata_filter(filters: dict[str, str | list[str]]) -> str | None:
     for key, value in filters.items():
         if key.endswith("_in") and isinstance(value, list):
             field = key.removesuffix("_in")
-            joined = ",".join(value)
+            escaped = [v.replace("'", "''") for v in value]
+            joined = ",".join(escaped)
             clauses.append(f"search.in({field}, '{joined}')")
         elif isinstance(value, str):
-            clauses.append(f"{key} eq '{value}'")
+            escaped_value = value.replace("'", "''")
+            clauses.append(f"{key} eq '{escaped_value}'")
     if not clauses:
         return None
     return " and ".join(clauses)

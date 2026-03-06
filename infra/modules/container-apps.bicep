@@ -97,7 +97,7 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
   }
   properties: {
     adminUserEnabled: false
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: 'Disabled'
   }
 }
 
@@ -147,7 +147,7 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 // Cognitive Services OpenAI User role on OpenAI resource
 resource roleOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(openAiId)) {
   name: guid(managedIdentity.id, openAiId, 'cognitive-services-openai-user')
-  scope: resourceGroup()
+  scope: resourceGroup()  // TODO: scope to target resource once cross-RG references are resolved
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -161,7 +161,7 @@ resource roleOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = i
 // Search Index Data Contributor on AI Search
 resource roleSearchContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(aiSearchId)) {
   name: guid(managedIdentity.id, aiSearchId, 'search-index-data-contributor')
-  scope: resourceGroup()
+  scope: resourceGroup()  // TODO: scope to target resource once cross-RG references are resolved
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -175,7 +175,7 @@ resource roleSearchContributor 'Microsoft.Authorization/roleAssignments@2022-04-
 // Cosmos DB Built-in Data Contributor
 resource roleCosmosContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(cosmosAccountId)) {
   name: guid(managedIdentity.id, cosmosAccountId, 'cosmos-db-data-contributor')
-  scope: resourceGroup()
+  scope: resourceGroup()  // TODO: scope to target resource once cross-RG references are resolved
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -189,7 +189,7 @@ resource roleCosmosContributor 'Microsoft.Authorization/roleAssignments@2022-04-
 // Storage Blob Data Contributor
 resource roleStorageContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(storageAccountId)) {
   name: guid(managedIdentity.id, storageAccountId, 'storage-blob-data-contributor')
-  scope: resourceGroup()
+  scope: resourceGroup()  // TODO: scope to target resource once cross-RG references are resolved
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -203,7 +203,7 @@ resource roleStorageContributor 'Microsoft.Authorization/roleAssignments@2022-04
 // Key Vault Secrets User
 resource roleKeyVaultUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(keyVaultId)) {
   name: guid(managedIdentity.id, keyVaultId, 'key-vault-secrets-user')
-  scope: resourceGroup()
+  scope: resourceGroup()  // TODO: scope to target resource once cross-RG references are resolved
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -217,7 +217,7 @@ resource roleKeyVaultUser 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 // ACR Pull for managed identity
 resource roleAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(managedIdentity.id, acr.id, 'acr-pull')
-  scope: resourceGroup()
+  scope: resourceGroup()  // TODO: scope to target resource once cross-RG references are resolved
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -249,7 +249,7 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
       ingress: {
         external: false
         targetPort: 8000
-        transport: 'http'
+        transport: 'auto'
         allowInsecure: false
       }
       registries: [
@@ -275,6 +275,26 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_STORAGE_BLOB_ENDPOINT', value: storageBlobEndpoint }
             { name: 'AZURE_KEY_VAULT_URI', value: keyVaultUri }
             { name: 'AZURE_CLIENT_ID', value: managedIdentity.properties.clientId }
+          ]
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/api/v1/health'
+                port: 8000
+              }
+              periodSeconds: 30
+              failureThreshold: 3
+            }
+            {
+              type: 'Startup'
+              httpGet: {
+                path: '/api/v1/health'
+                port: 8000
+              }
+              periodSeconds: 10
+              failureThreshold: 10
+            }
           ]
         }
       ]

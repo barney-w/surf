@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 
 from openai import AzureOpenAI, RateLimitError
 
@@ -16,7 +17,7 @@ async def generate_embeddings(
     model: str = "text-embedding-3-large",
     batch_size: int = 16,
     max_retries: int = 5,
-    progress_callback: callable = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> list[list[float]]:
     """Generate embeddings for a list of texts with batching and retry.
 

@@ -15,10 +15,10 @@ param tags object
 @description('SKU for Azure OpenAI')
 param skuName string = 'S0'
 
-@description('Whether to deploy a GPT-5.1 model')
-param deployGpt51 bool = true
+@description('Whether to deploy the GPT-5.2 chat model')
+param deployGpt52 bool = true
 
-@description('GPT-5.1 model capacity (in thousands of tokens per minute)')
+@description('GPT-5.2 model capacity (in thousands of tokens per minute)')
 param gpt52Capacity int = 10
 
 @description('Whether to deploy a text-embedding model')
@@ -51,7 +51,7 @@ resource openAi 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   }
 }
 
-resource gpt52Deployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = if (deployGpt51) {
+resource gpt52Deployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = if (deployGpt52) {
   parent: openAi
   name: 'gpt-5.2-chat'
   sku: {

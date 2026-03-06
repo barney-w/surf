@@ -40,8 +40,8 @@ try:
         return result
 
     _AC._prepare_options = _patched_prepare  # type: ignore[assignment]
-except Exception:
-    pass  # framework not installed — nothing to patch
+except (ImportError, ModuleNotFoundError, AttributeError):
+    pass  # framework not installed or API changed — nothing to patch
 
 settings = get_settings()
 
@@ -144,8 +144,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.api_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Conversation-ID", "X-User-ID"],
 )
 
 add_error_handlers(app)

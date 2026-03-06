@@ -51,7 +51,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --prerelease=allow
 
       - name: Ruff check
         run: uv run ruff check .
@@ -78,7 +78,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --prerelease=allow
 
       - name: Run tests
         run: uv run pytest --tb=short -q

@@ -2,6 +2,10 @@
 name = "surf-ingestion"
 version = "0.1.0"
 description = "Multi-Agent Orchestration Platform - Document Ingestion Pipeline"
+readme = "../README.md"
+license = "Apache-2.0"
+authors = [{ name = "surf contributors" }]
+keywords = ["ingestion", "rag", "embeddings", "azure"]
 requires-python = ">=3.12"
 dependencies = [
     "pymupdf",

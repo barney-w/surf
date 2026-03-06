@@ -292,8 +292,16 @@ def chunk_document(
     elif config.strategy == "fixed":
         raw_chunks = _fixed_chunk(text, config)
     elif config.strategy == "hybrid":
-        # Hybrid: semantic first, then fixed-split any oversized chunks
+        # Hybrid: semantic first, then fixed-split any oversized chunks.
         raw_chunks = _semantic_chunk(text, config)
+        final: list[tuple[str, str | None]] = []
+        for content, heading in raw_chunks:
+            if _token_len(content) > config.max_chunk_tokens:
+                for sub in _fixed_chunk_raw(content, config.max_chunk_tokens, config.overlap_tokens):
+                    final.append((sub, heading))
+            else:
+                final.append((content, heading))
+        raw_chunks = final
     else:
         raw_chunks = _semantic_chunk(text, config)
 
