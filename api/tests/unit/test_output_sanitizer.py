@@ -6,7 +6,6 @@ import pytest
 from src.agents._output import _sanitize_agent_response, extract_sources, parse_agent_output
 from src.models.agent import AgentResponseModel, Source
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -32,7 +31,10 @@ def _source_block(n: int = 1) -> str:
 class TestSanitizeAgentResponse:
     def test_clean_message_passes_through(self):
         model = AgentResponseModel(
-            message="Under clause 6.2.3, the RDO day is agreed between the employee and their supervisor.",
+            message=(
+                "Under clause 6.2.3, the RDO day is agreed between"
+                " the employee and their supervisor."
+            ),
             sources=[],
             confidence="high",
         )

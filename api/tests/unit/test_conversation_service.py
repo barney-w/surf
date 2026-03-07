@@ -1,8 +1,8 @@
 """Tests for ConversationService with mocked Cosmos DB client."""
 
 import uuid
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 
 import pytest
 from azure.cosmos.exceptions import CosmosResourceNotFoundError
@@ -58,7 +58,7 @@ class TestCreateConversation:
 class TestAddMessage:
     @pytest.mark.asyncio
     async def test_appends_message_via_patch(self, service, mock_container):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         msg = MessageRecord(id="msg-1", role="user", content="Hello", timestamp=now)
 
         await service.add_message("conv-1", "user-1", msg)
@@ -82,19 +82,21 @@ class TestGetConversation:
     @pytest.mark.asyncio
     async def test_returns_none_when_not_found(self, service, mock_container):
         mock_container.read_item.side_effect = CosmosResourceNotFoundError()
+        valid_id = "00000000-0000-0000-0000-000000000000"
 
-        result = await service.get_conversation("no-such-id", "user-1")
+        result = await service.get_conversation(valid_id, "user-1")
 
         assert result is None
         mock_container.read_item.assert_awaited_once_with(
-            item="no-such-id", partition_key="user-1"
+            item=valid_id, partition_key="user-1"
         )
 
     @pytest.mark.asyncio
     async def test_returns_document_when_found(self, service, mock_container):
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
+        valid_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         mock_container.read_item.return_value = {
-            "id": "conv-1",
+            "id": valid_id,
             "user_id": "user-1",
             "created_at": now,
             "updated_at": now,
@@ -102,11 +104,36 @@ class TestGetConversation:
             "metadata": {"message_count": 0, "feedback": []},
         }
 
-        result = await service.get_conversation("conv-1", "user-1")
+        result = await service.get_conversation(valid_id, "user-1")
 
         assert result is not None
-        assert result.id == "conv-1"
+        assert result.id == valid_id
         assert result.user_id == "user-1"
+
+    @pytest.mark.asyncio
+    async def test_get_conversation_rejects_non_uuid_id(self, service, mock_container):
+        result = await service.get_conversation("not-a-uuid", "user-1")
+
+        assert result is None
+        mock_container.read_item.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_get_conversation_rejects_user_id_mismatch(self, service, mock_container):
+        now = datetime.now(UTC).isoformat()
+        valid_id = "12345678-1234-1234-1234-123456789abc"
+        mock_container.read_item.return_value = {
+            "id": valid_id,
+            "user_id": "other-user",
+            "created_at": now,
+            "updated_at": now,
+            "messages": [],
+            "metadata": {"message_count": 0, "feedback": []},
+        }
+
+        result = await service.get_conversation(valid_id, "user-1")
+
+        assert result is None
+        mock_container.read_item.assert_awaited_once()
 
 
 class TestDeleteConversation:

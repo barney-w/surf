@@ -1,5 +1,7 @@
 """Tests for the config/settings module."""
 
+import pytest
+
 from src.config.settings import Settings, get_settings
 
 
@@ -61,3 +63,115 @@ class TestSettingsEnvOverrides:
         assert settings.max_history_messages == 50
         assert settings.auth_enabled is True
         assert settings.api_cors_origins == ["http://localhost:5173"]
+
+
+class TestLifespanProductionGuards:
+    """Test that the lifespan function enforces production safety guards."""
+
+    @pytest.mark.asyncio
+    async def test_prod_refuses_auth_disabled(self):
+        """Staging environment with auth_enabled=False must raise SystemExit."""
+        from unittest.mock import patch
+
+        from src.config.settings import Settings
+        from src.main import app, lifespan
+
+        unsafe_settings = Settings(
+            _env_file=None,
+            environment="staging",
+            auth_enabled=False,
+        )
+
+        with patch("src.main.settings", unsafe_settings), pytest.raises(SystemExit):
+            async with lifespan(app):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_prod_refuses_debug_mode(self):
+        """Prod environment with debug=True must raise SystemExit."""
+        from unittest.mock import patch
+
+        from src.config.settings import Settings
+        from src.main import app, lifespan
+
+        unsafe_settings = Settings(
+            _env_file=None,
+            environment="prod",
+            auth_enabled=True,
+            debug=True,
+        )
+
+        with patch("src.main.settings", unsafe_settings), pytest.raises(SystemExit):
+            async with lifespan(app):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_prod_refuses_cors_wildcard(self):
+        """Prod environment with CORS wildcard must raise SystemExit."""
+        from unittest.mock import patch
+
+        from src.config.settings import Settings
+        from src.main import app, lifespan
+
+        unsafe_settings = Settings(
+            _env_file=None,
+            environment="prod",
+            auth_enabled=True,
+            debug=False,
+            api_cors_origins=["*"],
+        )
+
+        with patch("src.main.settings", unsafe_settings), pytest.raises(SystemExit):
+            async with lifespan(app):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_dev_allows_auth_disabled(self):
+        """Dev environment with auth_enabled=False must NOT raise."""
+        from unittest.mock import patch
+
+        from src.config.settings import Settings
+        from src.main import app, lifespan
+
+        dev_settings = Settings(
+            _env_file=None,
+            environment="dev",
+            auth_enabled=False,
+        )
+
+        # The lifespan may fail later (no Azure creds in CI) but it must NOT
+        # raise SystemExit from the safety-guard block.  We catch everything
+        # except SystemExit so the test fails only on the guard.
+        with patch("src.main.settings", dev_settings):
+            try:
+                async with lifespan(app):
+                    pass
+            except SystemExit:
+                pytest.fail("SystemExit raised for dev environment — guard should not fire")
+            except Exception:
+                pass  # other startup errors (missing Azure creds etc.) are fine
+
+    @pytest.mark.asyncio
+    async def test_prod_allows_valid_config(self):
+        """Prod environment with valid config must NOT raise SystemExit from guards."""
+        from unittest.mock import patch
+
+        from src.config.settings import Settings
+        from src.main import app, lifespan
+
+        valid_settings = Settings(
+            _env_file=None,
+            environment="prod",
+            auth_enabled=True,
+            debug=False,
+            api_cors_origins=["https://surf.example.com"],
+        )
+
+        with patch("src.main.settings", valid_settings):
+            try:
+                async with lifespan(app):
+                    pass
+            except SystemExit:
+                pytest.fail("SystemExit raised for valid prod config — guard should not fire")
+            except Exception:
+                pass  # other startup errors (missing Azure creds etc.) are fine

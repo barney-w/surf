@@ -1,11 +1,22 @@
 """PDF connector for extracting text and creating IngestedDocument instances."""
 
 import hashlib
+import re
 from pathlib import Path
 
 import fitz
 
 from src.models import DocumentMetadata, IngestedDocument
+
+_SAFE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
+
+
+def _validate_source_url(url: str | None) -> str | None:
+    if url is None:
+        return None
+    if not _SAFE_URL_RE.match(url):
+        raise ValueError(f"Invalid source_url: must start with http:// or https://, got: {url!r}")
+    return url
 
 
 def extract_text_from_pdf(file_path: Path) -> str:
@@ -84,7 +95,7 @@ def create_document_from_pdf(file_path: Path, manifest_entry: dict) -> IngestedD
         effective_date=manifest_entry.get("effective_date"),
         expiry_date=manifest_entry.get("expiry_date"),
         author=manifest_entry.get("author"),
-        source_url=manifest_entry.get("source_url"),
+        source_url=_validate_source_url(manifest_entry.get("source_url")),
         tags=manifest_entry.get("tags", []),
     )
 

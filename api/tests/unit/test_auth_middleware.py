@@ -25,7 +25,7 @@ def _build_token(
     expired: bool = False,
 ) -> str:
     """Create a signed JWT with the given claims."""
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     payload = {
         "oid": "user-oid-123",
         "name": "Jane Doe",
@@ -35,7 +35,9 @@ def _build_token(
         "iss": f"https://login.microsoftonline.com/{TENANT_ID}/v2.0",
         "aud": CLIENT_ID,
         "iat": now - datetime.timedelta(minutes=5),
-        "exp": now - datetime.timedelta(minutes=1) if expired else now + datetime.timedelta(hours=1),
+        "exp": (
+            now - datetime.timedelta(minutes=1) if expired else now + datetime.timedelta(hours=1)
+        ),
     }
     if claims:
         payload.update(claims)
@@ -65,7 +67,10 @@ class TestAuthDisabled:
     @pytest.mark.asyncio
     async def test_returns_dev_user_without_token(self):
         request = _mock_request()
-        with patch("src.middleware.auth.get_settings", return_value=_mock_settings(auth_enabled=False)):
+        with patch(
+            "src.middleware.auth.get_settings",
+            return_value=_mock_settings(auth_enabled=False),
+        ):
             user = await get_current_user(request)
 
         assert isinstance(user, UserContext)
@@ -80,9 +85,14 @@ class TestAuthEnabled:
     @pytest.mark.asyncio
     async def test_missing_token_returns_401(self):
         request = _mock_request(token=None)
-        with patch("src.middleware.auth.get_settings", return_value=_mock_settings(auth_enabled=True)):
-            with pytest.raises(HTTPException) as exc_info:
-                await get_current_user(request)
+        with (
+            patch(
+                "src.middleware.auth.get_settings",
+                return_value=_mock_settings(auth_enabled=True),
+            ),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await get_current_user(request)
 
         assert exc_info.value.status_code == 401
         assert "Missing or invalid Authorization header" in exc_info.value.detail
@@ -101,7 +111,10 @@ class TestAuthEnabled:
 
         request = _mock_request(token=token)
         with (
-            patch("src.middleware.auth.get_settings", return_value=_mock_settings(auth_enabled=True)),
+            patch(
+                "src.middleware.auth.get_settings",
+                return_value=_mock_settings(auth_enabled=True),
+            ),
             patch("src.middleware.auth._get_jwks_client", return_value=mock_jwks_client),
         ):
             user = await get_current_user(request)
@@ -125,11 +138,14 @@ class TestAuthEnabled:
 
         request = _mock_request(token=token)
         with (
-            patch("src.middleware.auth.get_settings", return_value=_mock_settings(auth_enabled=True)),
+            patch(
+                "src.middleware.auth.get_settings",
+                return_value=_mock_settings(auth_enabled=True),
+            ),
             patch("src.middleware.auth._get_jwks_client", return_value=mock_jwks_client),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with pytest.raises(HTTPException) as exc_info:
-                await get_current_user(request)
+            await get_current_user(request)
 
         assert exc_info.value.status_code == 401
         assert "expired" in exc_info.value.detail.lower()

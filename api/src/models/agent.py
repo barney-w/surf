@@ -103,11 +103,19 @@ def enrich_agent_response(model: AgentResponseModel) -> EnrichedAgentResponse:
     if not sources:
         reasoning = "No source documents found. Response is based on general knowledge."
     elif level == "high":
-        reasoning = f"Answer is well-supported by {n} source document{'s' if n > 1 else ''} with strong relevance."
+        s = "s" if n > 1 else ""
+        reasoning = f"Answer is well-supported by {n} source document{s} with strong relevance."
     elif level == "medium":
-        reasoning = f"Answer is partially supported by {n} source document{'s' if n > 1 else ''}. Some details may require verification."
+        s = "s" if n > 1 else ""
+        reasoning = (
+            f"Answer is partially supported by {n} source document{s}."
+            " Some details may require verification."
+        )
     else:
-        reasoning = "Limited source support found. Response may not reflect current organisational policies."
+        reasoning = (
+            "Limited source support found."
+            " Response may not reflect current organisational policies."
+        )
 
     confidence_breakdown = ConfidenceBreakdown(
         overall=level,

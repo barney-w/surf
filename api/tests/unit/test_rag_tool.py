@@ -16,7 +16,6 @@ from src.rag.search import (
 )
 from src.rag.tools import _stitch_adjacent_chunks, create_rag_tool, set_search_client
 
-
 # ---------------------------------------------------------------------------
 # OData filter builder
 # ---------------------------------------------------------------------------

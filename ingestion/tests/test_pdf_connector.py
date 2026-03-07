@@ -7,6 +7,7 @@ import fitz
 import pytest
 
 from src.connectors.pdf import (
+    _validate_source_url,
     create_document_from_pdf,
     extract_text_from_pdf,
 )
@@ -79,6 +80,32 @@ class TestExtractTextFromPdf:
     def test_encrypted_pdf_raises(self, encrypted_pdf: Path) -> None:
         with pytest.raises(ValueError, match="encrypted"):
             extract_text_from_pdf(encrypted_pdf)
+
+
+class TestValidateSourceUrl:
+    def test_source_url_rejects_javascript_scheme(self):
+        with pytest.raises(ValueError, match="must start with http"):
+            _validate_source_url("javascript:alert(1)")
+
+    def test_source_url_rejects_data_uri(self):
+        with pytest.raises(ValueError, match="must start with http"):
+            _validate_source_url("data:text/html,<script>alert(1)</script>")
+
+    def test_source_url_rejects_file_scheme(self):
+        with pytest.raises(ValueError, match="must start with http"):
+            _validate_source_url("file:///etc/passwd")
+
+    def test_source_url_accepts_https(self):
+        result = _validate_source_url("https://example.com")
+        assert result == "https://example.com"
+
+    def test_source_url_accepts_http(self):
+        result = _validate_source_url("http://example.com/doc.pdf")
+        assert result == "http://example.com/doc.pdf"
+
+    def test_source_url_accepts_none(self):
+        result = _validate_source_url(None)
+        assert result is None
 
 
 class TestCreateDocumentFromPdf:

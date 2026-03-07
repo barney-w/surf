@@ -10,16 +10,27 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from openai import RateLimitError as OpenAIRateLimitError
 
-from src.agents._output import _deduplicate_sources, extract_sources, parse_agent_output, _sanitize_agent_response
+from src.agents._output import (
+    _deduplicate_sources,
+    _sanitize_agent_response,
+    extract_sources,
+    parse_agent_output,
+)
 from src.middleware.auth import get_current_user
 from src.middleware.error_handler import LLM_TIMEOUT_SECONDS, LLMTimeoutError
 from src.middleware.input_validation import validate_message
-from src.models.agent import AgentResponseModel, EnrichedAgentResponse, RoutingMetadata, Source, enrich_agent_response
+from src.middleware.rate_limit import limiter
+from src.models.agent import (
+    AgentResponseModel,
+    RoutingMetadata,
+    Source,
+    enrich_agent_response,
+)
 from src.models.chat import ChatRequest, ChatResponse
 from src.models.conversation import FeedbackRecord, MessageRecord
 from src.orchestrator.builder import SYNTHESIZE_SUFFIX
-from src.rag.tools import rag_results_collector
 from src.orchestrator.history import current_conversation_id, current_user_id
+from src.rag.tools import rag_results_collector
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +134,7 @@ async def _run_workflow(
 
 
 @router.post("/chat")
+@limiter.limit("10/minute")
 async def chat(body: ChatRequest, request: Request) -> JSONResponse:
     """Send a message and receive an AI response."""
     workflow = request.app.state.workflow
@@ -365,7 +377,10 @@ class _MessageFieldExtractor:
         out: list[str] = []
         for ch in s:
             if self._escape:
-                out.append({"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f", "u": ""}.get(ch, ch))
+                out.append(
+                    {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\",
+                     "/": "/", "b": "\b", "f": "\f", "u": ""}.get(ch, ch)
+                )
                 self._escape = False
             elif ch == "\\":
                 self._escape = True
@@ -377,6 +392,7 @@ class _MessageFieldExtractor:
 
 
 @router.post("/chat/stream")
+@limiter.limit("10/minute")
 async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
     """SSE streaming endpoint — real token streaming from the LLM.
 
@@ -397,7 +413,11 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
     if workflow is None:
         async def _no_workflow() -> AsyncGenerator[str, None]:
-            yield _sse({"type": "error", "error": {"code": "API_ERROR", "message": "AI workflow not available. Azure OpenAI endpoint not configured.", "retryable": False}})
+            yield _sse({"type": "error", "error": {
+                "code": "API_ERROR",
+                "message": "AI workflow not available. Azure OpenAI endpoint not configured.",
+                "retryable": False,
+            }})
 
         return StreamingResponse(_no_workflow(), media_type="text/event-stream")
 
@@ -407,10 +427,16 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
     try:
         if body.conversation_id:
-            conversation = await conversation_service.get_conversation(body.conversation_id, user_id)
+            conversation = await conversation_service.get_conversation(
+                body.conversation_id, user_id
+            )
             if conversation is None:
                 async def _not_found() -> AsyncGenerator[str, None]:
-                    yield _sse({"type": "error", "error": {"code": "API_ERROR", "message": "Conversation not found", "retryable": False}})
+                    yield _sse({"type": "error", "error": {
+                        "code": "API_ERROR",
+                        "message": "Conversation not found",
+                        "retryable": False,
+                    }})
 
                 return StreamingResponse(_not_found(), media_type="text/event-stream")
             conversation_id = body.conversation_id
@@ -475,13 +501,28 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                 if kind == "error":
                     exc = item[1]
                     if isinstance(exc, TimeoutError):
-                        yield _sse({"type": "error", "error": {"code": "TIMEOUT", "message": "Request timed out. Please try again.", "retryable": True}})
+                        yield _sse({"type": "error", "error": {
+                            "code": "TIMEOUT",
+                            "message": "Request timed out. Please try again.",
+                            "retryable": True,
+                        }})
                     elif isinstance(exc, OpenAIRateLimitError):
-                        logger.warning("LLM rate limited in SSE stream — quota exhausted after retries")
-                        yield _sse({"type": "error", "error": {"code": "RATE_LIMIT", "message": "The AI service is temporarily busy. Please wait a moment and try again.", "retryable": True}})
+                        logger.warning(
+                            "LLM rate limited in SSE stream — quota exhausted after retries"
+                        )
+                        yield _sse({"type": "error", "error": {
+                            "code": "RATE_LIMIT",
+                            "message": "The AI service is temporarily busy."
+                            " Please wait a moment and try again.",
+                            "retryable": True,
+                        }})
                     else:
                         logger.warning("Workflow error in SSE stream", exc_info=exc)
-                        yield _sse({"type": "error", "error": {"code": "API_ERROR", "message": "The agent encountered an error. Please try again.", "retryable": True}})
+                        yield _sse({"type": "error", "error": {
+                            "code": "API_ERROR",
+                            "message": "The agent encountered an error. Please try again.",
+                            "retryable": True,
+                        }})
                     return
 
                 if kind == "heartbeat":
@@ -512,8 +553,12 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                         heartbeat_count = 0  # reset so we don't re-emit "waiting" mid-generation
                     else:
                         # Search → synthesize handoff: extract sources from the search-agent
-                        # echo text before discarding it, then reset for the synthesise agent's JSON.
-                        logger.debug("internal handoff → %s: resetting buf (was %d chars)", routed_agent, len(domain_agent_json_buf))
+                        # echo text before discarding it, reset for the synthesise agent's JSON.
+                        logger.debug(
+                            "internal handoff → %s: resetting buf (was %d chars)",
+                            routed_agent,
+                            len(domain_agent_json_buf),
+                        )
                         recovered_sources = extract_sources(domain_agent_json_buf)
                         domain_agent_json_buf = ""
                         extractor = _MessageFieldExtractor()  # fresh extractor for JSON stream
@@ -556,12 +601,23 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                         "429" in error_msg
                         or "rate" in error_msg.lower()
                         or "RateLimit" in error_type
-                        or isinstance(getattr(details, "original_error", None), OpenAIRateLimitError)
+                        or isinstance(
+                            getattr(details, "original_error", None), OpenAIRateLimitError
+                        )
                     )
                     if is_rate_limit:
-                        yield _sse({"type": "error", "error": {"code": "RATE_LIMIT", "message": "The AI service is temporarily busy. Please wait a moment and try again.", "retryable": True}})
+                        yield _sse({"type": "error", "error": {
+                            "code": "RATE_LIMIT",
+                            "message": "The AI service is temporarily busy."
+                            " Please wait a moment and try again.",
+                            "retryable": True,
+                        }})
                     else:
-                        yield _sse({"type": "error", "error": {"code": "API_ERROR", "message": "The agent encountered an error. Please try again.", "retryable": True}})
+                        yield _sse({"type": "error", "error": {
+                            "code": "API_ERROR",
+                            "message": "The agent encountered an error. Please try again.",
+                            "retryable": True,
+                        }})
                     return
 
         finally:
@@ -591,7 +647,10 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             agent_response = AgentResponseModel(
                 message="I'm sorry, I couldn't generate a response. Please try again.",
                 confidence="low",
-                follow_up_suggestions=["Could you rephrase your question?", "Try again in a moment."],
+                follow_up_suggestions=[
+                    "Could you rephrase your question?",
+                    "Try again in a moment.",
+                ],
             )
 
         # Inject recovered sources if the agent didn't populate them.
@@ -610,7 +669,11 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         yield _sse({"type": "phase", "phase": "verifying"})
         yield _sse({"type": "confidence", "breakdown": enriched.confidence.model_dump()})
         yield _sse({"type": "verification", "result": enriched.verification.model_dump()})
-        yield _sse({"type": "done", "response": enriched.model_dump(mode="json"), "conversation_id": conversation_id})
+        yield _sse({
+            "type": "done",
+            "response": enriched.model_dump(mode="json"),
+            "conversation_id": conversation_id,
+        })
         yield "data: [DONE]\n\n"
 
         # Persist after streaming completes — Cosmos errors here are non-fatal.
@@ -623,7 +686,9 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             timestamp=datetime.now(UTC),
         )
         if cosmos_available:
-            persisted = await _persist_message(conversation_service, conversation_id, user_id, user_message)
+            persisted = await _persist_message(
+                conversation_service, conversation_id, user_id, user_message
+            )
             if not persisted:
                 cosmos_available = False
 
@@ -636,8 +701,12 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             timestamp=datetime.now(UTC),
         )
         if cosmos_available:
-            await _persist_message(conversation_service, conversation_id, user_id, assistant_message)
-            await _update_last_active_agent(conversation_service, conversation_id, user_id, routed_agent)
+            await _persist_message(
+                conversation_service, conversation_id, user_id, assistant_message
+            )
+            await _update_last_active_agent(
+                conversation_service, conversation_id, user_id, routed_agent
+            )
 
     return StreamingResponse(
         generate(),
@@ -647,6 +716,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
 
 @router.get("/chat/{conversation_id}")
+@limiter.limit("60/minute")
 async def get_conversation(conversation_id: str, request: Request) -> dict:
     """Load a conversation by ID."""
     conversation_service = request.app.state.conversation_service
@@ -661,6 +731,7 @@ async def get_conversation(conversation_id: str, request: Request) -> dict:
 
 
 @router.delete("/chat/{conversation_id}")
+@limiter.limit("20/minute")
 async def delete_conversation(conversation_id: str, request: Request) -> dict:
     """Delete a conversation."""
     conversation_service = request.app.state.conversation_service
@@ -675,6 +746,7 @@ async def delete_conversation(conversation_id: str, request: Request) -> dict:
 
 
 @router.post("/chat/{conversation_id}/feedback")
+@limiter.limit("30/minute")
 async def submit_feedback(
     conversation_id: str, feedback: FeedbackRecord, request: Request
 ) -> dict:

@@ -1,6 +1,6 @@
 """Tests for Pydantic models — validation edge cases and serialization round-trips."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -15,7 +15,6 @@ from src.models import (
     RoutingMetadata,
     Source,
 )
-
 
 # ---------------------------------------------------------------------------
 # Source.confidence bounds
@@ -88,7 +87,7 @@ class TestAgentResponseModelUiHint:
 
 class TestChatResponseRoundTrip:
     def test_json_round_trip(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         original = ChatResponse(
             conversation_id="conv-1",
             message_id="msg-1",
@@ -126,7 +125,7 @@ class TestChatResponseRoundTrip:
 
 class TestConversationDocumentSerialization:
     def test_full_conversation_round_trip(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         doc = ConversationDocument(
             id="conv-42",
             user_id="user-7",

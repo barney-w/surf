@@ -1,3 +1,5 @@
+import logging
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -11,6 +13,13 @@ from src.models.conversation import (
     ConversationMetadata,
     FeedbackRecord,
     MessageRecord,
+)
+
+logger = logging.getLogger(__name__)
+
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
 )
 
 
@@ -36,11 +45,23 @@ class ConversationService:
         self, conversation_id: str, user_id: str
     ) -> ConversationDocument | None:
         """Load a conversation by ID. Returns None if not found."""
+        if not _UUID_RE.match(conversation_id):
+            return None
         try:
             item = await self._container.read_item(
                 item=conversation_id, partition_key=user_id
             )
-            return ConversationDocument(**item)
+            doc = ConversationDocument(**item)
+            # Defense-in-depth: verify user_id matches even though partition key should isolate
+            if doc.user_id != user_id:
+                logger.warning(
+                    "Conversation %s user_id mismatch: expected %s, got %s",
+                    conversation_id,
+                    user_id,
+                    doc.user_id,
+                )
+                return None
+            return doc
         except CosmosResourceNotFoundError:
             return None
 

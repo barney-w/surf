@@ -6,7 +6,9 @@ from src.services.conversation import ConversationService
 
 # Set these before calling workflow.run() so the provider can read them
 # without leaking values through workflow options into the LLM call.
-current_conversation_id: ContextVar[str | None] = ContextVar("current_conversation_id", default=None)
+current_conversation_id: ContextVar[str | None] = ContextVar(
+    "current_conversation_id", default=None
+)
 current_user_id: ContextVar[str | None] = ContextVar("current_user_id", default=None)
 
 

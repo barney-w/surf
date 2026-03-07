@@ -23,8 +23,8 @@ def _register_hr_agent():
 
 class TestAgentAutoRegistration:
     def test_hr_agent_registers_on_import(self):
-        HRAgent = _register_hr_agent()
-        assert AgentRegistry.get("hr_agent") is HRAgent
+        hr_agent_cls = _register_hr_agent()
+        assert AgentRegistry.get("hr_agent") is hr_agent_cls
 
     def test_registry_get_returns_none_for_unknown(self):
         assert AgentRegistry.get("nonexistent") is None
@@ -37,10 +37,10 @@ class TestAgentAutoRegistration:
         assert "human resources" in descriptions[0]["description"].lower()
 
     def test_get_all_returns_registered_agents(self):
-        HRAgent = _register_hr_agent()
+        hr_agent_cls = _register_hr_agent()
         all_agents = AgentRegistry.get_all()
         assert "hr_agent" in all_agents
-        assert all_agents["hr_agent"] is HRAgent
+        assert all_agents["hr_agent"] is hr_agent_cls
 
 
 class TestDiscovery:

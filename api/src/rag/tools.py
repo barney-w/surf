@@ -1,3 +1,4 @@
+import contextlib
 import logging
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
@@ -126,7 +127,12 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
         if document_type:
             filters["document_type"] = document_type
 
-        logger.info("search_knowledge_base called: query=%r document_type=%r filters=%r", query, document_type, filters)
+        logger.info(
+            "search_knowledge_base called: query=%r document_type=%r filters=%r",
+            query,
+            document_type,
+            filters,
+        )
         try:
             results = await search_index(
                 query=query,
@@ -154,7 +160,9 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
         formatted = []
         for i, r in enumerate(results, 1):
             relevance = round(r.score / max_score, 2)
-            section_line = f'section: "{r.section_heading}"' if r.section_heading else "section: null"
+            section_line = (
+                f'section: "{r.section_heading}"' if r.section_heading else "section: null"
+            )
             url_line = f'url: "{r.source_url}"' if r.source_url else "url: null"
             snippet_text = r.content[:200].rstrip()
             if len(r.content) > 200:
@@ -171,11 +179,13 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
                 f"=== END SOURCE {i} ==="
             )
         output = "\n\n".join(formatted)
-        try:
+        with contextlib.suppress(LookupError):
             rag_results_collector.get().append(output)
-        except LookupError:
-            pass  # collector not initialised — no-op outside chat endpoints
-        logger.info("search_knowledge_base returning %d results, first 200 chars: %r", len(results), output[:200])
+        logger.info(
+            "search_knowledge_base returning %d results, first 200 chars: %r",
+            len(results),
+            output[:200],
+        )
         return output
 
     return search_knowledge_base

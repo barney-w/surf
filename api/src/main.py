@@ -3,7 +3,8 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from azure.identity import DefaultAzureCredential as SyncDefaultAzureCredential, get_bearer_token_provider
+from azure.identity import DefaultAzureCredential as SyncDefaultAzureCredential
+from azure.identity import get_bearer_token_provider
 from azure.identity.aio import DefaultAzureCredential
 from azure.search.documents.aio import SearchClient
 from fastapi import FastAPI, Request, Response
@@ -11,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from openai import AsyncAzureOpenAI
 
 from src.config.settings import get_settings
+from src.middleware.body_limit import BodySizeLimitMiddleware
 from src.middleware.error_handler import add_error_handlers
 from src.middleware.logging import reset_logging_context, set_logging_context, setup_logging
 from src.middleware.telemetry import setup_telemetry
@@ -30,16 +32,16 @@ logger = logging.getLogger(__name__)
 # framework ships a fix.
 # ---------------------------------------------------------------------------
 try:
-    from agent_framework.anthropic import AnthropicClient as _AC
+    from agent_framework.anthropic import AnthropicClient as _AnthropicClient
 
-    _orig_prepare = _AC._prepare_options
+    _orig_prepare = _AnthropicClient._prepare_options
 
     def _patched_prepare(self, messages, options, **kwargs):  # type: ignore[override]
         result = _orig_prepare(self, messages, options, **kwargs)
         result.pop("store", None)
         return result
 
-    _AC._prepare_options = _patched_prepare  # type: ignore[assignment]
+    _AnthropicClient._prepare_options = _patched_prepare  # type: ignore[assignment]
 except (ImportError, ModuleNotFoundError, AttributeError):
     pass  # framework not installed or API changed — nothing to patch
 
@@ -54,6 +56,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # --- Telemetry (before agents, so their traces are captured) ---
     setup_telemetry(app, settings)
+
+    # --- Production safety guards ---
+    if settings.environment != "dev":
+        if not settings.auth_enabled:
+            logger.critical(
+                "auth_enabled is False in '%s' environment — refusing to start",
+                settings.environment,
+            )
+            raise SystemExit(1)
+        if settings.debug:
+            logger.critical(
+                "debug mode is enabled in '%s' environment — refusing to start",
+                settings.environment,
+            )
+            raise SystemExit(1)
+        if "*" in settings.api_cors_origins:
+            logger.critical(
+                "CORS wildcard '*' is not allowed in '%s' environment — refusing to start",
+                settings.environment,
+            )
+            raise SystemExit(1)
+        if any("localhost" in origin for origin in settings.api_cors_origins):
+            logger.warning(
+                "CORS origins contain localhost in '%s' environment: %s",
+                settings.environment,
+                settings.api_cors_origins,
+            )
+    logger.info("CORS origins: %s", settings.api_cors_origins)
 
     # --- Azure AI Search ---
     if settings.azure_search_endpoint:
@@ -112,6 +142,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # --- AI workflow ---
     if settings.azure_openai_endpoint:
+        if not settings.anthropic_api_key:
+            logger.critical(
+                "ANTHROPIC_API_KEY is required when AZURE_OPENAI_ENDPOINT is set"
+                " — refusing to start"
+            )
+            raise SystemExit(1)
         client = create_model_client(settings)
         # Store a factory so each request gets a fresh Workflow instance.
         # agent_framework Workflow is stateful and does not allow concurrent runs.
@@ -147,6 +183,15 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Conversation-ID", "X-User-ID"],
 )
+app.add_middleware(BodySizeLimitMiddleware)
+
+from slowapi import _rate_limit_exceeded_handler  # noqa: E402
+from slowapi.errors import RateLimitExceeded  # noqa: E402
+
+from src.middleware.rate_limit import limiter  # noqa: E402
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 add_error_handlers(app)
 app.include_router(chat_router)
@@ -187,6 +232,35 @@ async def request_logging_middleware(request: Request, call_next: object) -> Res
 
 
 @app.get("/api/v1/health")
-async def health_check() -> dict[str, str]:
-    """Health check endpoint."""
-    return {"status": "healthy"}
+async def health_check(request: Request, deep: bool = False) -> dict:
+    """Health check endpoint.
+
+    Pass ?deep=true to verify connectivity to Cosmos DB and Azure AI Search.
+    """
+    result: dict = {"status": "healthy"}
+    if not deep:
+        return result
+
+    checks: dict[str, str] = {}
+    conversation_service = getattr(app.state, "conversation_service", None)
+    if (
+        conversation_service
+        and hasattr(conversation_service, "_container")
+        and conversation_service._container
+    ):
+        try:
+            await conversation_service._container.read_all_items(max_item_count=1).__anext__()
+            checks["cosmos"] = "ok"
+        except StopAsyncIteration:
+            checks["cosmos"] = "ok"  # empty but reachable
+        except Exception as exc:
+            checks["cosmos"] = f"error: {type(exc).__name__}"
+            result["status"] = "degraded"
+    else:
+        checks["cosmos"] = "not_configured"
+
+    # TODO: expose _search_client from tools.py for a live ping
+    checks["search"] = "not_configured"
+
+    result["checks"] = checks
+    return result

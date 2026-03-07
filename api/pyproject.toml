@@ -26,6 +26,7 @@ dependencies = [
     "httpx",
     "PyJWT[crypto]>=2.8",
     "cryptography>=41.0",
+    "slowapi>=0.1.9",
 ]
 
 [tool.uv]
@@ -40,6 +41,7 @@ dev = [
     "pyright",
     "pre-commit",
     "locust",
+    "pip-audit",
 ]
 
 [tool.ruff]
@@ -53,6 +55,7 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH"]
 markers = [
     "evaluation: marks tests as evaluation tests (deselect with '-m \"not evaluation\"')",
 ]
+addopts = "-m 'not evaluation'"
 
 [tool.pyright]
 typeCheckingMode = "strict"
