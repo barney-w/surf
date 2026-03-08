@@ -15,6 +15,7 @@ from src.models import (
     RoutingMetadata,
     Source,
 )
+from src.models.agent import EnrichedAgentResponse, enrich_agent_response
 
 # ---------------------------------------------------------------------------
 # Source.confidence bounds
@@ -67,7 +68,7 @@ class TestAgentResponseModelUiHint:
             AgentResponseModel(
                 message="hi",
                 confidence="high",
-                ui_hint="invalid_hint",
+                ui_hint="invalid_hint",  # pyright: ignore[reportArgumentType]
             )
 
     def test_accepts_all_valid_ui_hints(self):
@@ -108,7 +109,7 @@ class TestChatResponseRoundTrip:
                 ],
                 confidence="high",
                 ui_hint="card",
-                structured_data={"key": "value"},
+                structured_data='{"key": "value"}',
                 follow_up_suggestions=["Ask about X"],
             ),
             routing=RoutingMetadata(
@@ -121,6 +122,90 @@ class TestChatResponseRoundTrip:
         json_str = original.model_dump_json()
         restored = ChatResponse.model_validate_json(json_str)
         assert restored == original
+
+
+# ---------------------------------------------------------------------------
+# ConversationDocument full serialization
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# AgentResponseModel.parsed_structured_data
+# ---------------------------------------------------------------------------
+
+
+class TestParsedStructuredData:
+    def test_parses_valid_json_string_to_dict(self):
+        model = AgentResponseModel(
+            message="hi",
+            confidence="high",
+            structured_data='{"columns": ["A", "B"], "rows": [["1", "2"]]}',
+        )
+        result = model.parsed_structured_data()
+        assert result == {"columns": ["A", "B"], "rows": [["1", "2"]]}
+
+    def test_returns_none_for_null(self):
+        model = AgentResponseModel(message="hi", confidence="high", structured_data=None)
+        assert model.parsed_structured_data() is None
+
+    def test_returns_none_for_non_dict_json(self):
+        model = AgentResponseModel(message="hi", confidence="high", structured_data='["a", "b"]')
+        assert model.parsed_structured_data() is None
+
+    def test_returns_none_for_invalid_json(self):
+        model = AgentResponseModel(message="hi", confidence="high", structured_data="not json")
+        assert model.parsed_structured_data() is None
+
+    def test_returns_none_for_empty_string(self):
+        model = AgentResponseModel(message="hi", confidence="high", structured_data="")
+        assert model.parsed_structured_data() is None
+
+
+# ---------------------------------------------------------------------------
+# enrich_agent_response structured_data handling
+# ---------------------------------------------------------------------------
+
+
+class TestEnrichStructuredData:
+    def test_enriched_response_has_parsed_structured_data(self):
+        model = AgentResponseModel(
+            message="Three levels",
+            confidence="high",
+            ui_hint="table",
+            structured_data='{"columns": ["Level"], "rows": [["Official"]]}',
+        )
+        enriched = enrich_agent_response(model)
+        assert isinstance(enriched, EnrichedAgentResponse)
+        assert enriched.structured_data == {"columns": ["Level"], "rows": [["Official"]]}
+        assert enriched.ui_hint == "table"
+
+    def test_enriched_response_null_structured_data(self):
+        model = AgentResponseModel(message="hi", confidence="high")
+        enriched = enrich_agent_response(model)
+        assert enriched.structured_data is None
+
+    def test_enriched_response_invalid_structured_data_becomes_none(self):
+        model = AgentResponseModel(
+            message="hi",
+            confidence="high",
+            ui_hint="table",
+            structured_data="not json at all",
+        )
+        enriched = enrich_agent_response(model)
+        assert enriched.structured_data is None
+
+    def test_enriched_response_serializes_structured_data_as_dict(self):
+        """Verify the JSON sent to clients has structured_data as an object, not a string."""
+        model = AgentResponseModel(
+            message="answer",
+            confidence="high",
+            ui_hint="table",
+            structured_data='{"columns": ["A"], "rows": [["1"]]}',
+        )
+        enriched = enrich_agent_response(model)
+        dumped = enriched.model_dump(mode="json")
+        assert isinstance(dumped["structured_data"], dict)
+        assert dumped["structured_data"]["columns"] == ["A"]
 
 
 # ---------------------------------------------------------------------------

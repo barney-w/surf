@@ -1,4 +1,5 @@
-from typing import Literal
+import json
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,11 +27,23 @@ class AgentResponseModel(BaseModel):
     sources: list[Source] = []
     confidence: Literal["high", "medium", "low"]
     ui_hint: Literal["text", "table", "card", "list", "steps", "warning"] = "text"
-    # structured_data uses str values only — dict[str, Any] is banned by strict
-    # response_format schema requirements (gpt-5.1+). Use str-typed values and
-    # deserialise on the client side if richer types are needed.
-    structured_data: dict[str, str] | None = None
+    # structured_data is a JSON-encoded string (not a dict) because the
+    # Anthropic structured-output API forbids additionalProperties on objects.
+    # Agents emit a JSON object as a string; the client deserialises it.
+    structured_data: str | None = None
     follow_up_suggestions: list[str] = []
+
+    def parsed_structured_data(self) -> dict[str, Any] | None:
+        """Parse structured_data from JSON string to dict, or return None."""
+        if self.structured_data is None:
+            return None
+        try:
+            parsed: object = json.loads(self.structured_data)
+            if isinstance(parsed, dict):
+                return cast("dict[str, Any]", parsed)
+            return None
+        except (json.JSONDecodeError, TypeError):
+            return None
 
 
 class RoutingMetadata(BaseModel):
@@ -71,7 +84,7 @@ class EnrichedAgentResponse(BaseModel):
     confidence: ConfidenceBreakdown
     verification: VerificationResult
     ui_hint: Literal["text", "table", "card", "list", "steps", "warning"] = "text"
-    structured_data: dict[str, str] | None = None
+    structured_data: dict[str, Any] | None = None
     follow_up_suggestions: list[str] = []
 
 
@@ -158,6 +171,6 @@ def enrich_agent_response(model: AgentResponseModel) -> EnrichedAgentResponse:
         confidence=confidence_breakdown,
         verification=verification,
         ui_hint=model.ui_hint,
-        structured_data=model.structured_data,
+        structured_data=model.parsed_structured_data(),
         follow_up_suggestions=model.follow_up_suggestions,
     )

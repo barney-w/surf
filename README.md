@@ -3,9 +3,9 @@
 
 # surf
 
-**Multi-agent AI platform for enterprise knowledge**
+**The open framework for extensible & grounded AI agent orchestration.**
 
-_FastAPI + Anthropic Claude + Azure RAG orchestration_
+_FastAPI · Anthropic Claude · Azure RAG · Cosmos DB_
 
 [![CI](https://img.shields.io/github/actions/workflow/status/barney-w/surf/pr-checks.yml?branch=main&label=CI)](https://github.com/barney-w/surf/actions)
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -80,7 +80,7 @@ curl -X POST http://localhost:8090/api/v1/chat \
   <img src="docs/architecture.svg" alt="Surf Architecture Overview" width="1100" />
 </div>
 
-<details>
+<details open>
 <summary><strong>Text-based diagram (Mermaid)</strong></summary>
 
 ```mermaid
@@ -88,10 +88,8 @@ graph TD
   client["surf-kit (React)<br/>useAgentChat"]
   api["API (FastAPI)"]
   coordinator["Coordinator Agent"]
-  search_hr["HR Search Agent"]
-  search_it["IT Search Agent"]
-  synth_hr["HR Synthesize Agent"]
-  synth_it["IT Synthesize Agent"]
+  hr_agent["HR Agent<br/>RAG tool + structured JSON"]
+  it_agent["IT Agent<br/>RAG tool + structured JSON"]
   aisearch["Azure AI Search<br/>BM25 + Vector"]
   anthropic["Anthropic<br/>claude-sonnet-4-6"]
   cosmos["Cosmos DB<br/>Conversations"]
@@ -100,14 +98,12 @@ graph TD
 
   client -->|SSE| api
   api --> coordinator
-  coordinator -->|handoff| search_hr
-  coordinator -->|handoff| search_it
-  search_hr --> aisearch
-  search_it --> aisearch
-  search_hr -->|handoff| synth_hr
-  search_it -->|handoff| synth_it
-  synth_hr --> anthropic
-  synth_it --> anthropic
+  coordinator -->|handoff| hr_agent
+  coordinator -->|handoff| it_agent
+  hr_agent --> aisearch
+  it_agent --> aisearch
+  hr_agent --> anthropic
+  it_agent --> anthropic
   coordinator --> anthropic
   api --> cosmos
   api --> keyvault
@@ -137,7 +133,7 @@ graph TD
 | **HR Agent**    | Leave entitlements, onboarding, performance, policies, L&D                 | `hr`           | Structured JSON (`AgentResponseModel`) |
 | **IT Agent**    | VPN, passwords, software, hardware, email/Teams, security                  | `it`           | Structured JSON (`AgentResponseModel`) |
 
-Each domain agent splits into a Search agent (calls RAG tool) and a Synthesize agent (structured output). New agents are added by subclassing `DomainAgent` -- auto-registered via `__init_subclass__`.
+Each domain agent has a RAG tool and structured JSON output. New agents are added by subclassing `DomainAgent` -- auto-registered via `__init_subclass__`.
 
 ---
 
@@ -208,13 +204,12 @@ Three environments: `dev.bicepparam`, `staging.bicepparam`, `prod.bicepparam`
 
 ## CI/CD
 
-| Workflow | Trigger | Purpose |
-|---|---|---|
-| **API CI/CD** | Push to `main` (`api/**`) | Lint, test, build and push API container |
+| Workflow            | Trigger                         | Purpose                                        |
+| ------------------- | ------------------------------- | ---------------------------------------------- |
+| **API CI/CD**       | Push to `main` (`api/**`)       | Lint, test, build and push API container       |
 | **Ingestion CI/CD** | Push to `main` (`ingestion/**`) | Lint, test, build and push ingestion container |
-| **Infra Deploy** | Push to `main` (`infra/**`) | Deploy Bicep modules to Azure |
-| **PR Checks** | Pull request to `main` | Lint + test gate for all PRs |
-| **Evaluation** | Daily cron + manual | Automated answer-quality checks |
+| **Infra Deploy**    | Push to `main` (`infra/**`)     | Deploy Bicep modules to Azure                  |
+| **PR Checks**       | Pull request to `main`          | Lint + test gate for all PRs                   |
 
 Each workflow uses path filters so only relevant pipelines run per commit.
 

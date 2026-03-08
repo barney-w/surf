@@ -88,19 +88,49 @@ def _parse_source_block(block_body: str) -> Source | None:
         return None
 
 
+def _normalise_structured_data(model: AgentResponseModel) -> AgentResponseModel:
+    """Ensure structured_data is None when empty and ui_hint is consistent.
+
+    LLMs sometimes emit structured_data as "" or "{}" instead of null, or set
+    ui_hint to a non-"text" value without providing any structured_data.  This
+    normalises both fields so the frontend never renders an empty card.
+    """
+    sd = model.structured_data
+    ui = model.ui_hint
+    updates: dict[str, str | None] = {}
+
+    # Normalise empty structured_data to None.
+    if sd is not None:
+        stripped = sd.strip()
+        if stripped in ("", "{}", "null", "None"):
+            updates["structured_data"] = None
+            sd = None
+
+    # If structured_data is None, ui_hint must be "text".
+    if sd is None and ui != "text":
+        updates["ui_hint"] = "text"
+
+    # If ui_hint is "text" but structured_data is present, clear it.
+    if ui == "text" and sd is not None:
+        updates["structured_data"] = None
+
+    return model.model_copy(update=updates) if updates else model
+
+
 def _sanitize_agent_response(model: AgentResponseModel) -> AgentResponseModel:
     """Remove any leaked === SOURCE === blocks from the message field.
 
     If the message contains source blocks AND the sources list is empty, the
     blocks are parsed into Source objects so the UI can render them as cards.
+    Also normalises structured_data / ui_hint consistency.
     """
     if "=== SOURCE" not in model.message:
         # Still deduplicate sources even when the message is clean.
         if model.sources:
             deduped = _deduplicate_sources(model.sources)
             if len(deduped) != len(model.sources):
-                return model.model_copy(update={"sources": deduped})
-        return model
+                model = model.model_copy(update={"sources": deduped})
+        return _normalise_structured_data(model)
 
     recovered_sources: list[Source] = []
     for m in _SOURCE_BLOCK_RE.finditer(model.message):
@@ -124,7 +154,44 @@ def _sanitize_agent_response(model: AgentResponseModel) -> AgentResponseModel:
 
     new_sources = _deduplicate_sources(model.sources if model.sources else recovered_sources)
 
-    return model.model_copy(update={"message": clean_message, "sources": new_sources})
+    result = model.model_copy(update={"message": clean_message, "sources": new_sources})
+    return _normalise_structured_data(result)
+
+
+def _extract_json_object(text: str) -> str | None:
+    """Find the first top-level JSON object in text using bracket matching.
+
+    LLMs sometimes emit free text before or after the JSON object.
+    This robustly extracts the outermost { ... } block.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            if in_string:
+                escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
 
 
 def parse_agent_output(raw_text: str, agent_name: str) -> AgentResponseModel:
@@ -134,38 +201,42 @@ def parse_agent_output(raw_text: str, agent_name: str) -> AgentResponseModel:
     may emit this as a text event rather than a typed value event, so we attempt
     to parse the raw text as an AgentResponseModel before falling back to
     treating it as plain prose.
+
+    Handles common LLM quirks: free text before/after JSON, markdown fenced
+    blocks, and JSON not starting at the beginning of a line.
     """
     stripped = raw_text.strip()
 
-    # Try JSON parse — handles both clean JSON and ```json ... ``` fenced blocks
+    # Strip markdown fences if present.
     json_candidate = stripped
     if stripped.startswith("```"):
         lines = stripped.splitlines()
-        # Strip opening fence (```json or ```) and closing fence
         inner = lines[1:-1] if len(lines) > 2 else lines[1:]
         json_candidate = "\n".join(inner).strip()
 
-    # Fast path: buffer starts with JSON object (single-agent case).
+    # Fast path: buffer is a clean JSON object.
     if json_candidate.startswith("{"):
         try:
             data = json.loads(json_candidate)
             return _sanitize_agent_response(AgentResponseModel.model_validate(data))
         except (json.JSONDecodeError, ValidationError):
-            logger.debug("parse_agent_output: JSON parse failed for agent=%s", agent_name)
+            logger.debug("parse_agent_output: direct JSON parse failed for agent=%s", agent_name)
 
-    # Slow path: in the two-phase flow the buffer may start with the search-agent's
-    # echoed text followed by the synthesise agent's JSON.  Find the LAST '{' that
-    # begins a top-level JSON object and try to parse from there.
-    last_brace = json_candidate.rfind("\n{")
-    if last_brace != -1:
-        candidate = json_candidate[last_brace:].lstrip()
+    # Robust path: find the JSON object anywhere in the text.
+    # LLMs often emit commentary before the JSON block.
+    json_str = _extract_json_object(json_candidate)
+    if json_str:
         try:
-            data = json.loads(candidate)
+            data = json.loads(json_str)
             return _sanitize_agent_response(AgentResponseModel.model_validate(data))
         except (json.JSONDecodeError, ValidationError):
-            logger.debug("parse_agent_output: late-JSON parse failed for agent=%s", agent_name)
+            logger.debug("parse_agent_output: extracted JSON parse failed for agent=%s", agent_name)
 
     # Plain-text fallback
+    logger.warning(
+        "parse_agent_output: no valid JSON found for agent=%s, using plain-text fallback",
+        agent_name,
+    )
     return _sanitize_agent_response(
         AgentResponseModel(
             message=raw_text,

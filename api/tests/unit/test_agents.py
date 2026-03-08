@@ -104,3 +104,56 @@ class TestInitSubclassRegistration:
                 return RAGScope(domain="test")
 
         assert AgentRegistry.get("test_agent") is TestAgent
+
+
+class TestSafeHandoffAnthropicClient:
+    """Verify the client subclass fixes conversations ending with assistant messages."""
+
+    def test_appends_user_message_when_conversation_ends_with_assistant(self):
+        from agent_framework import Message
+
+        from src.orchestrator.builder import (
+            _SafeHandoffAnthropicClient,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        client = _SafeHandoffAnthropicClient(api_key="test-key", model_id="test-model")
+        messages = [
+            Message(role="user", text="What is the leave policy?"),
+            Message(role="assistant", text="Let me route this to the HR specialist."),
+        ]
+        prepared = client._prepare_messages_for_anthropic(messages)  # pyright: ignore[reportPrivateUsage]
+        assert prepared[-1]["role"] == "user"
+        assert len(prepared) == 3
+
+    def test_no_change_when_conversation_ends_with_user(self):
+        from agent_framework import Message
+
+        from src.orchestrator.builder import (
+            _SafeHandoffAnthropicClient,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        client = _SafeHandoffAnthropicClient(api_key="test-key", model_id="test-model")
+        messages = [
+            Message(role="user", text="What is the leave policy?"),
+        ]
+        prepared = client._prepare_messages_for_anthropic(messages)  # pyright: ignore[reportPrivateUsage]
+        assert prepared[-1]["role"] == "user"
+        assert len(prepared) == 1
+
+    def test_handles_system_then_assistant(self):
+        from agent_framework import Message
+
+        from src.orchestrator.builder import (
+            _SafeHandoffAnthropicClient,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        client = _SafeHandoffAnthropicClient(api_key="test-key", model_id="test-model")
+        messages = [
+            Message(role="system", text="You are a helpful assistant."),
+            Message(role="user", text="Hello"),
+            Message(role="assistant", text="I'll check that for you."),
+        ]
+        prepared = client._prepare_messages_for_anthropic(messages)  # pyright: ignore[reportPrivateUsage]
+        # System message is stripped (handled as separate param by Anthropic)
+        assert prepared[0]["role"] == "user"
+        assert prepared[-1]["role"] == "user"

@@ -23,12 +23,10 @@ from src.middleware.rate_limit import limiter
 from src.models.agent import (
     AgentResponseModel,
     RoutingMetadata,
-    Source,
     enrich_agent_response,
 )
 from src.models.chat import ChatRequest, ChatResponse
 from src.models.conversation import FeedbackRecord, MessageRecord
-from src.orchestrator.builder import SYNTHESIZE_SUFFIX
 from src.orchestrator.history import current_conversation_id, current_user_id
 from src.rag.tools import rag_results_collector
 
@@ -479,7 +477,6 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         structured_result: AgentResponseModel | None = None
         response_text = ""
         domain_agent_json_buf = ""  # accumulates raw JSON for domain agents
-        recovered_sources: list[Source] = []
         extractor = _MessageFieldExtractor()
         generating_announced = False
         message_id = str(uuid.uuid4())
@@ -575,25 +572,10 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                 if event.type == "handoff_sent":
                     routed_agent = event.data.target
                     logger.debug("handoff_sent: target=%s", routed_agent)
-                    # Only announce the first handoff (coordinator → domain search agent).
-                    # The internal handoff (search → synthesize) is an implementation detail;
-                    # suppressing it keeps the SSE stream clean for clients.
-                    if not routed_agent.endswith(SYNTHESIZE_SUFFIX):
-                        yield _sse({"type": "agent", "agent": routed_agent})
-                        yield _sse({"type": "phase", "phase": "generating"})
-                        generating_announced = True
-                        heartbeat_count = 0  # reset so we don't re-emit "waiting" mid-generation
-                    else:
-                        # Search → synthesize handoff: extract sources from the search-agent
-                        # echo text before discarding it, reset for the synthesise agent's JSON.
-                        logger.debug(
-                            "internal handoff → %s: resetting buf (was %d chars)",
-                            routed_agent,
-                            len(domain_agent_json_buf),
-                        )
-                        recovered_sources = extract_sources(domain_agent_json_buf)
-                        domain_agent_json_buf = ""
-                        extractor = _MessageFieldExtractor()  # fresh extractor for JSON stream
+                    yield _sse({"type": "agent", "agent": routed_agent})
+                    yield _sse({"type": "phase", "phase": "generating"})
+                    generating_announced = True
+                    heartbeat_count = 0  # reset so we don't re-emit "waiting" mid-generation
 
                 elif event.type == "output":
                     data = event.data
@@ -680,13 +662,15 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         )
 
         # Build the AgentResponseModel from whatever the workflow produced.
+        # Domain agent JSON buffer takes priority over coordinator plain text —
+        # when a handoff occurs, response_text holds the coordinator's routing
+        # message while domain_agent_json_buf holds the actual answer.
         if structured_result is not None:
             agent_response = structured_result
+        elif domain_agent_json_buf:
+            agent_response = parse_agent_output(domain_agent_json_buf, routed_agent)
         elif response_text:
             agent_response = parse_agent_output(response_text, routed_agent)
-        elif domain_agent_json_buf:
-            # Streaming delivered JSON chunks but no final output event — parse the buffer.
-            agent_response = parse_agent_output(domain_agent_json_buf, routed_agent)
         else:
             # Workflow completed but produced no output — shouldn't normally happen.
             agent_response = AgentResponseModel(
@@ -699,12 +683,9 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             )
 
         # Inject recovered sources if the agent didn't populate them.
-        # Try handoff-captured sources first, then fall back to RAG tool output.
-        if not agent_response.sources:
-            if not recovered_sources and rag_collector:
-                rag_text = "\n\n".join(rag_collector)
-                recovered_sources = extract_sources(rag_text)
-            recovered_sources = _deduplicate_sources(recovered_sources)
+        if not agent_response.sources and rag_collector:
+            rag_text = "\n\n".join(rag_collector)
+            recovered_sources = _deduplicate_sources(extract_sources(rag_text))
             if recovered_sources:
                 agent_response = agent_response.model_copy(update={"sources": recovered_sources})
                 logger.info("injected %d recovered sources into response", len(recovered_sources))

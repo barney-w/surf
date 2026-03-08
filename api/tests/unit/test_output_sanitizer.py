@@ -1,10 +1,17 @@
 """Tests for _output.py sanitization and _MessageFieldExtractor pollution guard."""
 
 import json
+from typing import Any
 
 import pytest
 
-from src.agents._output import _sanitize_agent_response, extract_sources, parse_agent_output
+from src.agents._output import (
+    _extract_json_object,  # pyright: ignore[reportPrivateUsage]
+    _normalise_structured_data,  # pyright: ignore[reportPrivateUsage]
+    _sanitize_agent_response,  # pyright: ignore[reportPrivateUsage]
+    extract_sources,
+    parse_agent_output,
+)
 from src.models.agent import AgentResponseModel, Source
 
 # ---------------------------------------------------------------------------
@@ -93,13 +100,157 @@ class TestSanitizeAgentResponse:
 
 
 # ---------------------------------------------------------------------------
+# _normalise_structured_data
+# ---------------------------------------------------------------------------
+
+
+class TestNormaliseStructuredData:
+    def _model(self, **overrides: Any) -> AgentResponseModel:
+        defaults: dict[str, Any] = {"message": "Answer text.", "sources": [], "confidence": "high"}
+        defaults.update(overrides)
+        return AgentResponseModel(**defaults)
+
+    def test_none_structured_data_unchanged(self):
+        m = self._model(structured_data=None, ui_hint="text")
+        result = _normalise_structured_data(m)
+        assert result.structured_data is None
+        assert result.ui_hint == "text"
+
+    def test_empty_string_normalised_to_none(self):
+        m = self._model(structured_data="", ui_hint="card")
+        result = _normalise_structured_data(m)
+        assert result.structured_data is None
+        assert result.ui_hint == "text"
+
+    def test_empty_object_normalised_to_none(self):
+        m = self._model(structured_data="{}", ui_hint="table")
+        result = _normalise_structured_data(m)
+        assert result.structured_data is None
+        assert result.ui_hint == "text"
+
+    def test_null_string_normalised_to_none(self):
+        m = self._model(structured_data="null", ui_hint="list")
+        result = _normalise_structured_data(m)
+        assert result.structured_data is None
+        assert result.ui_hint == "text"
+
+    def test_ui_hint_without_structured_data_reset_to_text(self):
+        m = self._model(structured_data=None, ui_hint="steps")
+        result = _normalise_structured_data(m)
+        assert result.structured_data is None
+        assert result.ui_hint == "text"
+
+    def test_text_hint_with_structured_data_clears_data(self):
+        m = self._model(structured_data='{"steps": ["Step 1"]}', ui_hint="text")
+        result = _normalise_structured_data(m)
+        assert result.structured_data is None
+        assert result.ui_hint == "text"
+
+    def test_valid_structured_data_preserved(self):
+        sd = '{"steps": ["Step 1", "Step 2"]}'
+        m = self._model(structured_data=sd, ui_hint="steps")
+        result = _normalise_structured_data(m)
+        assert result.structured_data == sd
+        assert result.ui_hint == "steps"
+
+    def test_whitespace_only_normalised_to_none(self):
+        m = self._model(structured_data="  \n  ", ui_hint="card")
+        result = _normalise_structured_data(m)
+        assert result.structured_data is None
+        assert result.ui_hint == "text"
+
+
+# ---------------------------------------------------------------------------
+# parse_agent_output — sanitization applied at all return paths
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# _extract_json_object — robust JSON extraction
+# ---------------------------------------------------------------------------
+
+
+class TestExtractJsonObject:
+    def test_clean_json(self):
+        raw = '{"message": "hello", "confidence": "high"}'
+        assert _extract_json_object(raw) == raw
+
+    def test_free_text_before_json(self):
+        """The exact failure case: agent outputs commentary then JSON on same line."""
+        raw = (
+            'The search results returned irrelevant docs.{"message": "answer", "confidence": "low"}'
+        )
+        result = _extract_json_object(raw)
+        assert result is not None
+        data = json.loads(result)
+        assert data["message"] == "answer"
+
+    def test_free_text_with_newline_before_json(self):
+        raw = 'Some commentary\n{"message": "answer", "confidence": "low"}'
+        result = _extract_json_object(raw)
+        assert result is not None
+        data = json.loads(result)
+        assert data["message"] == "answer"
+
+    def test_nested_braces(self):
+        raw = '{"message": "test", "nested": {"a": 1}}'
+        result = _extract_json_object(raw)
+        assert result == raw
+
+    def test_braces_in_strings(self):
+        raw = '{"message": "use { and } in text", "confidence": "high"}'
+        result = _extract_json_object(raw)
+        assert result == raw
+
+    def test_escaped_quotes_in_strings(self):
+        raw = r'{"message": "she said \"hello\"", "confidence": "high"}'
+        result = _extract_json_object(raw)
+        assert result == raw
+
+    def test_no_json(self):
+        assert _extract_json_object("just plain text") is None
+
+    def test_empty_string(self):
+        assert _extract_json_object("") is None
+
+
+class TestParseAgentOutputFreeText:
+    """Test parse_agent_output when agent emits free text before JSON."""
+
+    def test_free_text_then_json_on_same_line(self):
+        payload: dict[str, Any] = {
+            "message": "The leave policy states 20 days annual leave.",
+            "sources": [],
+            "confidence": "high",
+            "ui_hint": "text",
+            "follow_up_suggestions": [],
+        }
+        raw = "Let me search for that information." + json.dumps(payload)
+        result = parse_agent_output(raw, "hr_agent")
+        assert result.message == "The leave policy states 20 days annual leave."
+        assert result.confidence == "high"
+
+    def test_free_text_then_json_on_new_line(self):
+        payload: dict[str, Any] = {
+            "message": "Annual leave is 20 days per year.",
+            "sources": [],
+            "confidence": "high",
+            "ui_hint": "text",
+            "follow_up_suggestions": [],
+        }
+        raw = "Here are the search results.\n" + json.dumps(payload)
+        result = parse_agent_output(raw, "hr_agent")
+        assert result.message == "Annual leave is 20 days per year."
+
+
+# ---------------------------------------------------------------------------
 # parse_agent_output — sanitization applied at all return paths
 # ---------------------------------------------------------------------------
 
 
 class TestParseAgentOutputSanitization:
     def test_json_fast_path_sanitizes(self):
-        payload = {
+        payload: dict[str, Any] = {
             "message": _source_block(1),
             "sources": [],
             "confidence": "high",
@@ -129,6 +280,34 @@ class TestParseAgentOutputSanitization:
         result = parse_agent_output(json.dumps(payload), "hr_agent")
         assert result.message == "The RDO is agreed between employee and supervisor."
         assert len(result.sources) == 1
+
+    def test_empty_structured_data_normalised(self):
+        """End-to-end: parse_agent_output normalises empty structured_data."""
+        payload: dict[str, Any] = {
+            "message": "Answer.",
+            "sources": [],
+            "confidence": "high",
+            "ui_hint": "card",
+            "structured_data": "",
+            "follow_up_suggestions": [],
+        }
+        result = parse_agent_output(json.dumps(payload), "hr_agent")
+        assert result.structured_data is None
+        assert result.ui_hint == "text"
+
+    def test_valid_structured_data_preserved_end_to_end(self):
+        sd = '{"steps": ["Step 1", "Step 2"]}'
+        payload: dict[str, Any] = {
+            "message": "Here are the steps:",
+            "sources": [],
+            "confidence": "high",
+            "ui_hint": "steps",
+            "structured_data": sd,
+            "follow_up_suggestions": [],
+        }
+        result = parse_agent_output(json.dumps(payload), "hr_agent")
+        assert result.structured_data == sd
+        assert result.ui_hint == "steps"
 
 
 # ---------------------------------------------------------------------------
@@ -174,12 +353,12 @@ class TestExtractSources:
 
 
 class TestMessageFieldExtractorGuard:
-    def _extractor(self):
-        from src.routes.chat import _MessageFieldExtractor
+    def _extractor(self) -> Any:
+        from src.routes.chat import _MessageFieldExtractor  # pyright: ignore[reportPrivateUsage]
 
         return _MessageFieldExtractor()
 
-    def _feed_all(self, extractor, tokens: list[str]) -> str:
+    def _feed_all(self, extractor: Any, tokens: list[str]) -> str:
         return "".join(extractor.feed(t) for t in tokens)
 
     def test_normal_message_streams(self):
