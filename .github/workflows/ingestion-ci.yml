@@ -36,10 +36,10 @@ jobs:
       run:
         working-directory: ${{ env.WORKING_DIR }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f # v4
         with:
           version: "latest"
 
@@ -65,10 +65,10 @@ jobs:
       run:
         working-directory: ${{ env.WORKING_DIR }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f # v4
         with:
           version: "latest"
 
@@ -95,10 +95,10 @@ jobs:
     outputs:
       image-tag: ${{ steps.meta.outputs.image-tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Azure login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@1384c340ab2dda50fed2bee3041d1d87018aa5e8 # v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -123,7 +123,7 @@ jobs:
           docker push "${{ steps.meta.outputs.image-tag }}"
 
       - name: Scan container image with Trivy
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@c1824fd6edce30d7ab345a9989de00bbd46ef284 # v0.34.0
         with:
           image-ref: ${{ steps.meta.outputs.image-tag }}
           format: 'table'
@@ -132,14 +132,14 @@ jobs:
           ignore-unfixed: true
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@17ae1740179002c89186b61233e0f892c3118b11 # v0
         with:
           image: ${{ steps.meta.outputs.image-tag }}
           format: spdx-json
           output-file: sbom.spdx.json
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom-${{ env.IMAGE_NAME }}-${{ github.sha }}
           path: sbom.spdx.json
@@ -156,14 +156,14 @@ jobs:
     environment: dev
     steps:
       - name: Azure login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@1384c340ab2dda50fed2bee3041d1d87018aa5e8 # v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to Container Apps
-        uses: azure/container-apps-deploy-action@v1
+        uses: azure/container-apps-deploy-action@29ee19866ec987ededd70b8412d9ee241a9102d1 # v1
         with:
           containerAppName: ca-${{ env.SERVICE_NAME }}-surf-dev
           resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}

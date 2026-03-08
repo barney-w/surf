@@ -53,6 +53,10 @@ param keyVaultPublicNetworkAccess string = 'Enabled'
 @description('Log Analytics retention in days')
 param logAnalyticsRetentionDays int = 30
 
+@description('Allow public network access to Log Analytics (Enabled only for dev)')
+@allowed(['Enabled', 'Disabled'])
+param logAnalyticsPublicNetworkAccess string = 'Disabled'
+
 @description('ACR SKU')
 param acrSku string = 'Basic'
 
@@ -111,6 +115,8 @@ module logAnalytics 'modules/log-analytics.bicep' = {
     workspaceName: 'log-${baseName}'
     location: location
     retentionInDays: logAnalyticsRetentionDays
+    publicNetworkAccessForIngestion: logAnalyticsPublicNetworkAccess
+    publicNetworkAccessForQuery: logAnalyticsPublicNetworkAccess
     tags: tags
   }
 }
