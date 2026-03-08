@@ -1,10 +1,15 @@
 """PDF connector for extracting text and creating IngestedDocument instances."""
 
+from __future__ import annotations
+
 import hashlib
 import re
-from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-import fitz
+if TYPE_CHECKING:
+    from pathlib import Path
+
+import fitz  # pyright: ignore[reportMissingTypeStubs]
 
 from src.models import DocumentMetadata, IngestedDocument
 
@@ -51,11 +56,11 @@ def extract_text_from_pdf(file_path: Path) -> str:
             # Extract text blocks sorted top-to-bottom, left-to-right.
             # block format: (x0, y0, x1, y1, text, block_no, block_type)
             # block_type 0 = text, 1 = image
-            blocks = page.get_text("blocks")
+            blocks = page.get_text("blocks")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
             text_blocks = [
-                b[4].strip()
-                for b in sorted(blocks, key=lambda b: (b[1], b[0]))
-                if b[6] == 0 and b[4].strip()
+                b[4].strip()  # pyright: ignore[reportUnknownMemberType]
+                for b in sorted(blocks, key=lambda b: (b[1], b[0]))  # pyright: ignore[reportUnknownArgumentType]
+                if b[6] == 0 and b[4].strip()  # pyright: ignore[reportUnnecessaryComparison, reportUnknownMemberType]
             ]
             if text_blocks:
                 pages.append("\n\n".join(text_blocks))
@@ -70,7 +75,7 @@ def _generate_document_id(file_path: Path) -> str:
     return hashlib.sha256(f"pdf:{file_path.name}".encode()).hexdigest()[:16]
 
 
-def create_document_from_pdf(file_path: Path, manifest_entry: dict) -> IngestedDocument:
+def create_document_from_pdf(file_path: Path, manifest_entry: dict[str, Any]) -> IngestedDocument:
     """Create an IngestedDocument from a PDF file and its manifest entry.
 
     Args:

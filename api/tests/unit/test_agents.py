@@ -1,3 +1,5 @@
+from collections.abc import Generator
+
 import pytest
 
 from src.agents._base import DomainAgent, RAGScope
@@ -5,7 +7,7 @@ from src.agents._registry import AgentRegistry
 
 
 @pytest.fixture(autouse=True)
-def _clean_registry():
+def _clean_registry() -> Generator[None, None, None]:  # pyright: ignore[reportUnusedFunction]
     """Clear the registry before and after each test."""
     AgentRegistry.clear()
     yield
@@ -69,7 +71,7 @@ class TestDuplicateRegistration:
         _register_hr_agent()
         with pytest.raises(ValueError, match="Duplicate agent name: hr_agent"):
             AgentRegistry.register(
-                type(
+                type(  # pyright: ignore[reportArgumentType]
                     "FakeHRAgent",
                     (),
                     {

@@ -1,6 +1,7 @@
 """Tests for error handling and graceful degradation across the chat endpoint."""
 
 import asyncio
+from collections.abc import AsyncGenerator
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -18,7 +19,10 @@ from src.services.conversation import ConversationService
 # ---------------------------------------------------------------------------
 
 
-def _make_app(workflow=None, conversation_service=None) -> FastAPI:
+def _make_app(
+    workflow: object = None,
+    conversation_service: ConversationService | None = None,
+) -> FastAPI:
     """Build a minimal FastAPI app with chat routes and error handlers."""
     app = FastAPI()
     add_error_handlers(app)
@@ -27,8 +31,8 @@ def _make_app(workflow=None, conversation_service=None) -> FastAPI:
     settings = Settings()
     if conversation_service is None:
         conversation_service = ConversationService(settings)
-        conversation_service._container = AsyncMock()
-        conversation_service._client = AsyncMock()
+        conversation_service._container = AsyncMock()  # pyright: ignore[reportPrivateUsage]
+        conversation_service._client = AsyncMock()  # pyright: ignore[reportPrivateUsage]
     app.state.workflow = workflow
     app.state.conversation_service = conversation_service
     return app
@@ -38,8 +42,8 @@ def _make_conversation_service() -> ConversationService:
     """Create a ConversationService with mocked Cosmos internals."""
     settings = Settings()
     svc = ConversationService(settings)
-    svc._container = AsyncMock()
-    svc._client = AsyncMock()
+    svc._container = AsyncMock()  # pyright: ignore[reportPrivateUsage]
+    svc._client = AsyncMock()  # pyright: ignore[reportPrivateUsage]
     return svc
 
 
@@ -52,7 +56,9 @@ class TestLLMTimeout:
     def test_llm_timeout_returns_504_structured_error(self):
         """When the workflow exceeds 30s the endpoint must return a 504 with type=llm_timeout."""
 
-        async def _slow_run(msg, *, stream=False, **kwargs):
+        async def _slow_run(
+            msg: str, *, stream: bool = False, **kwargs: object
+        ) -> AsyncGenerator[object, None]:
             await asyncio.sleep(LLM_TIMEOUT_SECONDS + 5)
             yield  # pragma: no cover – should never reach here
 
@@ -86,7 +92,9 @@ class TestRAGFailure:
         """If the workflow raises a generic error (e.g. RAG failure), the
         response must have confidence='low' and mention unavailable sources."""
 
-        async def _failing_run(msg, *, stream=False, **kwargs):
+        async def _failing_run(
+            msg: str, *, stream: bool = False, **kwargs: object
+        ) -> AsyncGenerator[object, None]:
             # Must be an async generator that raises
             if False:
                 yield  # pragma: no cover — makes this an async generator
@@ -117,7 +125,9 @@ class TestCosmosUnavailability:
         """When Cosmos throws, the chat endpoint should still work
         and return a warning header instead of crashing."""
 
-        async def _ok_run(msg, *, stream=False, **kwargs):
+        async def _ok_run(
+            msg: str, *, stream: bool = False, **kwargs: object
+        ) -> AsyncGenerator[object, None]:
             yield SimpleNamespace(
                 type="output",
                 data=SimpleNamespace(text="All good!", value=None),
@@ -128,9 +138,17 @@ class TestCosmosUnavailability:
 
         # Make every Cosmos call explode
         svc = _make_conversation_service()
-        svc._container.create_item = AsyncMock(side_effect=Exception("Cosmos down"))
-        svc._container.read_item = AsyncMock(side_effect=Exception("Cosmos down"))
-        svc._container.patch_item = AsyncMock(side_effect=Exception("Cosmos down"))
+        cosmos_err = Exception("Cosmos down")
+        container = svc._container  # pyright: ignore[reportPrivateUsage]
+        container.create_item = AsyncMock(  # type: ignore[union-attr]
+            side_effect=cosmos_err,
+        )
+        container.read_item = AsyncMock(  # type: ignore[union-attr]
+            side_effect=cosmos_err,
+        )
+        container.patch_item = AsyncMock(  # type: ignore[union-attr]
+            side_effect=cosmos_err,
+        )
 
         app = _make_app(workflow=lambda: workflow_obj, conversation_service=svc)
         client = TestClient(app)

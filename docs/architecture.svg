@@ -13,8 +13,8 @@
       <feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.08"/>
     </filter>
     <linearGradient id="grad-header" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#1a1a2e"/>
-      <stop offset="100%" stop-color="#16213e"/>
+      <stop offset="0%" stop-color="#243e83"/>
+      <stop offset="100%" stop-color="#5b3865"/>
     </linearGradient>
     <linearGradient id="grad-clients" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#E0F2F1"/>

@@ -9,7 +9,7 @@ from azure.search.documents.aio import SearchClient
 from pydantic import Field
 
 from src.agents._base import RAGScope
-from src.rag.search import SearchIndexNotFoundError, search_index
+from src.rag.search import SearchIndexNotFoundError, SearchResult, search_index
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ _search_client: SearchClient | None = None
 rag_results_collector: ContextVar[list[str]] = ContextVar("rag_results")
 
 
-def _stitch_adjacent_chunks(results: list) -> list:
+def stitch_adjacent_chunks(results: list[SearchResult]) -> list[SearchResult]:
     """Merge consecutive chunks from the same document into a single result.
 
     When hybrid search returns chunk N and chunk N+1 from the same document,
@@ -32,16 +32,16 @@ def _stitch_adjacent_chunks(results: list) -> list:
     if not results:
         return results
 
-    by_doc: dict[str, list] = {}
+    by_doc: dict[str, list[SearchResult]] = {}
     for r in results:
         by_doc.setdefault(r.document_id, []).append(r)
 
-    stitched = []
+    stitched: list[SearchResult] = []
     for chunks in by_doc.values():
         chunks.sort(key=lambda c: c.chunk_index)
 
         # Walk through sorted chunks, merging consecutive runs.
-        groups: list[list] = []
+        groups: list[list[SearchResult]] = []
         current_group = [chunks[0]]
         for chunk in chunks[1:]:
             if chunk.chunk_index == current_group[-1].chunk_index + 1:
@@ -55,8 +55,6 @@ def _stitch_adjacent_chunks(results: list) -> list:
             if len(group) == 1:
                 stitched.append(group[0])
             else:
-                from src.rag.search import SearchResult
-
                 merged = SearchResult(
                     document_id=group[0].document_id,
                     title=group[0].title,
@@ -151,13 +149,13 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
         if not results:
             return "No relevant documents found for this query."
 
-        results = _stitch_adjacent_chunks(results)
+        results = stitch_adjacent_chunks(results)
 
         # Normalise scores within the result set so the top result is always 1.0.
         # This is robust to both keyword (BM25, scores ~0-10) and hybrid search
         # (RRF, scores ~0.001-0.1) which have different absolute scales.
         max_score = max(r.score for r in results) or 1.0
-        formatted = []
+        formatted: list[str] = []
         for i, r in enumerate(results, 1):
             relevance = round(r.score / max_score, 2)
             section_line = (

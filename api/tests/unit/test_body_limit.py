@@ -12,8 +12,10 @@ def make_app() -> FastAPI:
     app.add_middleware(BodySizeLimitMiddleware)
 
     @app.post("/test")
-    async def test_endpoint():
+    async def test_endpoint() -> dict[str, bool]:
         return {"ok": True}
+
+    _ = test_endpoint  # registered by decorator
 
     return app
 

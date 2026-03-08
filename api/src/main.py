@@ -1,6 +1,6 @@
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from azure.identity import DefaultAzureCredential as SyncDefaultAzureCredential
@@ -35,14 +35,19 @@ logger = logging.getLogger(__name__)
 try:
     from agent_framework.anthropic import AnthropicClient as _AnthropicClient
 
-    _orig_prepare = _AnthropicClient._prepare_options
+    _orig_prepare = _AnthropicClient._prepare_options  # pyright: ignore[reportPrivateUsage]
 
-    def _patched_prepare(self, messages, options, **kwargs):  # type: ignore[override]
-        result = _orig_prepare(self, messages, options, **kwargs)
-        result.pop("store", None)
-        return result
+    def _patched_prepare(  # type: ignore[override]
+        self: object,
+        messages: object,
+        options: object,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        result = _orig_prepare(self, messages, options, **kwargs)  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType,reportArgumentType]
+        result.pop("store", None)  # pyright: ignore[reportUnknownMemberType]
+        return result  # pyright: ignore[reportReturnType]
 
-    _AnthropicClient._prepare_options = _patched_prepare  # type: ignore[assignment]
+    _AnthropicClient._prepare_options = _patched_prepare  # type: ignore[assignment]  # pyright: ignore[reportPrivateUsage]
 except (ImportError, ModuleNotFoundError, AttributeError):
     pass  # framework not installed or API changed — nothing to patch
 
@@ -188,7 +193,7 @@ from slowapi.errors import RateLimitExceeded  # noqa: E402
 from src.middleware.rate_limit import limiter  # noqa: E402
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # pyright: ignore[reportArgumentType]
 
 add_error_handlers(app)
 app.include_router(chat_router)
@@ -200,7 +205,10 @@ app.include_router(chat_router)
 
 
 @app.middleware("http")
-async def request_logging_middleware(request: Request, call_next: object) -> Response:
+async def request_logging_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
     """Log every request/response with timing and contextual IDs."""
     start = time.perf_counter()
 
@@ -213,7 +221,7 @@ async def request_logging_middleware(request: Request, call_next: object) -> Res
 
     logger.info("Request started: %s %s", request.method, request.url.path)
 
-    response: Response = await call_next(request)  # type: ignore[call-arg]
+    response: Response = await call_next(request)
 
     duration_ms = (time.perf_counter() - start) * 1000
     logger.info(
@@ -229,13 +237,13 @@ async def request_logging_middleware(request: Request, call_next: object) -> Res
 
 
 @app.get("/api/v1/health")
-async def health_check(request: Request, deep: bool = False) -> dict:
+async def health_check(request: Request, deep: bool = False) -> dict[str, object]:
     """Health check endpoint.
 
     Pass ?deep=true to verify connectivity to Cosmos DB and Azure AI Search.
     Deep checks require authentication.
     """
-    result: dict = {"status": "healthy"}
+    result: dict[str, object] = {"status": "healthy"}
     if not deep:
         return result
 

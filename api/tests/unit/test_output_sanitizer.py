@@ -6,11 +6,11 @@ from typing import Any
 import pytest
 
 from src.agents._output import (
-    _extract_json_object,  # pyright: ignore[reportPrivateUsage]
-    _normalise_structured_data,  # pyright: ignore[reportPrivateUsage]
-    _sanitize_agent_response,  # pyright: ignore[reportPrivateUsage]
+    extract_json_object,
     extract_sources,
+    normalise_structured_data,
     parse_agent_output,
+    sanitize_agent_response,
 )
 from src.models.agent import AgentResponseModel, Source
 
@@ -34,7 +34,7 @@ def _source_block(n: int = 1) -> str:
 
 
 # ---------------------------------------------------------------------------
-# _sanitize_agent_response
+# sanitize_agent_response
 # ---------------------------------------------------------------------------
 
 
@@ -48,31 +48,31 @@ class TestSanitizeAgentResponse:
             sources=[],
             confidence="high",
         )
-        result = _sanitize_agent_response(model)
+        result = sanitize_agent_response(model)
         assert result.message == model.message
         assert result.sources == []
 
     def test_strips_source_block_from_message(self):
         dirty_message = _source_block(1)
         model = AgentResponseModel(message=dirty_message, sources=[], confidence="high")
-        result = _sanitize_agent_response(model)
+        result = sanitize_agent_response(model)
         assert "=== SOURCE" not in result.message
         assert "=== END SOURCE" not in result.message
 
     def test_recovers_source_from_stripped_block(self):
         dirty_message = _source_block(1)
         model = AgentResponseModel(message=dirty_message, sources=[], confidence="high")
-        result = _sanitize_agent_response(model)
+        result = sanitize_agent_response(model)
         assert len(result.sources) == 1
         src = result.sources[0]
         assert src.document_id == "abc1"
         assert src.title == "Enterprise Agreement 2024"
-        assert src.confidence == pytest.approx(0.95)
+        assert src.confidence == pytest.approx(0.95)  # pyright: ignore[reportUnknownMemberType]
 
     def test_recovers_multiple_sources(self):
         dirty = _source_block(1) + "\n\n" + _source_block(2)
         model = AgentResponseModel(message=dirty, sources=[], confidence="high")
-        result = _sanitize_agent_response(model)
+        result = sanitize_agent_response(model)
         assert len(result.sources) == 2
         assert {s.document_id for s in result.sources} == {"abc1", "abc2"}
 
@@ -80,27 +80,27 @@ class TestSanitizeAgentResponse:
         existing = Source(title="Existing", document_id="existing1", confidence=0.8)
         dirty = _source_block(1)
         model = AgentResponseModel(message=dirty, sources=[existing], confidence="high")
-        result = _sanitize_agent_response(model)
+        result = sanitize_agent_response(model)
         # Existing sources not replaced by recovered ones
         assert len(result.sources) == 1
         assert result.sources[0].document_id == "existing1"
 
     def test_fallback_message_when_only_source_blocks(self):
         model = AgentResponseModel(message=_source_block(1), sources=[], confidence="high")
-        result = _sanitize_agent_response(model)
+        result = sanitize_agent_response(model)
         assert result.message  # not empty
         assert "=== SOURCE" not in result.message
 
     def test_prose_before_source_block_preserved(self):
         msg = "Here is the information you need.\n\n" + _source_block(1)
         model = AgentResponseModel(message=msg, sources=[], confidence="high")
-        result = _sanitize_agent_response(model)
+        result = sanitize_agent_response(model)
         assert "Here is the information you need." in result.message
         assert "=== SOURCE" not in result.message
 
 
 # ---------------------------------------------------------------------------
-# _normalise_structured_data
+# normalise_structured_data
 # ---------------------------------------------------------------------------
 
 
@@ -112,50 +112,50 @@ class TestNormaliseStructuredData:
 
     def test_none_structured_data_unchanged(self):
         m = self._model(structured_data=None, ui_hint="text")
-        result = _normalise_structured_data(m)
+        result = normalise_structured_data(m)
         assert result.structured_data is None
         assert result.ui_hint == "text"
 
     def test_empty_string_normalised_to_none(self):
         m = self._model(structured_data="", ui_hint="card")
-        result = _normalise_structured_data(m)
+        result = normalise_structured_data(m)
         assert result.structured_data is None
         assert result.ui_hint == "text"
 
     def test_empty_object_normalised_to_none(self):
         m = self._model(structured_data="{}", ui_hint="table")
-        result = _normalise_structured_data(m)
+        result = normalise_structured_data(m)
         assert result.structured_data is None
         assert result.ui_hint == "text"
 
     def test_null_string_normalised_to_none(self):
         m = self._model(structured_data="null", ui_hint="list")
-        result = _normalise_structured_data(m)
+        result = normalise_structured_data(m)
         assert result.structured_data is None
         assert result.ui_hint == "text"
 
     def test_ui_hint_without_structured_data_reset_to_text(self):
         m = self._model(structured_data=None, ui_hint="steps")
-        result = _normalise_structured_data(m)
+        result = normalise_structured_data(m)
         assert result.structured_data is None
         assert result.ui_hint == "text"
 
     def test_text_hint_with_structured_data_clears_data(self):
         m = self._model(structured_data='{"steps": ["Step 1"]}', ui_hint="text")
-        result = _normalise_structured_data(m)
+        result = normalise_structured_data(m)
         assert result.structured_data is None
         assert result.ui_hint == "text"
 
     def test_valid_structured_data_preserved(self):
         sd = '{"steps": ["Step 1", "Step 2"]}'
         m = self._model(structured_data=sd, ui_hint="steps")
-        result = _normalise_structured_data(m)
+        result = normalise_structured_data(m)
         assert result.structured_data == sd
         assert result.ui_hint == "steps"
 
     def test_whitespace_only_normalised_to_none(self):
         m = self._model(structured_data="  \n  ", ui_hint="card")
-        result = _normalise_structured_data(m)
+        result = normalise_structured_data(m)
         assert result.structured_data is None
         assert result.ui_hint == "text"
 
@@ -166,52 +166,52 @@ class TestNormaliseStructuredData:
 
 
 # ---------------------------------------------------------------------------
-# _extract_json_object — robust JSON extraction
+# extract_json_object — robust JSON extraction
 # ---------------------------------------------------------------------------
 
 
 class TestExtractJsonObject:
     def test_clean_json(self):
         raw = '{"message": "hello", "confidence": "high"}'
-        assert _extract_json_object(raw) == raw
+        assert extract_json_object(raw) == raw
 
     def test_free_text_before_json(self):
         """The exact failure case: agent outputs commentary then JSON on same line."""
         raw = (
             'The search results returned irrelevant docs.{"message": "answer", "confidence": "low"}'
         )
-        result = _extract_json_object(raw)
+        result = extract_json_object(raw)
         assert result is not None
         data = json.loads(result)
         assert data["message"] == "answer"
 
     def test_free_text_with_newline_before_json(self):
         raw = 'Some commentary\n{"message": "answer", "confidence": "low"}'
-        result = _extract_json_object(raw)
+        result = extract_json_object(raw)
         assert result is not None
         data = json.loads(result)
         assert data["message"] == "answer"
 
     def test_nested_braces(self):
         raw = '{"message": "test", "nested": {"a": 1}}'
-        result = _extract_json_object(raw)
+        result = extract_json_object(raw)
         assert result == raw
 
     def test_braces_in_strings(self):
         raw = '{"message": "use { and } in text", "confidence": "high"}'
-        result = _extract_json_object(raw)
+        result = extract_json_object(raw)
         assert result == raw
 
     def test_escaped_quotes_in_strings(self):
         raw = r'{"message": "she said \"hello\"", "confidence": "high"}'
-        result = _extract_json_object(raw)
+        result = extract_json_object(raw)
         assert result == raw
 
     def test_no_json(self):
-        assert _extract_json_object("just plain text") is None
+        assert extract_json_object("just plain text") is None
 
     def test_empty_string(self):
-        assert _extract_json_object("") is None
+        assert extract_json_object("") is None
 
 
 class TestParseAgentOutputFreeText:
@@ -322,7 +322,7 @@ class TestExtractSources:
         assert len(sources) == 1
         assert sources[0].document_id == "abc1"
         assert sources[0].title == "Enterprise Agreement 2024"
-        assert sources[0].confidence == pytest.approx(0.95)
+        assert sources[0].confidence == pytest.approx(0.95)  # pyright: ignore[reportUnknownMemberType]
 
     def test_extracts_multiple_sources(self):
         text = _source_block(1) + "\n\n" + _source_block(2) + "\n\n" + _source_block(3)

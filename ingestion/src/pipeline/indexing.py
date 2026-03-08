@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from azure.search.documents.indexes.models import (
     HnswAlgorithmConfiguration,
-    SearchableField,
+    SearchableField,  # pyright: ignore[reportUnknownVariableType]
     SearchField,
     SearchFieldDataType,
     SearchIndex,
-    SimpleField,
+    SimpleField,  # pyright: ignore[reportUnknownVariableType]
     VectorSearch,
     VectorSearchProfile,
 )
@@ -69,7 +69,7 @@ def create_or_update_index(index_client: SearchIndexClient, index_name: str) -> 
     logger.info("Index '%s' created or updated.", index_name)
 
 
-def _chunk_to_document(chunk: dict) -> dict:
+def _chunk_to_document(chunk: dict[str, Any]) -> dict[str, Any]:
     """Convert a chunk dict to a search document dict.
 
     Ensures metadata is serialised as a JSON string and effective_date is
@@ -98,7 +98,7 @@ def _chunk_to_document(chunk: dict) -> dict:
 
 async def upload_chunks(
     search_client: SearchClient,
-    chunks: list[dict],
+    chunks: list[dict[str, Any]],
     batch_size: int = 100,
 ) -> int:
     """Upload chunks to the search index. Returns count of uploaded documents."""
@@ -110,7 +110,7 @@ async def upload_chunks(
     for batch_start in range(0, len(chunks), batch_size):
         batch = chunks[batch_start : batch_start + batch_size]
         documents = [_chunk_to_document(c) for c in batch]
-        result = search_client.upload_documents(documents=documents)
+        result = search_client.upload_documents(documents=documents)  # pyright: ignore[reportUnknownMemberType]
         succeeded = sum(1 for r in result if r.succeeded)
         total_uploaded += succeeded
         logger.info(

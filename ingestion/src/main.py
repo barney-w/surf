@@ -8,7 +8,7 @@ import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 from dotenv import load_dotenv
@@ -47,7 +47,7 @@ def _discover_files(path: Path, source: str) -> list[Path]:
     return sorted(path.rglob(f"*{ext}"))
 
 
-def _load_manifest(manifest_path: str | None) -> dict[str, dict]:
+def _load_manifest(manifest_path: str | None) -> dict[str, dict[str, Any]]:
     """Load a manifest JSON file.
 
     The manifest maps file names to metadata overrides.  If no manifest is
@@ -62,23 +62,25 @@ def _load_manifest(manifest_path: str | None) -> dict[str, dict]:
     if manifest_path is None:
         return {}
     with open(manifest_path) as fh:
-        data = json.load(fh)
+        data: Any = json.load(fh)
     # Support both list-of-dicts (keyed by "filename") and dict-keyed formats
     if isinstance(data, list):
-        result: dict[str, dict] = {}
-        for i, entry in enumerate(data):
+        result: dict[str, dict[str, Any]] = {}
+        for i, entry in enumerate(data):  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
             if not isinstance(entry, dict) or "filename" not in entry:
                 msg = (
                     f"Manifest entry {i} must be a dict with a 'filename' key,"
-                    f" got: {type(entry).__name__}"
+                    f" got: {type(entry).__name__}"  # pyright: ignore[reportUnknownArgumentType]
                 )
                 raise click.ClickException(msg)
             result[entry["filename"]] = entry
         return result
-    return data
+    return data  # pyright: ignore[reportUnknownVariableType]
 
 
-def _build_manifest_entry(file_path: Path, domain: str, manifest: dict[str, dict]) -> dict:
+def _build_manifest_entry(
+    file_path: Path, domain: str, manifest: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
     """Return a manifest-style dict for *file_path*.
 
     If the file appears in *manifest* its entry is returned (with *domain*
@@ -91,7 +93,7 @@ def _build_manifest_entry(file_path: Path, domain: str, manifest: dict[str, dict
     return entry
 
 
-def _parse_file(source: str, file_path: Path, manifest_entry: dict) -> IngestedDocument:
+def _parse_file(source: str, file_path: Path, manifest_entry: dict[str, Any]) -> IngestedDocument:
     """Parse a single file into an IngestedDocument.
 
     Args:
@@ -108,11 +110,11 @@ def _parse_file(source: str, file_path: Path, manifest_entry: dict) -> IngestedD
     raise ValueError(msg)
 
 
-def _chunks_to_dicts(chunks: list[Chunk], embeddings: list[list[float]]) -> list[dict]:
+def _chunks_to_dicts(chunks: list[Chunk], embeddings: list[list[float]]) -> list[dict[str, Any]]:
     """Convert Chunk objects + embeddings into dicts suitable for indexing."""
-    results: list[dict] = []
+    results: list[dict[str, Any]] = []
     for chunk, embedding in zip(chunks, embeddings, strict=True):
-        doc: dict = {
+        doc: dict[str, Any] = {
             "id": chunk.id,
             "document_id": chunk.document_id,
             "domain": chunk.metadata.domain,
@@ -136,7 +138,7 @@ def _chunks_to_dicts(chunks: list[Chunk], embeddings: list[list[float]]) -> list
     return results
 
 
-def _validate_chunks(chunks: list, file_name: str) -> None:
+def _validate_chunks(chunks: list[Chunk], file_name: str) -> None:
     """Warn about chunks that show signs of poor splitting.
 
     Checks for:

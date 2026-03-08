@@ -11,7 +11,7 @@ class DocumentMetadata:
     expiry_date: date | None = None
     author: str | None = None
     source_url: str | None = None
-    tags: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=lambda: [])
 
 
 @dataclass

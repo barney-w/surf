@@ -24,10 +24,13 @@ def _make_rsa_key() -> rsa.RSAPrivateKey:
     return rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
-def _build_rs256_token(private_key: rsa.RSAPrivateKey, claims: dict | None = None) -> str:
+def _build_rs256_token(  # pyright: ignore[reportUnusedFunction]
+    private_key: rsa.RSAPrivateKey,
+    claims: dict[str, object] | None = None,
+) -> str:
     """Create a valid RS256-signed JWT."""
     now = datetime.datetime.now(datetime.UTC)
-    payload = {
+    payload: dict[str, object] = {
         "oid": "user-oid-123",
         "name": "Jane Doe",
         "preferred_username": "jane@example.com",

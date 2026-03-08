@@ -1,6 +1,13 @@
 from contextvars import ContextVar
+from typing import Any
 
-from agent_framework import BaseContextProvider, Message, SessionContext
+from agent_framework import (
+    AgentSession,
+    BaseContextProvider,
+    Message,
+    SessionContext,
+    SupportsAgentRun,
+)
 
 from src.services.conversation import ConversationService
 
@@ -20,7 +27,14 @@ class ConversationHistoryProvider(BaseContextProvider):
         self._service = conversation_service
         self._max_messages = max_messages
 
-    async def before_run(self, *, agent, session, context: SessionContext, state: dict, **kw):
+    async def before_run(
+        self,
+        *,
+        agent: SupportsAgentRun,
+        session: AgentSession,
+        context: SessionContext,
+        state: dict[str, Any],
+    ) -> None:
         conversation_id = current_conversation_id.get()
         user_id = current_user_id.get()
         if not conversation_id or not user_id:

@@ -14,7 +14,7 @@ from src.services.conversation import ConversationService
 
 
 @pytest.fixture
-def settings():
+def settings() -> Settings:
     return Settings(
         cosmos_endpoint="https://fake-account.documents.azure.com:443/",
         cosmos_database_name="testdb",
@@ -23,15 +23,15 @@ def settings():
 
 
 @pytest.fixture
-def mock_container():
+def mock_container() -> AsyncMock:
     return AsyncMock()
 
 
 @pytest.fixture
-def service(settings, mock_container):
+def service(settings: Settings, mock_container: AsyncMock) -> ConversationService:
     svc = ConversationService(settings)
-    svc._container = mock_container
-    svc._client = AsyncMock()
+    svc._container = mock_container  # pyright: ignore[reportPrivateUsage]
+    svc._client = AsyncMock()  # pyright: ignore[reportPrivateUsage]
     return svc
 
 
@@ -39,7 +39,9 @@ class TestConversationIsolation:
     """ConversationService must isolate conversations by UUID format and user_id."""
 
     @pytest.mark.asyncio
-    async def test_non_uuid_conversation_id_returns_none(self, service, mock_container):
+    async def test_non_uuid_conversation_id_returns_none(
+        self, service: ConversationService, mock_container: AsyncMock
+    ):
         """Path-traversal and non-UUID conversation IDs must be rejected without
         hitting Cosmos DB at all."""
         result = await service.get_conversation("../../etc/passwd", "user-1")
@@ -49,7 +51,9 @@ class TestConversationIsolation:
         mock_container.read_item.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_user_id_mismatch_returns_none(self, service, mock_container):
+    async def test_user_id_mismatch_returns_none(
+        self, service: ConversationService, mock_container: AsyncMock
+    ):
         """A conversation that exists but belongs to a different user must return None.
 
         This is the defense-in-depth check that verifies user_id even after
@@ -74,7 +78,9 @@ class TestConversationIsolation:
         mock_container.read_item.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_valid_uuid_with_correct_user_passes(self, service, mock_container):
+    async def test_valid_uuid_with_correct_user_passes(
+        self, service: ConversationService, mock_container: AsyncMock
+    ):
         """A valid UUID with a matching user_id must return the conversation document."""
         now = datetime.now(UTC).isoformat()
         valid_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"

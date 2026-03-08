@@ -5,16 +5,20 @@ import re
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import APIRouter, HTTPException, Request
+
+if TYPE_CHECKING:
+    from agent_framework import Workflow, WorkflowEvent
 from fastapi.responses import JSONResponse, StreamingResponse
 from openai import RateLimitError as OpenAIRateLimitError
 
 from src.agents._output import (
-    _deduplicate_sources,
-    _sanitize_agent_response,
+    deduplicate_sources,
     extract_sources,
     parse_agent_output,
+    sanitize_agent_response,
 )
 from src.middleware.auth import get_current_user
 from src.middleware.error_handler import LLM_TIMEOUT_SECONDS, LLMTimeoutError
@@ -101,23 +105,24 @@ async def _run_workflow(
 
     # Build a fresh Workflow per request — agent_framework Workflow is stateful
     # and raises RuntimeError if run() is called while another run is in progress.
-    workflow = workflow_factory()  # type: ignore[operator]
+    workflow: Workflow = workflow_factory()  # type: ignore[operator]
 
     async def _execute() -> tuple[str, AgentResponseModel | None, str]:
         response_text = ""
         structured_result: AgentResponseModel | None = None
         routed_agent = "coordinator"
-        async for event in workflow.run(
+        async for _event in workflow.run(  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
             message,
             stream=True,
-        ):  # type: ignore[union-attr]
+        ):
+            event = cast("WorkflowEvent[Any]", _event)
             if event.type == "handoff_sent":
                 routed_agent = event.data.target
             elif event.type == "output":
                 if hasattr(event.data, "value") and isinstance(
                     event.data.value, AgentResponseModel
                 ):
-                    structured_result = _sanitize_agent_response(event.data.value)
+                    structured_result = sanitize_agent_response(event.data.value)
                 elif hasattr(event.data, "text") and event.data.text:
                     response_text += event.data.text
         return response_text, structured_result, routed_agent
@@ -130,7 +135,7 @@ async def _run_workflow(
 
 
 @router.post("/chat")
-@limiter.limit("10/minute")
+@limiter.limit("10/minute")  # pyright: ignore[reportUnknownMemberType,reportUntypedFunctionDecorator]
 async def chat(body: ChatRequest, request: Request) -> JSONResponse:
     """Send a message and receive an AI response."""
     workflow = request.app.state.workflow
@@ -218,7 +223,7 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
     # Inject sources recovered from the RAG tool output if the agent didn't populate them.
     if not agent_response.sources and rag_outputs:
         rag_text = "\n\n".join(rag_outputs)
-        recovered = _deduplicate_sources(extract_sources(rag_text))
+        recovered = deduplicate_sources(extract_sources(rag_text))
         if recovered:
             agent_response = agent_response.model_copy(update={"sources": recovered})
 
@@ -274,7 +279,7 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
     return response
 
 
-def _sse(data: dict) -> str:
+def _sse(data: dict[str, object]) -> str:
     """Format a dict as a single SSE data event."""
     return f"data: {json.dumps(data)}\n\n"
 
@@ -395,7 +400,7 @@ class _MessageFieldExtractor:
 
 
 @router.post("/chat/stream")
-@limiter.limit("10/minute")
+@limiter.limit("10/minute")  # pyright: ignore[reportUnknownMemberType,reportUntypedFunctionDecorator]
 async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
     """SSE streaming endpoint — real token streaming from the LLM.
 
@@ -472,7 +477,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
         yield _sse({"type": "phase", "phase": "thinking"})
 
-        wf = workflow()  # type: ignore[operator]
+        wf: Workflow = workflow()  # type: ignore[operator]
         routed_agent = "coordinator"
         structured_result: AgentResponseModel | None = None
         response_text = ""
@@ -483,14 +488,14 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
         # Queue used to multiplex workflow events and heartbeat ticks.
         # Items: ('event', event_obj) | ('heartbeat',) | ('done',) | ('error', exc)
-        queue: asyncio.Queue[tuple] = asyncio.Queue()
+        queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
 
         async def _run_workflow_into_queue() -> None:
             try:
                 async with asyncio.timeout(LLM_TIMEOUT_SECONDS):
-                    async for event in wf.run(sanitised_message, stream=True):  # type: ignore[union-attr]
+                    async for event in wf.run(sanitised_message, stream=True):  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
                         await queue.put(("event", event))
-                await queue.put(("done",))
+                await queue.put(("done", None))
             except Exception as exc:
                 await queue.put(("error", exc))
 
@@ -498,7 +503,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             """Send a tick every 5 seconds so the main loop can emit keepalives."""
             while True:
                 await asyncio.sleep(5)
-                await queue.put(("heartbeat",))
+                await queue.put(("heartbeat", None))
 
         workflow_task = asyncio.create_task(_run_workflow_into_queue())
         heartbeat_task = asyncio.create_task(_heartbeat())
@@ -513,7 +518,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                     break
 
                 if kind == "error":
-                    exc = item[1]
+                    exc = cast("Exception", item[1])
                     if isinstance(exc, TimeoutError):
                         yield _sse(
                             {
@@ -566,7 +571,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                     continue
 
                 # kind == "event"
-                event = item[1]
+                event = cast("WorkflowEvent[Any]", item[1])
 
                 logger.debug("event: type=%s data_type=%s", event.type, type(event.data).__name__)
                 if event.type == "handoff_sent":
@@ -582,7 +587,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
                     # Final AgentResponse — carries the fully parsed structured object.
                     if hasattr(data, "value") and isinstance(data.value, AgentResponseModel):
-                        structured_result = _sanitize_agent_response(data.value)
+                        structured_result = sanitize_agent_response(data.value)
                         continue
 
                     # Streaming token chunk (AgentResponseUpdate).
@@ -685,7 +690,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         # Inject recovered sources if the agent didn't populate them.
         if not agent_response.sources and rag_collector:
             rag_text = "\n\n".join(rag_collector)
-            recovered_sources = _deduplicate_sources(extract_sources(rag_text))
+            recovered_sources = deduplicate_sources(extract_sources(rag_text))
             if recovered_sources:
                 agent_response = agent_response.model_copy(update={"sources": recovered_sources})
                 logger.info("injected %d recovered sources into response", len(recovered_sources))
@@ -759,8 +764,8 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
 
 @router.get("/chat/{conversation_id}")
-@limiter.limit("60/minute")
-async def get_conversation(conversation_id: str, request: Request) -> dict:
+@limiter.limit("60/minute")  # pyright: ignore[reportUnknownMemberType,reportUntypedFunctionDecorator]
+async def get_conversation(conversation_id: str, request: Request) -> dict[str, object]:
     """Load a conversation by ID."""
     conversation_service = request.app.state.conversation_service
     user = await get_current_user(request)
@@ -774,8 +779,8 @@ async def get_conversation(conversation_id: str, request: Request) -> dict:
 
 
 @router.delete("/chat/{conversation_id}")
-@limiter.limit("20/minute")
-async def delete_conversation(conversation_id: str, request: Request) -> dict:
+@limiter.limit("20/minute")  # pyright: ignore[reportUnknownMemberType,reportUntypedFunctionDecorator]
+async def delete_conversation(conversation_id: str, request: Request) -> dict[str, object]:
     """Delete a conversation."""
     conversation_service = request.app.state.conversation_service
     user = await get_current_user(request)
@@ -789,8 +794,12 @@ async def delete_conversation(conversation_id: str, request: Request) -> dict:
 
 
 @router.post("/chat/{conversation_id}/feedback")
-@limiter.limit("30/minute")
-async def submit_feedback(conversation_id: str, feedback: FeedbackRecord, request: Request) -> dict:
+@limiter.limit("30/minute")  # pyright: ignore[reportUnknownMemberType,reportUntypedFunctionDecorator]
+async def submit_feedback(
+    conversation_id: str,
+    feedback: FeedbackRecord,
+    request: Request,
+) -> dict[str, object]:
     """Submit feedback for a message in a conversation."""
     conversation_service = request.app.state.conversation_service
     user = await get_current_user(request)
