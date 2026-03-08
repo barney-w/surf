@@ -21,6 +21,14 @@ param retentionInDays int = 30
 @description('Tags to apply to all resources')
 param tags object
 
+@description('Allow public network access for ingestion (Disabled for staging/prod)')
+@allowed(['Enabled', 'Disabled'])
+param publicNetworkAccessForIngestion string = 'Disabled'
+
+@description('Allow public network access for queries (Disabled for staging/prod)')
+@allowed(['Enabled', 'Disabled'])
+param publicNetworkAccessForQuery string = 'Disabled'
+
 // ---------------------------------------------------------------------------
 // Resources
 // ---------------------------------------------------------------------------
@@ -34,8 +42,8 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
       name: skuName
     }
     retentionInDays: retentionInDays
-    publicNetworkAccessForIngestion: 'Enabled'
-    publicNetworkAccessForQuery: 'Enabled'
+    publicNetworkAccessForIngestion: publicNetworkAccessForIngestion
+    publicNetworkAccessForQuery: publicNetworkAccessForQuery
   }
 }
 

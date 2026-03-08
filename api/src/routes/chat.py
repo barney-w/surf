@@ -71,7 +71,7 @@ async def _persist_message(
         return True
     except Exception:
         # Cosmos can raise various exceptions — never let persistence failure break the request.
-        logger.warning(
+        logger.error(
             "Cosmos DB unavailable — could not persist message %s for conversation %s",
             message.id,
             conversation_id,
@@ -729,11 +729,23 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             timestamp=datetime.now(UTC),
         )
         if cosmos_available:
-            await _persist_message(
+            persisted = await _persist_message(
                 conversation_service, conversation_id, user_id, assistant_message
             )
-            await _update_last_active_agent(
-                conversation_service, conversation_id, user_id, routed_agent
+            if persisted:
+                await _update_last_active_agent(
+                    conversation_service, conversation_id, user_id, routed_agent
+                )
+            else:
+                cosmos_available = False
+
+        if not cosmos_available:
+            yield _sse(
+                {
+                    "type": "warning",
+                    "code": "cosmos-unavailable",
+                    "message": "Your message may not have been saved. Conversation history could be incomplete.",
+                }
             )
 
     return StreamingResponse(

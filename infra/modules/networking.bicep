@@ -32,6 +32,82 @@ param cosmosDbId string = ''
 param storageAccountId string = ''
 
 // ---------------------------------------------------------------------------
+// Network Security Groups
+// ---------------------------------------------------------------------------
+
+resource nsgContainerApps 'Microsoft.Network/networkSecurityGroups@2024-01-01' = {
+  name: 'nsg-${vnetName}-container-apps'
+  location: location
+  tags: tags
+  properties: {
+    securityRules: [
+      {
+        name: 'AllowHTTPSInbound'
+        properties: {
+          priority: 100
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '443'
+        }
+      }
+      {
+        name: 'AllowContainerAppsToPrivateEndpoints'
+        properties: {
+          priority: 110
+          direction: 'Outbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourceAddressPrefix: containerAppsSubnetPrefix
+          sourcePortRange: '*'
+          destinationAddressPrefix: privateEndpointsSubnetPrefix
+          destinationPortRange: '443'
+        }
+      }
+    ]
+  }
+}
+
+resource nsgPrivateEndpoints 'Microsoft.Network/networkSecurityGroups@2024-01-01' = {
+  name: 'nsg-${vnetName}-private-endpoints'
+  location: location
+  tags: tags
+  properties: {
+    securityRules: [
+      {
+        name: 'AllowInboundFromContainerApps'
+        properties: {
+          priority: 100
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourceAddressPrefix: containerAppsSubnetPrefix
+          sourcePortRange: '*'
+          destinationAddressPrefix: privateEndpointsSubnetPrefix
+          destinationPortRange: '443'
+        }
+      }
+      {
+        name: 'DenyAllOtherInbound'
+        properties: {
+          priority: 4096
+          direction: 'Inbound'
+          access: 'Deny'
+          protocol: '*'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
+        }
+      }
+    ]
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Virtual Network
 // ---------------------------------------------------------------------------
 
@@ -50,6 +126,9 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
         name: 'snet-container-apps'
         properties: {
           addressPrefix: containerAppsSubnetPrefix
+          networkSecurityGroup: {
+            id: nsgContainerApps.id
+          }
           delegations: [
             {
               name: 'delegation-container-apps'
@@ -64,6 +143,9 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
         name: 'snet-private-endpoints'
         properties: {
           addressPrefix: privateEndpointsSubnetPrefix
+          networkSecurityGroup: {
+            id: nsgPrivateEndpoints.id
+          }
           privateEndpointNetworkPolicies: 'Disabled'
         }
       }

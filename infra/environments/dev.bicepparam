@@ -26,8 +26,9 @@ param storageSku = 'Standard_LRS'
 param keyVaultSku = 'standard'
 param keyVaultEnablePurgeProtection = false
 
-// Log Analytics — minimum retention
+// Log Analytics — minimum retention, public access for dev only
 param logAnalyticsRetentionDays = 30
+param logAnalyticsPublicNetworkAccess = 'Enabled'
 
 // Container Apps — minimal resources, scale to zero
 param acrSku = 'Basic'

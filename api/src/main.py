@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from openai import AsyncAzureOpenAI
 
 from src.config.settings import get_settings
+from src.middleware.auth import get_current_user
 from src.middleware.body_limit import BodySizeLimitMiddleware
 from src.middleware.error_handler import add_error_handlers
 from src.middleware.logging import reset_logging_context, set_logging_context, setup_logging
@@ -78,11 +79,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             raise SystemExit(1)
         if any("localhost" in origin for origin in settings.api_cors_origins):
-            logger.warning(
-                "CORS origins contain localhost in '%s' environment: %s",
+            logger.critical(
+                "CORS origins contain localhost in '%s' environment — refusing to start: %s",
                 settings.environment,
                 settings.api_cors_origins,
             )
+            raise SystemExit(1)
     logger.info("CORS origins: %s", settings.api_cors_origins)
 
     # --- Azure AI Search ---
@@ -231,10 +233,14 @@ async def health_check(request: Request, deep: bool = False) -> dict:
     """Health check endpoint.
 
     Pass ?deep=true to verify connectivity to Cosmos DB and Azure AI Search.
+    Deep checks require authentication.
     """
     result: dict = {"status": "healthy"}
     if not deep:
         return result
+
+    # Deep health checks expose infrastructure details — require auth.
+    await get_current_user(request)
 
     checks: dict[str, str] = {}
     conversation_service = getattr(app.state, "conversation_service", None)
@@ -248,8 +254,8 @@ async def health_check(request: Request, deep: bool = False) -> dict:
             checks["cosmos"] = "ok"
         except StopAsyncIteration:
             checks["cosmos"] = "ok"  # empty but reachable
-        except Exception as exc:
-            checks["cosmos"] = f"error: {type(exc).__name__}"
+        except Exception:
+            checks["cosmos"] = "error"
             result["status"] = "degraded"
     else:
         checks["cosmos"] = "not_configured"

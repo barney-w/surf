@@ -26,11 +26,12 @@ class TestInputInjection:
         result = validate_message(message)
         assert result == message
 
-    def test_xss_script_tag_passes_through(self):
-        """XSS script tags pass through — the LLM layer handles context, not the validator."""
+    def test_xss_script_tag_blocked(self):
+        """XSS script tags are blocked as a prompt-injection vector."""
         message = "<script>alert(1)</script>"
-        result = validate_message(message)
-        assert result == message
+        with pytest.raises(HTTPException) as exc_info:
+            validate_message(message)
+        assert exc_info.value.status_code == 422
 
     def test_extremely_long_message_rejected(self):
         """Messages longer than MAX_MESSAGE_LENGTH (10,000 chars) raise HTTP 422."""
