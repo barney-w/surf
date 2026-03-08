@@ -744,7 +744,10 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                 {
                     "type": "warning",
                     "code": "cosmos-unavailable",
-                    "message": "Your message may not have been saved. Conversation history could be incomplete.",
+                    "message": (
+                        "Your message may not have been saved."
+                        " Conversation history could be incomplete."
+                    ),
                 }
             )
 
