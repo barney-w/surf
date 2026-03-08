@@ -123,7 +123,7 @@ jobs:
           docker push "${{ steps.meta.outputs.image-tag }}"
 
       - name: Scan container image with Trivy
-        uses: aquasecurity/trivy-action@c1824fd6edce30d7ab345a9989de00bbd46ef284 # v0.34.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
           image-ref: ${{ steps.meta.outputs.image-tag }}
           format: 'table'
