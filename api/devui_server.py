@@ -3,7 +3,7 @@
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from agent_framework import WorkflowEvent
+from agent_framework import CheckpointStorage, Workflow, WorkflowEvent
 from agent_framework.devui import serve
 from azure.identity.aio import DefaultAzureCredential
 from azure.search.documents.aio import SearchClient
@@ -40,12 +40,12 @@ class DevUIStatelessWorkflow:
         return self._template.to_json()
 
     async def _stream_with_auto_finalize(
-        self, workflow: object, message: Any | None, **kwargs: Any
+        self, workflow: Workflow, message: Any | None, **kwargs: Any
     ) -> AsyncGenerator[WorkflowEvent, None]:
         pending_request_ids: list[str] = []
-        async for event in workflow.run(message, stream=True, **kwargs):  # type: ignore[union-attr]
+        async for event in workflow.run(message, stream=True, **kwargs):
             if event.type == "request_info":
-                pending_request_ids.append(event.request_id)
+                pending_request_ids.append(event.request_id)  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType]
                 continue
             yield event
 
@@ -53,11 +53,11 @@ class DevUIStatelessWorkflow:
         # Auto-resolve these with empty responses so DevUI doesn't accumulate
         # stale "Workflow needs your input" cards between normal chat turns.
         while pending_request_ids:
-            responses = {request_id: [] for request_id in pending_request_ids}
+            responses: dict[str, list[Any]] = {request_id: [] for request_id in pending_request_ids}
             pending_request_ids = []
-            async for event in workflow.run(stream=True, responses=responses):  # type: ignore[union-attr]
+            async for event in workflow.run(stream=True, responses=responses):
                 if event.type == "request_info":
-                    pending_request_ids.append(event.request_id)
+                    pending_request_ids.append(event.request_id)  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType]
                     continue
                 yield event
 
@@ -68,7 +68,7 @@ class DevUIStatelessWorkflow:
         stream: bool = False,
         responses: dict[str, Any] | None = None,
         checkpoint_id: str | None = None,
-        checkpoint_storage: object | None = None,
+        checkpoint_storage: CheckpointStorage | None = None,
         include_status_events: bool = False,
         **kwargs: Any,
     ) -> Any:

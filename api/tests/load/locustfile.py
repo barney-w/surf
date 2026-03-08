@@ -1,10 +1,10 @@
-from locust import HttpUser, between, task
+from locust import HttpUser, between, task  # pyright: ignore[reportUnknownVariableType]
 
 
 class SurfUser(HttpUser):
     """Load test user simulating interactions with the Surf API."""
 
-    wait_time = between(1, 5)
+    wait_time = between(1, 5)  # pyright: ignore[reportUnknownVariableType]
 
     @task(3)
     def send_hr_query(self):

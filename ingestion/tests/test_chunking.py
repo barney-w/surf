@@ -7,9 +7,9 @@ import tiktoken
 from src.models import DocumentMetadata, IngestedDocument
 from src.pipeline.chunking import (
     ChunkingConfig,
-    _generate_chunk_id,
-    _is_heading,
-    _sub_clause_split,
+    _generate_chunk_id,  # pyright: ignore[reportPrivateUsage]
+    _is_heading,  # pyright: ignore[reportPrivateUsage]
+    _sub_clause_split,  # pyright: ignore[reportPrivateUsage]
     chunk_document,
 )
 

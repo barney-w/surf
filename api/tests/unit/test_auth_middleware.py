@@ -21,12 +21,12 @@ def _make_rsa_key() -> rsa.RSAPrivateKey:
 
 def _build_token(
     private_key: rsa.RSAPrivateKey,
-    claims: dict | None = None,
+    claims: dict[str, object] | None = None,
     expired: bool = False,
 ) -> str:
     """Create a signed JWT with the given claims."""
     now = datetime.datetime.now(datetime.UTC)
-    payload = {
+    payload: dict[str, object] = {
         "oid": "user-oid-123",
         "name": "Jane Doe",
         "preferred_username": "jane@example.com",

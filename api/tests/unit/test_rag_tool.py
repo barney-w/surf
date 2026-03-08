@@ -14,7 +14,7 @@ from src.rag.search import (
     build_odata_filter,
     search_index,
 )
-from src.rag.tools import _stitch_adjacent_chunks, create_rag_tool, set_search_client
+from src.rag.tools import create_rag_tool, set_search_client, stitch_adjacent_chunks
 
 # ---------------------------------------------------------------------------
 # OData filter builder
@@ -78,7 +78,7 @@ class TestSearchIndex:
         assert len(results) == 1
         assert results[0].document_id == "doc-1"
         assert results[0].title == "Leave Policy"
-        assert results[0].score == pytest.approx(0.95)
+        assert results[0].score == pytest.approx(0.95)  # pyright: ignore[reportUnknownMemberType]
         assert results[0].chunk_index == 2
 
     @pytest.mark.asyncio
@@ -203,7 +203,7 @@ class TestResultFormatting:
 
 
 # ---------------------------------------------------------------------------
-# _stitch_adjacent_chunks
+# stitch_adjacent_chunks
 # ---------------------------------------------------------------------------
 
 
@@ -227,11 +227,11 @@ class TestStitchAdjacentChunks:
             _make_result("doc-1", 3, 0.9, "Clause starts here."),
             _make_result("doc-1", 4, 0.7, "Clause continues here."),
         ]
-        stitched = _stitch_adjacent_chunks(results)
+        stitched = stitch_adjacent_chunks(results)
         assert len(stitched) == 1
         assert "Clause starts here." in stitched[0].content
         assert "Clause continues here." in stitched[0].content
-        assert stitched[0].score == pytest.approx(0.9)  # takes the higher score
+        assert stitched[0].score == pytest.approx(0.9)  # pyright: ignore[reportUnknownMemberType]  # takes the higher score
         assert stitched[0].chunk_index == 3
 
     def test_does_not_merge_non_consecutive_chunks(self):
@@ -239,7 +239,7 @@ class TestStitchAdjacentChunks:
             _make_result("doc-1", 2, 0.9, "Early chunk."),
             _make_result("doc-1", 5, 0.8, "Later chunk."),
         ]
-        stitched = _stitch_adjacent_chunks(results)
+        stitched = stitch_adjacent_chunks(results)
         assert len(stitched) == 2
 
     def test_does_not_merge_chunks_from_different_docs(self):
@@ -247,7 +247,7 @@ class TestStitchAdjacentChunks:
             _make_result("doc-1", 3, 0.9, "Doc 1 chunk."),
             _make_result("doc-2", 4, 0.8, "Doc 2 chunk."),
         ]
-        stitched = _stitch_adjacent_chunks(results)
+        stitched = stitch_adjacent_chunks(results)
         assert len(stitched) == 2
 
     def test_merges_run_of_three_consecutive_chunks(self):
@@ -256,7 +256,7 @@ class TestStitchAdjacentChunks:
             _make_result("doc-1", 1, 0.9, "Part B."),
             _make_result("doc-1", 2, 0.7, "Part C."),
         ]
-        stitched = _stitch_adjacent_chunks(results)
+        stitched = stitch_adjacent_chunks(results)
         assert len(stitched) == 1
         assert "Part A." in stitched[0].content
         assert "Part B." in stitched[0].content
@@ -267,8 +267,8 @@ class TestStitchAdjacentChunks:
             _make_result("doc-1", 0, 0.5, "Low score chunk."),
             _make_result("doc-2", 0, 0.95, "High score chunk."),
         ]
-        stitched = _stitch_adjacent_chunks(results)
+        stitched = stitch_adjacent_chunks(results)
         assert stitched[0].score > stitched[1].score
 
     def test_empty_input_returns_empty(self):
-        assert _stitch_adjacent_chunks([]) == []
+        assert stitch_adjacent_chunks([]) == []

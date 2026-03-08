@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 from unittest.mock import MagicMock
 
 from src.pipeline.indexing import (
     INDEX_FIELDS,
     VECTOR_DIMENSIONS,
-    _chunk_to_document,
+    _chunk_to_document,  # pyright: ignore[reportPrivateUsage]
     create_or_update_index,
-    upload_chunks,
+    upload_chunks,  # pyright: ignore[reportUnknownVariableType]
 )
 
 
@@ -110,7 +111,7 @@ class TestChunkToDocument:
             "content": "text",
             "metadata": {"domain": "hr"},
         }
-        doc = _chunk_to_document(chunk)
+        doc: dict[str, Any] = _chunk_to_document(chunk)  # pyright: ignore[reportPrivateUsage]
         assert doc["metadata"] == json.dumps({"domain": "hr"})
 
     def test_preserves_string_metadata(self):
@@ -121,5 +122,5 @@ class TestChunkToDocument:
             "content": "text",
             "metadata": '{"already": "json"}',
         }
-        doc = _chunk_to_document(chunk)
+        doc: dict[str, Any] = _chunk_to_document(chunk)  # pyright: ignore[reportPrivateUsage]
         assert doc["metadata"] == '{"already": "json"}'

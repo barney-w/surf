@@ -3,12 +3,12 @@
 import hashlib
 from pathlib import Path
 
-import fitz
+import fitz  # pyright: ignore[reportMissingTypeStubs]
 import pytest
 
 from src.connectors.pdf import (
-    _validate_source_url,
-    create_document_from_pdf,
+    _validate_source_url,  # pyright: ignore[reportPrivateUsage]
+    create_document_from_pdf,  # pyright: ignore[reportUnknownVariableType]
     extract_text_from_pdf,
 )
 
@@ -19,8 +19,8 @@ def sample_pdf(tmp_path: Path) -> Path:
     pdf_path = tmp_path / "sample.pdf"
     doc = fitz.open()
     page = doc.new_page()
-    page.insert_text((72, 72), "Hello, Surf project!")
-    doc.save(str(pdf_path))
+    page.insert_text((72, 72), "Hello, Surf project!")  # pyright: ignore[reportUnknownMemberType]
+    doc.save(str(pdf_path))  # pyright: ignore[reportUnknownMemberType]
     doc.close()
     return pdf_path
 
@@ -31,10 +31,10 @@ def encrypted_pdf(tmp_path: Path) -> Path:
     pdf_path = tmp_path / "encrypted.pdf"
     doc = fitz.open()
     page = doc.new_page()
-    page.insert_text((72, 72), "Secret content")
-    perm = fitz.PDF_PERM_ACCESSIBILITY
-    encrypt_meth = fitz.PDF_ENCRYPT_AES_256
-    doc.save(
+    page.insert_text((72, 72), "Secret content")  # pyright: ignore[reportUnknownMemberType]
+    perm = int(fitz.PDF_PERM_ACCESSIBILITY)  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue, reportUnknownArgumentType]
+    encrypt_meth = int(fitz.PDF_ENCRYPT_AES_256)  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue, reportUnknownArgumentType]
+    doc.save(  # pyright: ignore[reportUnknownMemberType]
         str(pdf_path),
         encryption=encrypt_meth,
         owner_pw="owner",
@@ -56,9 +56,9 @@ class TestExtractTextFromPdf:
         doc = fitz.open()
         page = doc.new_page()
         # Insert two text blocks at clearly separate vertical positions.
-        page.insert_text((72, 72), "First block of text.")
-        page.insert_text((72, 400), "Second block of text.")
-        doc.save(str(pdf_path))
+        page.insert_text((72, 72), "First block of text.")  # pyright: ignore[reportUnknownMemberType]
+        page.insert_text((72, 400), "Second block of text.")  # pyright: ignore[reportUnknownMemberType]
+        doc.save(str(pdf_path))  # pyright: ignore[reportUnknownMemberType]
         doc.close()
 
         text = extract_text_from_pdf(pdf_path)

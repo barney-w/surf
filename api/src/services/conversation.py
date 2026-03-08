@@ -3,7 +3,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 
-from azure.cosmos.aio import CosmosClient
+from azure.cosmos.aio import ContainerProxy, CosmosClient
 from azure.cosmos.exceptions import CosmosResourceNotFoundError
 from azure.identity.aio import DefaultAzureCredential
 
@@ -27,7 +27,7 @@ class ConversationService:
     def __init__(self, settings: Settings):
         self._settings = settings
         self._client: CosmosClient | None = None
-        self._container = None
+        self._container: ContainerProxy | None = None
 
     async def initialize(self) -> None:
         """Initialize Cosmos client. Called during app startup."""
@@ -41,6 +41,12 @@ class ConversationService:
         if self._client:
             await self._client.close()
 
+    def _get_container(self) -> ContainerProxy:
+        """Return the container client, raising if not initialised."""
+        if self._container is None:
+            raise RuntimeError("ConversationService not initialised. Call initialize() first.")
+        return self._container
+
     async def get_conversation(
         self, conversation_id: str, user_id: str
     ) -> ConversationDocument | None:
@@ -48,7 +54,9 @@ class ConversationService:
         if not _UUID_RE.match(conversation_id):
             return None
         try:
-            item = await self._container.read_item(item=conversation_id, partition_key=user_id)
+            item = await self._get_container().read_item(
+                item=conversation_id, partition_key=user_id
+            )
             doc = ConversationDocument(**item)
             # Defense-in-depth: verify user_id matches even though partition key should isolate
             if doc.user_id != user_id:
@@ -74,7 +82,7 @@ class ConversationService:
             messages=[],
             metadata=ConversationMetadata(),
         )
-        await self._container.create_item(body=doc.model_dump(mode="json"))
+        await self._get_container().create_item(body=doc.model_dump(mode="json"))
         return doc
 
     async def add_message(self, conversation_id: str, user_id: str, message: MessageRecord) -> None:
@@ -85,7 +93,7 @@ class ConversationService:
             {"op": "incr", "path": "/metadata/message_count", "value": 1},
             {"op": "set", "path": "/updated_at", "value": now.isoformat()},
         ]
-        await self._container.patch_item(
+        await self._get_container().patch_item(
             item=conversation_id, partition_key=user_id, patch_operations=operations
         )
 
@@ -98,14 +106,14 @@ class ConversationService:
             {"op": "set", "path": "/metadata/last_active_agent", "value": agent_name},
             {"op": "set", "path": "/updated_at", "value": now.isoformat()},
         ]
-        await self._container.patch_item(
+        await self._get_container().patch_item(
             item=conversation_id, partition_key=user_id, patch_operations=operations
         )
 
     async def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
         """Delete a conversation. Returns True if deleted, False if not found."""
         try:
-            await self._container.delete_item(item=conversation_id, partition_key=user_id)
+            await self._get_container().delete_item(item=conversation_id, partition_key=user_id)
             return True
         except CosmosResourceNotFoundError:
             return False
@@ -123,6 +131,6 @@ class ConversationService:
             },
             {"op": "set", "path": "/updated_at", "value": now.isoformat()},
         ]
-        await self._container.patch_item(
+        await self._get_container().patch_item(
             item=conversation_id, partition_key=user_id, patch_operations=operations
         )

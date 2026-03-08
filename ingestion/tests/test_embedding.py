@@ -25,8 +25,8 @@ def _make_mock_client(dim: int = 3072):
     """Return a mock AzureOpenAI client that echoes back dummy embeddings."""
     client = MagicMock()
 
-    def _create(*, input, model):  # noqa: A002
-        items = [_EmbeddingItem(embedding=[0.1] * dim) for _ in input]
+    def _create(*, input: list[str], model: str) -> _EmbeddingResponse:  # noqa: A002
+        items = [_EmbeddingItem(embedding=[0.1] * dim) for _text in input]
         return _EmbeddingResponse(data=items)
 
     client.embeddings.create = _create
@@ -69,7 +69,7 @@ class TestRetry:
         client = MagicMock()
         call_count = 0
 
-        def _create(*, input, model):  # noqa: A002
+        def _create(*, input: list[str], model: str) -> _EmbeddingResponse:  # noqa: A002
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -78,7 +78,7 @@ class TestRetry:
                     response=MagicMock(status_code=429, headers={}),
                     body=None,
                 )
-            items = [_EmbeddingItem(embedding=[0.5] * 3072) for _ in input]
+            items = [_EmbeddingItem(embedding=[0.5] * 3072) for _text in input]
             return _EmbeddingResponse(data=items)
 
         client.embeddings.create = _create
@@ -96,7 +96,7 @@ class TestRetry:
 
         client = MagicMock()
 
-        def _create(*, input, model):  # noqa: A002
+        def _create(*, input: list[str], model: str) -> _EmbeddingResponse:  # noqa: A002
             raise RateLimitError(
                 message="rate limited",
                 response=MagicMock(status_code=429, headers={}),

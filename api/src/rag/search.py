@@ -1,10 +1,11 @@
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Any, cast
 
 from azure.core.exceptions import ResourceNotFoundError
 from azure.search.documents.aio import SearchClient
-from azure.search.documents.models import VectorizedQuery
+from azure.search.documents.models import VectorizedQuery, VectorQuery
 
 logger = logging.getLogger(__name__)
 
@@ -87,15 +88,16 @@ async def search_index(
                     "falling back to keyword-only search"
                 )
 
-        results = await search_client.search(
+        results = await search_client.search(  # pyright: ignore[reportUnknownVariableType,reportUnknownMemberType]
             search_text=query,
             filter=odata_filter,
             top=top_k,
-            vector_queries=vector_queries,
+            vector_queries=cast("list[VectorQuery]", vector_queries) if vector_queries else None,
         )
 
         search_results: list[SearchResult] = []
-        async for doc in results:
+        async for raw_doc in results:  # pyright: ignore[reportUnknownVariableType]
+            doc: dict[str, Any] = dict(raw_doc)  # pyright: ignore[reportUnknownArgumentType]
             search_results.append(
                 SearchResult(
                     document_id=doc.get("document_id", ""),

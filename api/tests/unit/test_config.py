@@ -9,7 +9,7 @@ class TestSettingsDefaults:
     """Test that Settings loads with sensible defaults when no env vars are set."""
 
     def test_default_values(self):
-        settings = Settings(_env_file=None)
+        settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
 
         assert settings.environment == "dev"
         assert settings.log_level == "INFO"
@@ -41,7 +41,7 @@ class TestSettingsDefaults:
 class TestSettingsEnvOverrides:
     """Test that environment variables override default values."""
 
-    def test_env_var_overrides(self, monkeypatch):
+    def test_env_var_overrides(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("ENVIRONMENT", "production")
         monkeypatch.setenv("LOG_LEVEL", "DEBUG")
         monkeypatch.setenv("DEBUG", "true")
@@ -77,7 +77,7 @@ class TestLifespanProductionGuards:
         from src.main import app, lifespan
 
         unsafe_settings = Settings(
-            _env_file=None,
+            _env_file=None,  # pyright: ignore[reportCallIssue]
             environment="staging",
             auth_enabled=False,
         )
@@ -95,7 +95,7 @@ class TestLifespanProductionGuards:
         from src.main import app, lifespan
 
         unsafe_settings = Settings(
-            _env_file=None,
+            _env_file=None,  # pyright: ignore[reportCallIssue]
             environment="prod",
             auth_enabled=True,
             debug=True,
@@ -114,7 +114,7 @@ class TestLifespanProductionGuards:
         from src.main import app, lifespan
 
         unsafe_settings = Settings(
-            _env_file=None,
+            _env_file=None,  # pyright: ignore[reportCallIssue]
             environment="prod",
             auth_enabled=True,
             debug=False,
@@ -134,7 +134,7 @@ class TestLifespanProductionGuards:
         from src.main import app, lifespan
 
         dev_settings = Settings(
-            _env_file=None,
+            _env_file=None,  # pyright: ignore[reportCallIssue]
             environment="dev",
             auth_enabled=False,
         )
@@ -160,7 +160,7 @@ class TestLifespanProductionGuards:
         from src.main import app, lifespan
 
         valid_settings = Settings(
-            _env_file=None,
+            _env_file=None,  # pyright: ignore[reportCallIssue]
             environment="prod",
             auth_enabled=True,
             debug=False,

@@ -143,3 +143,13 @@ def add_error_handlers(app: FastAPI) -> None:
             message="An unexpected error occurred",
             detail=str(exc) if app.debug else None,
         )
+
+    # Expose handlers for testing (suppresses reportUnusedFunction)
+    _ = (
+        validation_error_handler,
+        timeout_error_handler,
+        llm_timeout_handler,
+        rate_limit_handler,
+        http_exception_handler,
+        generic_exception_handler,
+    )

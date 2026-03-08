@@ -25,7 +25,7 @@ _SNIPPET_RE = re.compile(r'snippet:\s*"([^"]*)"')
 
 def extract_sources(text: str) -> list[Source]:
     """Extract Source objects from text containing === SOURCE N === blocks."""
-    sources = []
+    sources: list[Source] = []
     for m in _SOURCE_BLOCK_RE.finditer(text):
         src = _parse_source_block(m.group(1))
         if src:
@@ -33,7 +33,7 @@ def extract_sources(text: str) -> list[Source]:
     return sources
 
 
-def _deduplicate_sources(sources: list[Source]) -> list[Source]:
+def deduplicate_sources(sources: list[Source]) -> list[Source]:
     """Deduplicate sources by document_id, keeping the highest-confidence entry.
 
     When the same document contributes multiple chunks (e.g. top_k=8 on a large
@@ -88,7 +88,7 @@ def _parse_source_block(block_body: str) -> Source | None:
         return None
 
 
-def _normalise_structured_data(model: AgentResponseModel) -> AgentResponseModel:
+def normalise_structured_data(model: AgentResponseModel) -> AgentResponseModel:
     """Ensure structured_data is None when empty and ui_hint is consistent.
 
     LLMs sometimes emit structured_data as "" or "{}" instead of null, or set
@@ -117,7 +117,7 @@ def _normalise_structured_data(model: AgentResponseModel) -> AgentResponseModel:
     return model.model_copy(update=updates) if updates else model
 
 
-def _sanitize_agent_response(model: AgentResponseModel) -> AgentResponseModel:
+def sanitize_agent_response(model: AgentResponseModel) -> AgentResponseModel:
     """Remove any leaked === SOURCE === blocks from the message field.
 
     If the message contains source blocks AND the sources list is empty, the
@@ -127,10 +127,10 @@ def _sanitize_agent_response(model: AgentResponseModel) -> AgentResponseModel:
     if "=== SOURCE" not in model.message:
         # Still deduplicate sources even when the message is clean.
         if model.sources:
-            deduped = _deduplicate_sources(model.sources)
+            deduped = deduplicate_sources(model.sources)
             if len(deduped) != len(model.sources):
                 model = model.model_copy(update={"sources": deduped})
-        return _normalise_structured_data(model)
+        return normalise_structured_data(model)
 
     recovered_sources: list[Source] = []
     for m in _SOURCE_BLOCK_RE.finditer(model.message):
@@ -152,13 +152,13 @@ def _sanitize_agent_response(model: AgentResponseModel) -> AgentResponseModel:
         else:
             clean_message = "Relevant documents were found. Please see the sources below."
 
-    new_sources = _deduplicate_sources(model.sources if model.sources else recovered_sources)
+    new_sources = deduplicate_sources(model.sources if model.sources else recovered_sources)
 
     result = model.model_copy(update={"message": clean_message, "sources": new_sources})
-    return _normalise_structured_data(result)
+    return normalise_structured_data(result)
 
 
-def _extract_json_object(text: str) -> str | None:
+def extract_json_object(text: str) -> str | None:
     """Find the first top-level JSON object in text using bracket matching.
 
     LLMs sometimes emit free text before or after the JSON object.
@@ -218,17 +218,17 @@ def parse_agent_output(raw_text: str, agent_name: str) -> AgentResponseModel:
     if json_candidate.startswith("{"):
         try:
             data = json.loads(json_candidate)
-            return _sanitize_agent_response(AgentResponseModel.model_validate(data))
+            return sanitize_agent_response(AgentResponseModel.model_validate(data))
         except (json.JSONDecodeError, ValidationError):
             logger.debug("parse_agent_output: direct JSON parse failed for agent=%s", agent_name)
 
     # Robust path: find the JSON object anywhere in the text.
     # LLMs often emit commentary before the JSON block.
-    json_str = _extract_json_object(json_candidate)
+    json_str = extract_json_object(json_candidate)
     if json_str:
         try:
             data = json.loads(json_str)
-            return _sanitize_agent_response(AgentResponseModel.model_validate(data))
+            return sanitize_agent_response(AgentResponseModel.model_validate(data))
         except (json.JSONDecodeError, ValidationError):
             logger.debug("parse_agent_output: extracted JSON parse failed for agent=%s", agent_name)
 
@@ -237,7 +237,7 @@ def parse_agent_output(raw_text: str, agent_name: str) -> AgentResponseModel:
         "parse_agent_output: no valid JSON found for agent=%s, using plain-text fallback",
         agent_name,
     )
-    return _sanitize_agent_response(
+    return sanitize_agent_response(
         AgentResponseModel(
             message=raw_text,
             sources=[],

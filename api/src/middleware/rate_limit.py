@@ -9,7 +9,7 @@ from slowapi.util import get_remote_address
 logger = logging.getLogger(__name__)
 
 
-def _get_user_key(request: Request) -> str:
+def get_user_key(request: Request) -> str:
     """Extract rate limit key from authenticated user or fall back to IP."""
     # user_context is set by the auth dependency in chat routes
     user = getattr(request.state, "user_context", None)
@@ -18,4 +18,4 @@ def _get_user_key(request: Request) -> str:
     return get_remote_address(request)
 
 
-limiter = Limiter(key_func=_get_user_key)
+limiter = Limiter(key_func=get_user_key)

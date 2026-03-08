@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-def load_manifest(manifest_path: Path) -> list[dict]:
+def load_manifest(manifest_path: Path) -> list[dict[str, Any]]:
     """Load a document manifest JSON file.
 
     The manifest is expected to be a JSON file containing a list of objects,
@@ -27,8 +27,8 @@ def load_manifest(manifest_path: Path) -> list[dict]:
         TypeError: If the top-level JSON value is not a list.
     """
     raw = manifest_path.read_text(encoding="utf-8")
-    data = json.loads(raw)
+    data: Any = json.loads(raw)
     if not isinstance(data, list):
         msg = f"Manifest must be a JSON array, got {type(data).__name__}"
         raise TypeError(msg)
-    return data
+    return cast("list[dict[str, Any]]", data)
