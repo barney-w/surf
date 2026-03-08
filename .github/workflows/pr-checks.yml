@@ -8,6 +8,7 @@ name: PR Checks
 on:
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: pr-checks-${{ github.head_ref }}

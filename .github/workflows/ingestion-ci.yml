@@ -12,6 +12,7 @@ on:
     paths:
       - "ingestion/**"
       - ".github/workflows/ingestion-ci.yml"
+  workflow_dispatch:
 
 concurrency:
   group: ingestion-ci-${{ github.ref }}

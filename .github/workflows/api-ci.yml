@@ -12,6 +12,7 @@ on:
     paths:
       - "api/**"
       - ".github/workflows/api-ci.yml"
+  workflow_dispatch:
 
 concurrency:
   group: api-ci-${{ github.ref }}
