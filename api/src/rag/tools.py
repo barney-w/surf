@@ -56,6 +56,7 @@ def _stitch_adjacent_chunks(results: list) -> list:
                 stitched.append(group[0])
             else:
                 from src.rag.search import SearchResult
+
                 merged = SearchResult(
                     document_id=group[0].document_id,
                     title=group[0].title,
@@ -78,6 +79,8 @@ def _stitch_adjacent_chunks(results: list) -> list:
 
     stitched.sort(key=lambda r: r.score, reverse=True)
     return stitched
+
+
 _embed_func: Callable[[str], Awaitable[list[float]]] | None = None
 
 
@@ -96,10 +99,7 @@ def set_embed_func(func: Callable[[str], Awaitable[list[float]]]) -> None:
 def _get_search_client() -> SearchClient:
     """Return the module-level search client, raising if not initialised."""
     if _search_client is None:
-        msg = (
-            "Search client not initialised. "
-            "Call set_search_client() during application startup."
-        )
+        msg = "Search client not initialised. Call set_search_client() during application startup."
         raise RuntimeError(msg)
     return _search_client
 

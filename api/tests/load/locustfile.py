@@ -16,9 +16,7 @@ class SurfUser(HttpUser):
 
     @task(1)
     def send_general_query(self):
-        self.client.post(
-            "/api/v1/chat", json={"message": "What are the office hours?"}
-        )
+        self.client.post("/api/v1/chat", json={"message": "What are the office hours?"})
 
     @task(1)
     def multi_turn_conversation(self):

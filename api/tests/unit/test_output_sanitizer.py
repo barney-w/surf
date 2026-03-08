@@ -1,4 +1,5 @@
 """Tests for _output.py sanitization and _MessageFieldExtractor pollution guard."""
+
 import json
 
 import pytest
@@ -10,23 +11,25 @@ from src.models.agent import AgentResponseModel, Source
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _source_block(n: int = 1) -> str:
     return (
-        f'=== SOURCE {n} ===\n'
+        f"=== SOURCE {n} ===\n"
         f'title: "Enterprise Agreement 2024"\n'
         f'section: "6.2 Nine Day Fortnight"\n'
         f'document_id: "abc{n}"\n'
-        f'relevance: 0.95\n'
-        f'url: null\n'
+        f"relevance: 0.95\n"
+        f"url: null\n"
         f'snippet: "Employees working a 9DFN shall be entitled to an RDO"\n\n'
-        f'CONTENT:\nSome full text content here.\n\n'
-        f'=== END SOURCE {n} ==='
+        f"CONTENT:\nSome full text content here.\n\n"
+        f"=== END SOURCE {n} ==="
     )
 
 
 # ---------------------------------------------------------------------------
 # _sanitize_agent_response
 # ---------------------------------------------------------------------------
+
 
 class TestSanitizeAgentResponse:
     def test_clean_message_passes_through(self):
@@ -93,6 +96,7 @@ class TestSanitizeAgentResponse:
 # parse_agent_output — sanitization applied at all return paths
 # ---------------------------------------------------------------------------
 
+
 class TestParseAgentOutputSanitization:
     def test_json_fast_path_sanitizes(self):
         payload = {
@@ -131,6 +135,7 @@ class TestParseAgentOutputSanitization:
 # extract_sources — public function
 # ---------------------------------------------------------------------------
 
+
 class TestExtractSources:
     def test_extracts_single_source(self):
         text = "Some preamble\n" + _source_block(1) + "\nSome trailing text"
@@ -156,12 +161,7 @@ class TestExtractSources:
 
     def test_skips_malformed_blocks(self):
         # Block without document_id should be skipped
-        malformed = (
-            "=== SOURCE 1 ===\n"
-            'title: "Some Title"\n'
-            "relevance: 0.8\n"
-            "=== END SOURCE 1 ==="
-        )
+        malformed = '=== SOURCE 1 ===\ntitle: "Some Title"\nrelevance: 0.8\n=== END SOURCE 1 ==='
         good = _source_block(2)
         sources = extract_sources(malformed + "\n" + good)
         assert len(sources) == 1
@@ -172,9 +172,11 @@ class TestExtractSources:
 # _MessageFieldExtractor — pollution guard
 # ---------------------------------------------------------------------------
 
+
 class TestMessageFieldExtractorGuard:
     def _extractor(self):
         from src.routes.chat import _MessageFieldExtractor
+
         return _MessageFieldExtractor()
 
     def _feed_all(self, extractor, tokens: list[str]) -> str:
@@ -191,7 +193,7 @@ class TestMessageFieldExtractorGuard:
         # Message field contains a raw source block
         msg_value = _source_block(1).replace('"', '\\"')
         raw = f'{{"message": "{msg_value}"}}'
-        tokens = [raw[i:i+5] for i in range(0, len(raw), 5)]
+        tokens = [raw[i : i + 5] for i in range(0, len(raw), 5)]
         result = self._feed_all(ex, tokens)
         assert result == ""
 
@@ -199,7 +201,7 @@ class TestMessageFieldExtractorGuard:
         ex = self._extractor()
         msg = "The RDO day is negotiated between the employee and their supervisor."
         raw = json.dumps({"message": msg})
-        tokens = [raw[i:i+3] for i in range(0, len(raw), 3)]
+        tokens = [raw[i : i + 3] for i in range(0, len(raw), 3)]
         result = self._feed_all(ex, tokens)
         assert "RDO" in result
 

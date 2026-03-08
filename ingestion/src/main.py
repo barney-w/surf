@@ -17,10 +17,10 @@ from dotenv import load_dotenv
 # Azure credentials are available without manually sourcing the file.
 load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 
-from src.connectors.pdf import create_document_from_pdf
-from src.pipeline.chunking import ChunkingConfig, chunk_document
-from src.pipeline.embedding import generate_embeddings
-from src.pipeline.indexing import create_or_update_index, upload_chunks
+from src.connectors.pdf import create_document_from_pdf  # noqa: E402
+from src.pipeline.chunking import ChunkingConfig, chunk_document  # noqa: E402
+from src.pipeline.embedding import generate_embeddings  # noqa: E402
+from src.pipeline.indexing import create_or_update_index, upload_chunks  # noqa: E402
 
 if TYPE_CHECKING:
     from src.models import Chunk, IngestedDocument
@@ -68,16 +68,17 @@ def _load_manifest(manifest_path: str | None) -> dict[str, dict]:
         result: dict[str, dict] = {}
         for i, entry in enumerate(data):
             if not isinstance(entry, dict) or "filename" not in entry:
-                msg = f"Manifest entry {i} must be a dict with a 'filename' key, got: {type(entry).__name__}"
+                msg = (
+                    f"Manifest entry {i} must be a dict with a 'filename' key,"
+                    f" got: {type(entry).__name__}"
+                )
                 raise click.ClickException(msg)
             result[entry["filename"]] = entry
         return result
     return data
 
 
-def _build_manifest_entry(
-    file_path: Path, domain: str, manifest: dict[str, dict]
-) -> dict:
+def _build_manifest_entry(file_path: Path, domain: str, manifest: dict[str, dict]) -> dict:
     """Return a manifest-style dict for *file_path*.
 
     If the file appears in *manifest* its entry is returned (with *domain*
@@ -107,9 +108,7 @@ def _parse_file(source: str, file_path: Path, manifest_entry: dict) -> IngestedD
     raise ValueError(msg)
 
 
-def _chunks_to_dicts(
-    chunks: list[Chunk], embeddings: list[list[float]]
-) -> list[dict]:
+def _chunks_to_dicts(chunks: list[Chunk], embeddings: list[list[float]]) -> list[dict]:
     """Convert Chunk objects + embeddings into dicts suitable for indexing."""
     results: list[dict] = []
     for chunk, embedding in zip(chunks, embeddings, strict=True):
@@ -202,9 +201,9 @@ async def _embed_and_index(chunks: list[Chunk], embed_batch_size: int = 16) -> i
 
     openai_client = AzureOpenAI(
         azure_endpoint=openai_endpoint,
-        azure_ad_token_provider=lambda: credential.get_token(
-            "https://cognitiveservices.azure.com/.default"
-        ).token,
+        azure_ad_token_provider=lambda: (
+            credential.get_token("https://cognitiveservices.azure.com/.default").token
+        ),
         api_version="2024-02-01",
     )
 
@@ -245,9 +244,7 @@ def cli() -> None:
 @click.option("--source", type=click.Choice(["pdf"]), required=True)
 @click.option("--path", type=click.Path(exists=True), required=True)
 @click.option("--domain", required=True, help="Document domain (hr, it, governance)")
-@click.option(
-    "--manifest", type=click.Path(exists=True), default=None, help="Manifest JSON file"
-)
+@click.option("--manifest", type=click.Path(exists=True), default=None, help="Manifest JSON file")
 @click.option("--dry-run", is_flag=True, help="Parse and chunk only, don't embed or index")
 @click.option(
     "--chunk-size",
@@ -314,7 +311,9 @@ def ingest(
     # 5-6. Generate embeddings and upload (unless dry_run)
     if not dry_run and all_chunks:
         try:
-            click.echo(f"Generating embeddings ({embed_batch_size} chunks/batch) and uploading to index...")
+            click.echo(
+                f"Generating embeddings ({embed_batch_size} chunks/batch) and uploading to index..."
+            )
             uploaded = asyncio.run(_embed_and_index(all_chunks, embed_batch_size=embed_batch_size))
             click.echo(f"Indexed {uploaded} chunk(s).")
         except Exception as exc:  # noqa: BLE001

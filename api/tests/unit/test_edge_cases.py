@@ -1,4 +1,5 @@
 """Edge case tests for boundary conditions and unusual inputs."""
+
 import pytest
 from fastapi import HTTPException
 
@@ -27,9 +28,9 @@ class TestMessageEdgeCases:
         assert "🌍" in result
 
     def test_zero_width_chars_preserved(self):
-        msg = "test\u200Bword"  # zero-width space
+        msg = "test\u200bword"  # zero-width space
         result = validate_message(msg)
-        assert "\u200B" in result  # U+200B is above ASCII control char range
+        assert "\u200b" in result  # U+200B is above ASCII control char range
 
     def test_newlines_and_tabs_preserved(self):
         msg = "line1\nline2\ttab"
@@ -50,6 +51,7 @@ class TestMessageEdgeCases:
 class TestConversationIdEdgeCases:
     def test_valid_uuid_format(self):
         import re
+
         uuid_re = re.compile(
             r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
             re.IGNORECASE,

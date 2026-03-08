@@ -216,8 +216,7 @@ async def test_hr_answer_quality(case: dict[str, Any], orchestrator_client: Any)
     if "must_cite" in case:
         for source in case["must_cite"]:
             assert source in response.citations, (
-                f"Missing citation '{source}' in {response.citations} "
-                f"for query: {case['query']}"
+                f"Missing citation '{source}' in {response.citations} for query: {case['query']}"
             )
 
     # Check that at least one citation exists

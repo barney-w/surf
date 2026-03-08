@@ -38,6 +38,5 @@ param apiMaxReplicas = 3
 param ingestionMinReplicas = 0
 param ingestionMaxReplicas = 1
 
-// OpenAI — moderate capacity
-param gpt52Capacity = 30
+// OpenAI — embeddings only (chat uses Anthropic Claude directly)
 param embeddingCapacity = 20

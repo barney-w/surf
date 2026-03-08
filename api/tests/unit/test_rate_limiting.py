@@ -1,4 +1,5 @@
 """Unit tests for per-user rate limiting middleware."""
+
 from unittest.mock import MagicMock
 
 from slowapi import Limiter

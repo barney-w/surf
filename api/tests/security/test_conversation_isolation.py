@@ -92,6 +92,4 @@ class TestConversationIsolation:
         assert result is not None
         assert result.id == valid_id
         assert result.user_id == "user-1"
-        mock_container.read_item.assert_awaited_once_with(
-            item=valid_id, partition_key="user-1"
-        )
+        mock_container.read_item.assert_awaited_once_with(item=valid_id, partition_key="user-1")

@@ -204,8 +204,7 @@ class MockOrchestratorClient:
         ),
         "parking": (
             "coordinator",
-            "Staff parking is available in the basement. Swipe your access card "
-            "at the boom gate.",
+            "Staff parking is available in the basement. Swipe your access card at the boom gate.",
             [],
             "medium",
         ),

@@ -46,11 +46,19 @@ param keyVaultSku string = 'standard'
 @description('Key Vault enable purge protection')
 param keyVaultEnablePurgeProtection bool = false
 
+@description('Allow public network access to Key Vault')
+@allowed(['Enabled', 'Disabled'])
+param keyVaultPublicNetworkAccess string = 'Enabled'
+
 @description('Log Analytics retention in days')
 param logAnalyticsRetentionDays int = 30
 
 @description('ACR SKU')
 param acrSku string = 'Basic'
+
+@description('Allow public network access to ACR (needed for GitHub-hosted runners in dev)')
+@allowed(['Enabled', 'Disabled'])
+param acrPublicNetworkAccess string = 'Disabled'
 
 @description('Container Apps CPU cores')
 param containerAppsCpu string = '0.5'
@@ -70,11 +78,15 @@ param ingestionMinReplicas int = 0
 @description('Ingestion maximum replicas')
 param ingestionMaxReplicas int = 1
 
-@description('GPT-5.2 model capacity (thousands of TPM)')
-param gpt52Capacity int = 10
-
 @description('Embedding model capacity')
 param embeddingCapacity int = 10
+
+@secure()
+@description('Anthropic API key (stored in Key Vault, passed to surf-api container)')
+param anthropicApiKey string = ''
+
+@description('Anthropic model ID for chat agents')
+param anthropicModelId string = 'claude-sonnet-4-6'
 
 // ---------------------------------------------------------------------------
 // Variables
@@ -104,7 +116,7 @@ module logAnalytics 'modules/log-analytics.bicep' = {
 }
 
 // ---------------------------------------------------------------------------
-// Module: Azure OpenAI
+// Module: Azure OpenAI (embeddings only — chat uses Anthropic Claude directly)
 // ---------------------------------------------------------------------------
 
 module openAi 'modules/openai.bicep' = {
@@ -112,7 +124,7 @@ module openAi 'modules/openai.bicep' = {
   params: {
     openAiName: 'oai-${baseName}'
     location: location
-    gpt52Capacity: gpt52Capacity
+    deployGpt52: false
     embeddingCapacity: embeddingCapacity
     tags: tags
   }
@@ -141,10 +153,12 @@ module aiSearch 'modules/ai-search.bicep' = {
 module keyVault 'modules/key-vault.bicep' = {
   name: 'deploy-key-vault'
   params: {
-    keyVaultName: 'kv-${baseName}-${uniqueSuffix}'
+    keyVaultName: 'kv-${baseName}-${take(uniqueSuffix, 10)}'
     location: location
     skuName: keyVaultSku
     enablePurgeProtection: keyVaultEnablePurgeProtection
+    publicNetworkAccess: keyVaultPublicNetworkAccess
+    anthropicApiKey: anthropicApiKey
     tags: tags
   }
 }
@@ -207,9 +221,9 @@ module containerApps 'modules/container-apps.bicep' = {
     baseName: baseName
     location: location
     logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
-    logAnalyticsCustomerId: logAnalytics.outputs.customerId
     containerAppsSubnetId: networking.outputs.containerAppsSubnetId
     acrSku: acrSku
+    acrPublicNetworkAccess: acrPublicNetworkAccess
     cpuCores: containerAppsCpu
     memorySize: containerAppsMemory
     apiMinReplicas: apiMinReplicas
@@ -221,6 +235,9 @@ module containerApps 'modules/container-apps.bicep' = {
     cosmosEndpoint: cosmosDb.outputs.cosmosEndpoint
     storageBlobEndpoint: storage.outputs.blobEndpoint
     keyVaultUri: keyVault.outputs.keyVaultUri
+    keyVaultName: keyVault.outputs.keyVaultName
+    anthropicModelId: anthropicModelId
+    anthropicApiKeyExists: !empty(anthropicApiKey)
     openAiId: openAi.outputs.openAiId
     aiSearchId: aiSearch.outputs.searchId
     cosmosAccountId: cosmosDb.outputs.cosmosAccountId

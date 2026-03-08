@@ -38,6 +38,8 @@ param apiMaxReplicas = 1
 param ingestionMinReplicas = 0
 param ingestionMaxReplicas = 1
 
-// OpenAI — low capacity
-param gpt52Capacity = 10
+// OpenAI — embeddings only (chat uses Anthropic Claude directly)
 param embeddingCapacity = 10
+
+// ACR — allow public access so GitHub-hosted runners can push images
+param acrPublicNetworkAccess = 'Enabled'

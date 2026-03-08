@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Module: Azure OpenAI
+// Module: Azure OpenAI (embeddings only — chat uses Anthropic Claude directly)
 // Project: Surf — Multi-Agent Orchestration Platform
 // ---------------------------------------------------------------------------
 
@@ -15,8 +15,8 @@ param tags object
 @description('SKU for Azure OpenAI')
 param skuName string = 'S0'
 
-@description('Whether to deploy the GPT-5.2 chat model')
-param deployGpt52 bool = true
+@description('Whether to deploy the GPT-5.2 chat model (disabled — chat uses Anthropic)')
+param deployGpt52 bool = false
 
 @description('GPT-5.2 model capacity (in thousands of tokens per minute)')
 param gpt52Capacity int = 10

@@ -1,14 +1,14 @@
 // ---------------------------------------------------------------------------
 // Dev-Local OpenAI Infrastructure: dev-local-openai.bicep
 // Project: Surf — Multi-Agent Orchestration Platform
-// Description: Azure OpenAI resource deployed separately to eastus (where
-//              gpt-5.2-chat is available). Deployed by 'just setup-dev' into
+// Description: Azure OpenAI resource for embeddings only (chat uses Anthropic
+//              Claude directly). Deployed by 'just setup-dev' into
 //              rg-surf-dev-ai alongside the main rg-surf-dev resource group.
 // ---------------------------------------------------------------------------
 
 targetScope = 'resourceGroup'
 
-@description('Azure region for OpenAI (must have gpt-5.2-chat availability)')
+@description('Azure region for OpenAI')
 param location string = 'eastus2'
 
 @description('Object ID of the signed-in user (for RBAC)')
@@ -40,22 +40,6 @@ resource openAi 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   }
 }
 
-resource gpt52Deployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
-  parent: openAi
-  name: 'gpt-5.2-chat'
-  sku: {
-    name: 'GlobalStandard'
-    capacity: 50
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: 'gpt-5.2-chat'
-      version: '2026-02-10'
-    }
-  }
-}
-
 resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: openAi
   name: 'text-embedding-3-large'
@@ -70,9 +54,6 @@ resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2
       version: '1'
     }
   }
-  dependsOn: [
-    gpt52Deployment
-  ]
 }
 
 resource openAiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {

@@ -15,15 +15,16 @@ param tags object
 @description('Resource ID of the Log Analytics workspace')
 param logAnalyticsWorkspaceId string
 
-@description('Log Analytics workspace customer ID')
-param logAnalyticsCustomerId string
-
 @description('Resource ID of the Container Apps subnet')
 param containerAppsSubnetId string
 
 @description('ACR SKU')
 @allowed(['Basic', 'Standard', 'Premium'])
 param acrSku string = 'Basic'
+
+@description('Allow public network access to ACR (needed for GitHub-hosted runners in dev)')
+@allowed(['Enabled', 'Disabled'])
+param acrPublicNetworkAccess string = 'Disabled'
 
 @description('Container app CPU cores')
 param cpuCores string = '0.5'
@@ -59,6 +60,12 @@ param storageBlobEndpoint string = ''
 @description('Key Vault URI')
 param keyVaultUri string = ''
 
+@description('Key Vault name (for secret references)')
+param keyVaultName string = ''
+
+@description('Anthropic model ID for chat agents')
+param anthropicModelId string = 'claude-sonnet-4-6'
+
 // Resource IDs for role assignments
 @description('Azure OpenAI resource ID')
 param openAiId string = ''
@@ -75,11 +82,33 @@ param storageAccountId string = ''
 @description('Key Vault ID')
 param keyVaultId string = ''
 
+@description('Container image tag for surf-api (e.g. git SHA). Leave empty to use a placeholder image on first bootstrap.')
+param apiImageTag string = ''
+
+@description('Container image tag for surf-ingestion (e.g. git SHA). Leave empty to use a placeholder image on first bootstrap.')
+param ingestionImageTag string = ''
+
+@description('Whether the anthropic-api-key secret exists in Key Vault. Set false on first bootstrap if the key has not been stored yet.')
+param anthropicApiKeyExists bool = false
+
+// ---------------------------------------------------------------------------
+// Existing resource references
+// ---------------------------------------------------------------------------
+
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
+  name: last(split(logAnalyticsWorkspaceId, '/'))
+}
+
 // ---------------------------------------------------------------------------
 // Variables
 // ---------------------------------------------------------------------------
 
 var acrName = replace('acr${baseName}', '-', '')
+
+// Use a public placeholder image on first bootstrap when no tag has been pushed to ACR yet
+var bootstrapImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+var apiImage = !empty(apiImageTag) ? '${acr.properties.loginServer}/surf-api:${apiImageTag}' : bootstrapImage
+var ingestionImage = !empty(ingestionImageTag) ? '${acr.properties.loginServer}/surf-ingestion:${ingestionImageTag}' : bootstrapImage
 
 // ---------------------------------------------------------------------------
 // Azure Container Registry
@@ -97,7 +126,7 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
   }
   properties: {
     adminUserEnabled: false
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: acrPublicNetworkAccess
   }
 }
 
@@ -113,8 +142,8 @@ resource containerAppsEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
-        customerId: logAnalyticsCustomerId
-        dynamicJsonColumns: true
+        customerId: logAnalyticsWorkspace.properties.customerId
+        sharedKey: logAnalyticsWorkspace.listKeys().primarySharedKey
       }
     }
     vnetConfiguration: {
@@ -141,13 +170,37 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 }
 
 // ---------------------------------------------------------------------------
+// Existing resource references for role assignment scoping
+// ---------------------------------------------------------------------------
+
+resource existingOpenAi 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = if (!empty(openAiId)) {
+  name: last(split(openAiId, '/'))
+}
+
+resource existingAiSearch 'Microsoft.Search/searchServices@2023-11-01' existing = if (!empty(aiSearchId)) {
+  name: last(split(aiSearchId, '/'))
+}
+
+resource existingCosmos 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' existing = if (!empty(cosmosAccountId)) {
+  name: last(split(cosmosAccountId, '/'))
+}
+
+resource existingStorage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = if (!empty(storageAccountId)) {
+  name: last(split(storageAccountId, '/'))
+}
+
+resource existingKeyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = if (!empty(keyVaultId)) {
+  name: last(split(keyVaultId, '/'))
+}
+
+// ---------------------------------------------------------------------------
 // Role Assignments — Managed Identity access to downstream resources
 // ---------------------------------------------------------------------------
 
 // Cognitive Services OpenAI User role on OpenAI resource
 resource roleOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(openAiId)) {
   name: guid(managedIdentity.id, openAiId, 'cognitive-services-openai-user')
-  scope: resourceGroup()  // TODO: scope to target resource once cross-RG references are resolved
+  scope: existingOpenAi
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -161,7 +214,7 @@ resource roleOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = i
 // Search Index Data Contributor on AI Search
 resource roleSearchContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(aiSearchId)) {
   name: guid(managedIdentity.id, aiSearchId, 'search-index-data-contributor')
-  scope: resourceGroup()  // TODO: scope to target resource once cross-RG references are resolved
+  scope: existingAiSearch
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -172,24 +225,21 @@ resource roleSearchContributor 'Microsoft.Authorization/roleAssignments@2022-04-
   }
 }
 
-// Cosmos DB Built-in Data Contributor
-resource roleCosmosContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(cosmosAccountId)) {
+// Cosmos DB Built-in Data Contributor (data plane role — must use sqlRoleAssignments, not ARM roleAssignments)
+resource roleCosmosContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (!empty(cosmosAccountId)) {
   name: guid(managedIdentity.id, cosmosAccountId, 'cosmos-db-data-contributor')
-  scope: resourceGroup()  // TODO: scope to target resource once cross-RG references are resolved
+  parent: existingCosmos
   properties: {
     principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions',
-      '00000000-0000-0000-0000-000000000002' // Cosmos DB Built-in Data Contributor
-    )
+    roleDefinitionId: '${existingCosmos.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    scope: existingCosmos.id
   }
 }
 
 // Storage Blob Data Contributor
 resource roleStorageContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(storageAccountId)) {
   name: guid(managedIdentity.id, storageAccountId, 'storage-blob-data-contributor')
-  scope: resourceGroup()  // TODO: scope to target resource once cross-RG references are resolved
+  scope: existingStorage
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -203,7 +253,7 @@ resource roleStorageContributor 'Microsoft.Authorization/roleAssignments@2022-04
 // Key Vault Secrets User
 resource roleKeyVaultUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(keyVaultId)) {
   name: guid(managedIdentity.id, keyVaultId, 'key-vault-secrets-user')
-  scope: resourceGroup()  // TODO: scope to target resource once cross-RG references are resolved
+  scope: existingKeyVault
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -217,7 +267,7 @@ resource roleKeyVaultUser 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 // ACR Pull for managed identity
 resource roleAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(managedIdentity.id, acr.id, 'acr-pull')
-  scope: resourceGroup()  // TODO: scope to target resource once cross-RG references are resolved
+  scope: acr
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -233,7 +283,7 @@ resource roleAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 // ---------------------------------------------------------------------------
 
 resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
-  name: 'surf-api'
+  name: 'ca-api-${baseName}'
   location: location
   tags: tags
   identity: {
@@ -252,6 +302,13 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
         transport: 'auto'
         allowInsecure: false
       }
+      secrets: (!empty(keyVaultName) && anthropicApiKeyExists) ? [
+        {
+          name: 'anthropic-api-key'
+          keyVaultUrl: '${keyVaultUri}secrets/anthropic-api-key'
+          identity: managedIdentity.id
+        }
+      ] : []
       registries: [
         {
           server: acr.properties.loginServer
@@ -263,19 +320,20 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
       containers: [
         {
           name: 'surf-api'
-          image: '${acr.properties.loginServer}/surf-api:latest'
+          image: apiImage
           resources: {
             cpu: json(cpuCores)
             memory: memorySize
           }
-          env: [
+          env: concat([
             { name: 'AZURE_OPENAI_ENDPOINT', value: openAiEndpoint }
             { name: 'AZURE_AI_SEARCH_ENDPOINT', value: aiSearchEndpoint }
             { name: 'AZURE_COSMOS_ENDPOINT', value: cosmosEndpoint }
             { name: 'AZURE_STORAGE_BLOB_ENDPOINT', value: storageBlobEndpoint }
             { name: 'AZURE_KEY_VAULT_URI', value: keyVaultUri }
             { name: 'AZURE_CLIENT_ID', value: managedIdentity.properties.clientId }
-          ]
+            { name: 'ANTHROPIC_MODEL_ID', value: anthropicModelId }
+          ], anthropicApiKeyExists ? [{ name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }] : [])
           probes: [
             {
               type: 'Liveness'
@@ -324,7 +382,7 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
 // ---------------------------------------------------------------------------
 
 resource surfIngestion 'Microsoft.App/containerApps@2024-03-01' = {
-  name: 'surf-ingestion'
+  name: 'ca-ingestion-${baseName}'
   location: location
   tags: tags
   identity: {
@@ -348,7 +406,7 @@ resource surfIngestion 'Microsoft.App/containerApps@2024-03-01' = {
       containers: [
         {
           name: 'surf-ingestion'
-          image: '${acr.properties.loginServer}/surf-ingestion:latest'
+          image: ingestionImage
           resources: {
             cpu: json(cpuCores)
             memory: memorySize

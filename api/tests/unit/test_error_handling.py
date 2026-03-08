@@ -17,6 +17,7 @@ from src.services.conversation import ConversationService
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_app(workflow=None, conversation_service=None) -> FastAPI:
     """Build a minimal FastAPI app with chat routes and error handlers."""
     app = FastAPI()
@@ -45,6 +46,7 @@ def _make_conversation_service() -> ConversationService:
 # ---------------------------------------------------------------------------
 # Test 1 — LLM timeout returns structured error
 # ---------------------------------------------------------------------------
+
 
 class TestLLMTimeout:
     def test_llm_timeout_returns_504_structured_error(self):
@@ -78,6 +80,7 @@ class TestLLMTimeout:
 # Test 2 — RAG failure produces low-confidence response
 # ---------------------------------------------------------------------------
 
+
 class TestRAGFailure:
     def test_rag_failure_returns_low_confidence(self):
         """If the workflow raises a generic error (e.g. RAG failure), the
@@ -107,6 +110,7 @@ class TestRAGFailure:
 # ---------------------------------------------------------------------------
 # Test 3 — Cosmos unavailability doesn't crash the chat endpoint
 # ---------------------------------------------------------------------------
+
 
 class TestCosmosUnavailability:
     def test_cosmos_down_still_returns_response(self):
@@ -143,6 +147,7 @@ class TestCosmosUnavailability:
 # ---------------------------------------------------------------------------
 # Test 4 — Overly long messages are rejected with 422
 # ---------------------------------------------------------------------------
+
 
 class TestInputValidation:
     def test_overlong_message_rejected_with_422(self):

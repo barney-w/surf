@@ -87,9 +87,7 @@ class TestGetConversation:
         result = await service.get_conversation(valid_id, "user-1")
 
         assert result is None
-        mock_container.read_item.assert_awaited_once_with(
-            item=valid_id, partition_key="user-1"
-        )
+        mock_container.read_item.assert_awaited_once_with(item=valid_id, partition_key="user-1")
 
     @pytest.mark.asyncio
     async def test_returns_document_when_found(self, service, mock_container):
@@ -158,9 +156,7 @@ class TestDeleteConversation:
 class TestAddFeedback:
     @pytest.mark.asyncio
     async def test_appends_feedback_via_patch(self, service, mock_container):
-        feedback = FeedbackRecord(
-            message_id="msg-1", rating="positive", comment="Great answer"
-        )
+        feedback = FeedbackRecord(message_id="msg-1", rating="positive", comment="Great answer")
 
         await service.add_feedback("conv-1", "user-1", feedback)
 

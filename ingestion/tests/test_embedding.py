@@ -105,11 +105,11 @@ class TestRetry:
 
         client.embeddings.create = _create
 
-        with patch("src.pipeline.embedding.asyncio.sleep", return_value=None):
-            with pytest.raises(RateLimitError):
-                asyncio.run(
-                    generate_embeddings(["test"], client, batch_size=16, max_retries=2)
-                )
+        with (
+            patch("src.pipeline.embedding.asyncio.sleep", return_value=None),
+            pytest.raises(RateLimitError),
+        ):
+            asyncio.run(generate_embeddings(["test"], client, batch_size=16, max_retries=2))
 
 
 class TestEdgeCases:

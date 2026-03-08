@@ -166,10 +166,12 @@ def parse_agent_output(raw_text: str, agent_name: str) -> AgentResponseModel:
             logger.debug("parse_agent_output: late-JSON parse failed for agent=%s", agent_name)
 
     # Plain-text fallback
-    return _sanitize_agent_response(AgentResponseModel(
-        message=raw_text,
-        sources=[],
-        confidence="medium",
-        ui_hint="text",
-        follow_up_suggestions=[],
-    ))
+    return _sanitize_agent_response(
+        AgentResponseModel(
+            message=raw_text,
+            sources=[],
+            confidence="medium",
+            ui_hint="text",
+            follow_up_suggestions=[],
+        )
+    )

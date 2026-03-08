@@ -9,9 +9,6 @@ on:
   push:
     branches:
       - main
-      - "release/**"
-    tags:
-      - "v*"
     paths:
       - "api/**"
       - ".github/workflows/api-ci.yml"
@@ -19,10 +16,6 @@ on:
 concurrency:
   group: api-ci-${{ github.ref }}
   cancel-in-progress: true
-
-permissions:
-  id-token: write   # OIDC token for Azure auth
-  contents: read
 
 env:
   SERVICE_NAME: api
@@ -36,6 +29,8 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIR }}
@@ -63,6 +58,8 @@ jobs:
     name: Test
     needs: lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIR }}
@@ -84,33 +81,16 @@ jobs:
         run: uv run pytest --tb=short -q
 
   # ---------------------------------------------------------------------------
-  # Determine environment
-  # ---------------------------------------------------------------------------
-  resolve-env:
-    name: Resolve Environment
-    runs-on: ubuntu-latest
-    outputs:
-      environment: ${{ steps.env.outputs.environment }}
-    steps:
-      - name: Determine target environment
-        id: env
-        run: |
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "environment=prod" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref }}" == refs/heads/release/* ]]; then
-            echo "environment=staging" >> "$GITHUB_OUTPUT"
-          else
-            echo "environment=dev" >> "$GITHUB_OUTPUT"
-          fi
-
-  # ---------------------------------------------------------------------------
   # Build & Push Docker image to ACR
   # ---------------------------------------------------------------------------
   build-push:
     name: Build & Push
-    needs: [test, resolve-env]
+    needs: test
     runs-on: ubuntu-latest
-    environment: ${{ needs.resolve-env.outputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    environment: dev
     outputs:
       image-tag: ${{ steps.meta.outputs.image-tag }}
     steps:
@@ -141,14 +121,38 @@ jobs:
             ${{ env.WORKING_DIR }}
           docker push "${{ steps.meta.outputs.image-tag }}"
 
+      - name: Scan container image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.meta.outputs.image-tag }}
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.meta.outputs.image-tag }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ env.IMAGE_NAME }}-${{ github.sha }}
+          path: sbom.spdx.json
+
   # ---------------------------------------------------------------------------
   # Deploy to Azure Container Apps
   # ---------------------------------------------------------------------------
   deploy:
     name: Deploy
-    needs: [resolve-env, build-push]
+    needs: build-push
     runs-on: ubuntu-latest
-    environment: ${{ needs.resolve-env.outputs.environment }}
+    permissions:
+      id-token: write
+    environment: dev
     steps:
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -160,6 +164,6 @@ jobs:
       - name: Deploy to Container Apps
         uses: azure/container-apps-deploy-action@v1
         with:
-          containerAppName: ca-${{ env.SERVICE_NAME }}-surf-${{ needs.resolve-env.outputs.environment }}
+          containerAppName: ca-${{ env.SERVICE_NAME }}-surf-dev
           resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}
           imageToDeploy: ${{ needs.build-push.outputs.image-tag }}

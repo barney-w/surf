@@ -45,9 +45,9 @@ def _encode(text: str) -> list[int]:
 
 _HEADING_RE = re.compile(
     r"^("
-    r"#{1,6}\s+.+"               # Markdown heading: ## Section
+    r"#{1,6}\s+.+"  # Markdown heading: ## Section
     r"|[A-Z][A-Z0-9 ,/&:-]{2,}"  # ALL-CAPS line: INTRODUCTION
-    r"|\d+\.[\d.]*\s+\S.{1,}"   # Numbered clause: 14.7 Call Out Payments
+    r"|\d+\.[\d.]*\s+\S.{1,}"  # Numbered clause: 14.7 Call Out Payments
     r")$"
 )
 
@@ -146,9 +146,7 @@ def _sub_clause_split(text: str, max_tokens: int, overlap_tokens: int) -> list[s
 # ---------------------------------------------------------------------------
 
 
-def _semantic_chunk(
-    text: str, config: ChunkingConfig
-) -> list[tuple[str, str | None]]:
+def _semantic_chunk(text: str, config: ChunkingConfig) -> list[tuple[str, str | None]]:
     """Split on paragraph / section boundaries.
 
     Returns a list of ``(content, section_heading)`` pairs.
@@ -194,7 +192,7 @@ def _semantic_chunk(
         #         process the remaining body text under it.
         first_line = para.split("\n", 1)[0]
         if _is_heading(first_line):
-            rest = para[len(first_line):].strip()
+            rest = para[len(first_line) :].strip()
             if not rest:
                 # Standalone heading — flush and switch section.
                 _flush()
@@ -257,9 +255,7 @@ def _fixed_chunk_raw(text: str, max_tokens: int, overlap_tokens: int) -> list[st
     return chunks
 
 
-def _fixed_chunk(
-    text: str, config: ChunkingConfig
-) -> list[tuple[str, str | None]]:
+def _fixed_chunk(text: str, config: ChunkingConfig) -> list[tuple[str, str | None]]:
     """Split into fixed-size token windows with overlap.  Returns (content, None) pairs."""
     raw = _fixed_chunk_raw(text, config.max_chunk_tokens, config.overlap_tokens)
     return [(c, None) for c in raw]
@@ -275,9 +271,7 @@ def _generate_chunk_id(document_id: str, chunk_index: int) -> str:
     return hashlib.sha256(f"{document_id}:{chunk_index}".encode()).hexdigest()[:16]
 
 
-def chunk_document(
-    document: IngestedDocument, config: ChunkingConfig | None = None
-) -> list[Chunk]:
+def chunk_document(document: IngestedDocument, config: ChunkingConfig | None = None) -> list[Chunk]:
     """Split an *IngestedDocument* into a list of *Chunk* objects."""
     if config is None:
         config = ChunkingConfig()
@@ -297,7 +291,9 @@ def chunk_document(
         final: list[tuple[str, str | None]] = []
         for content, heading in raw_chunks:
             if _token_len(content) > config.max_chunk_tokens:
-                for sub in _fixed_chunk_raw(content, config.max_chunk_tokens, config.overlap_tokens):
+                for sub in _fixed_chunk_raw(
+                    content, config.max_chunk_tokens, config.overlap_tokens
+                ):
                     final.append((sub, heading))
             else:
                 final.append((content, heading))
@@ -309,9 +305,7 @@ def chunk_document(
     chunks: list[Chunk] = []
     for idx, (content, heading) in enumerate(raw_chunks):
         # Prepend heading when configured
-        full_text = (
-            f"{heading}\n\n{content}" if config.preserve_headings and heading else content
-        )
+        full_text = f"{heading}\n\n{content}" if config.preserve_headings and heading else content
 
         chunk = Chunk(
             id=_generate_chunk_id(document.id, idx),

@@ -14,15 +14,18 @@ class MessageRecord(BaseModel):
     response: AgentResponseModel | None = None
     timestamp: datetime
 
+
 class FeedbackRecord(BaseModel):
     message_id: str
     rating: Literal["positive", "negative"]
     comment: str | None = None
 
+
 class ConversationMetadata(BaseModel):
     last_active_agent: str | None = None
     message_count: int = 0
     feedback: list[FeedbackRecord] = []
+
 
 class ConversationDocument(BaseModel):
     id: str

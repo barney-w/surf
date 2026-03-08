@@ -33,6 +33,7 @@ def _make_doc(content: str, doc_id: str = "doc-1") -> IngestedDocument:
 
 # ---- 1. Short document produces a single chunk ----
 
+
 def test_short_document_single_chunk() -> None:
     doc = _make_doc("Hello, this is a short paragraph.")
     chunks = chunk_document(doc)
@@ -43,6 +44,7 @@ def test_short_document_single_chunk() -> None:
 
 
 # ---- 2. Long document produces multiple chunks with correct overlap ----
+
 
 def test_long_document_multiple_chunks_with_overlap() -> None:
     config = ChunkingConfig(strategy="fixed", max_chunk_tokens=50, overlap_tokens=10)
@@ -56,7 +58,7 @@ def test_long_document_multiple_chunks_with_overlap() -> None:
     for i in range(len(chunks) - 1):
         cur_tokens = _enc.encode(chunks[i].content)
         next_tokens = _enc.encode(chunks[i + 1].content)
-        overlap_from_cur = cur_tokens[-config.overlap_tokens:]
+        overlap_from_cur = cur_tokens[-config.overlap_tokens :]
         overlap_in_next = next_tokens[: config.overlap_tokens]
         assert overlap_from_cur == overlap_in_next, (
             f"Overlap mismatch between chunk {i} and {i + 1}"
@@ -64,6 +66,7 @@ def test_long_document_multiple_chunks_with_overlap() -> None:
 
 
 # ---- 3. Section headings are preserved and prepended ----
+
 
 def test_section_headings_preserved() -> None:
     text = (
@@ -87,11 +90,9 @@ def test_section_headings_preserved() -> None:
 
 # ---- 4. No chunk exceeds max_chunk_tokens ----
 
+
 def test_no_chunk_exceeds_max_tokens() -> None:
-    paragraphs = [
-        f"Paragraph {i}. " + ("Some filler text to add tokens. " * 20)
-        for i in range(20)
-    ]
+    paragraphs = [f"Paragraph {i}. " + ("Some filler text to add tokens. " * 20) for i in range(20)]
     text = "\n\n".join(paragraphs)
     doc = _make_doc(text)
     config = ChunkingConfig(max_chunk_tokens=128, overlap_tokens=16)
@@ -106,16 +107,18 @@ def test_no_chunk_exceeds_max_tokens() -> None:
 
 # ---- 5. Chunk IDs are deterministic ----
 
+
 def test_chunk_ids_deterministic() -> None:
     doc = _make_doc("Hello world.\n\nSecond paragraph.\n\nThird paragraph.")
     chunks_a = chunk_document(doc)
     chunks_b = chunk_document(doc)
     assert len(chunks_a) == len(chunks_b)
-    for a, b in zip(chunks_a, chunks_b):
+    for a, b in zip(chunks_a, chunks_b, strict=True):
         assert a.id == b.id
 
 
 # ---- 6. _generate_chunk_id is a sha256 prefix ----
+
 
 def test_generate_chunk_id_format() -> None:
     cid = _generate_chunk_id("doc-1", 0)
@@ -129,6 +132,7 @@ def test_generate_chunk_id_format() -> None:
 
 
 # ---- 7. Metadata is inherited from parent document ----
+
 
 def test_metadata_inherited() -> None:
     meta = DocumentMetadata(domain="hr", document_type="policy", author="Alice")
@@ -149,6 +153,7 @@ def test_metadata_inherited() -> None:
 
 # ---- 8. Headings not prepended when preserve_headings=False ----
 
+
 def test_headings_not_prepended_when_disabled() -> None:
     text = "INTRODUCTION\n\nBody text here."
     doc = _make_doc(text)
@@ -160,6 +165,7 @@ def test_headings_not_prepended_when_disabled() -> None:
 
 # ---- 9. Default chunk size and overlap ----
 
+
 def test_default_config_values() -> None:
     config = ChunkingConfig()
     assert config.max_chunk_tokens == 700
@@ -167,6 +173,7 @@ def test_default_config_values() -> None:
 
 
 # ---- 10. Numbered clause headings are detected ----
+
 
 def test_numbered_clause_heading_detected() -> None:
     assert _is_heading("14.7 Call Out Payments")
@@ -198,14 +205,17 @@ def test_numbered_clause_heading_splits_section() -> None:
 
 # ---- 11. Sub-clause splitting keeps related sub-clauses together ----
 
+
 def test_sub_clause_split_keeps_clauses_together() -> None:
     # Build a paragraph with sub-clauses that together fit within 1500 tokens.
-    sub_clauses = "\n".join([
-        "(a) First sub-clause with some content describing entitlements.",
-        "(b) Second sub-clause with additional payment conditions.",
-        "(c) Third sub-clause outlining calculation methodology.",
-        "(d) Fourth sub-clause about appeal processes.",
-    ])
+    sub_clauses = "\n".join(
+        [
+            "(a) First sub-clause with some content describing entitlements.",
+            "(b) Second sub-clause with additional payment conditions.",
+            "(c) Third sub-clause outlining calculation methodology.",
+            "(d) Fourth sub-clause about appeal processes.",
+        ]
+    )
     chunks = _sub_clause_split(sub_clauses, max_tokens=500, overlap_tokens=50)
     # All sub-clauses together are well under 500 tokens — should be one chunk.
     assert len(chunks) == 1
@@ -217,13 +227,15 @@ def test_sub_clause_split_splits_at_clause_boundaries() -> None:
     # Build sub-clauses that individually are small but together exceed max_tokens.
     # Each "filler" paragraph is ~40 tokens; 5 sub-clauses × 40 = ~200 tokens.
     filler = "word " * 35  # ~35 tokens per sub-clause
-    sub_clauses = "\n".join([
-        f"(a) {filler}",
-        f"(b) {filler}",
-        f"(c) {filler}",
-        f"(d) {filler}",
-        f"(e) {filler}",
-    ])
+    sub_clauses = "\n".join(
+        [
+            f"(a) {filler}",
+            f"(b) {filler}",
+            f"(c) {filler}",
+            f"(d) {filler}",
+            f"(e) {filler}",
+        ]
+    )
     chunks = _sub_clause_split(sub_clauses, max_tokens=80, overlap_tokens=20)
     # Should split somewhere — each chunk must be within the token limit.
     assert len(chunks) > 1

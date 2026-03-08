@@ -68,16 +68,18 @@ class TestDuplicateRegistration:
     def test_duplicate_agent_name_raises(self):
         _register_hr_agent()
         with pytest.raises(ValueError, match="Duplicate agent name: hr_agent"):
-            AgentRegistry.register(type(
-                "FakeHRAgent",
-                (),
-                {
-                    "name": property(lambda self: "hr_agent"),
-                    "description": property(lambda self: "Duplicate"),
-                    "system_prompt": property(lambda self: "Duplicate"),
-                    "rag_scope": property(lambda self: RAGScope(domain="hr")),
-                },
-            ))
+            AgentRegistry.register(
+                type(
+                    "FakeHRAgent",
+                    (),
+                    {
+                        "name": property(lambda self: "hr_agent"),
+                        "description": property(lambda self: "Duplicate"),
+                        "system_prompt": property(lambda self: "Duplicate"),
+                        "rag_scope": property(lambda self: RAGScope(domain="hr")),
+                    },
+                )
+            )
 
 
 class TestInitSubclassRegistration:

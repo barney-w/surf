@@ -46,14 +46,14 @@ class TestInputInjection:
         (\\x00-\\x1f, \\x7f). U+202E (\\u202E) is NOT in that range and therefore
         passes through the sanitiser unchanged. This test documents actual behaviour.
         """
-        message = "safe\u202Etext"
+        message = "safe\u202etext"
         result = validate_message(message)
         # U+202E is not stripped by the ASCII-range control char regex
-        assert "\u202E" in result
+        assert "\u202e" in result
 
     def test_zero_width_chars_preserved(self):
         """Zero-width space (U+200B) is not an ASCII control char and passes through."""
-        message = "word\u200Bspace"
+        message = "word\u200bspace"
         result = validate_message(message)
-        assert "\u200B" in result
+        assert "\u200b" in result
         assert result == message

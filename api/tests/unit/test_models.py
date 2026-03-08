@@ -20,6 +20,7 @@ from src.models import (
 # Source.confidence bounds
 # ---------------------------------------------------------------------------
 
+
 class TestSourceConfidence:
     def test_rejects_negative_confidence(self):
         with pytest.raises(ValidationError):
@@ -40,6 +41,7 @@ class TestSourceConfidence:
 # ChatRequest.message validation
 # ---------------------------------------------------------------------------
 
+
 class TestChatRequestMessage:
     def test_rejects_empty_message(self):
         with pytest.raises(ValidationError):
@@ -57,6 +59,7 @@ class TestChatRequestMessage:
 # ---------------------------------------------------------------------------
 # AgentResponseModel.ui_hint validation
 # ---------------------------------------------------------------------------
+
 
 class TestAgentResponseModelUiHint:
     def test_rejects_invalid_ui_hint(self):
@@ -84,6 +87,7 @@ class TestAgentResponseModelUiHint:
 # ---------------------------------------------------------------------------
 # ChatResponse JSON round-trip
 # ---------------------------------------------------------------------------
+
 
 class TestChatResponseRoundTrip:
     def test_json_round_trip(self):
@@ -122,6 +126,7 @@ class TestChatResponseRoundTrip:
 # ---------------------------------------------------------------------------
 # ConversationDocument full serialization
 # ---------------------------------------------------------------------------
+
 
 class TestConversationDocumentSerialization:
     def test_full_conversation_round_trip(self):

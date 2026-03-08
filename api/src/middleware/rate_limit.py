@@ -1,4 +1,5 @@
 """Per-user rate limiting using slowapi."""
+
 import logging
 
 from fastapi import Request

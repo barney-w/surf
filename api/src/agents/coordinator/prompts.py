@@ -1,7 +1,5 @@
 def build_coordinator_prompt(agent_descriptions: list[dict[str, str]]) -> str:
-    agent_list = "\n".join(
-        f"- **{a['name']}**: {a['description']}" for a in agent_descriptions
-    )
+    agent_list = "\n".join(f"- **{a['name']}**: {a['description']}" for a in agent_descriptions)
 
     return f"""You are Surf — a multi-agent workplace assistant.
 

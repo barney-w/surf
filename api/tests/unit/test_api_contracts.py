@@ -1,4 +1,5 @@
 """Contract tests verifying API response schemas match expected shapes."""
+
 from fastapi.testclient import TestClient
 
 from src.main import app

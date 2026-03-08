@@ -31,10 +31,12 @@ class TestBuildOdataFilter:
         assert result == "search.in(document_type, 'policy,agreement')"
 
     def test_combined_filters(self):
-        result = build_odata_filter({
-            "domain": "hr",
-            "document_type_in": ["policy", "agreement"],
-        })
+        result = build_odata_filter(
+            {
+                "domain": "hr",
+                "document_type_in": ["policy", "agreement"],
+            }
+        )
         assert result is not None
         assert "domain eq 'hr'" in result
         assert "search.in(document_type, 'policy,agreement')" in result
@@ -100,9 +102,7 @@ class TestSearchIndex:
     @pytest.mark.asyncio
     async def test_search_index_raises_when_index_missing(self):
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(
-            side_effect=ResourceNotFoundError("Index not found")
-        )
+        mock_client.search = AsyncMock(side_effect=ResourceNotFoundError("Index not found"))
 
         with pytest.raises(SearchIndexNotFoundError):
             await search_index("query", search_client=mock_client)

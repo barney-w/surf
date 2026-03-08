@@ -1,0 +1,485 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 880" width="1100" height="880">
+  <defs>
+    <filter id="shadow-sm" x="-2%" y="-2%" width="106%" height="108%">
+      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-opacity="0.10"/>
+    </filter>
+    <filter id="shadow-md" x="-3%" y="-3%" width="108%" height="112%">
+      <feDropShadow dx="2" dy="3" stdDeviation="6" flood-opacity="0.12"/>
+    </filter>
+    <filter id="shadow-lg" x="-4%" y="-4%" width="110%" height="115%">
+      <feDropShadow dx="2" dy="4" stdDeviation="8" flood-opacity="0.15"/>
+    </filter>
+    <filter id="shadow-inset" x="-2%" y="-2%" width="104%" height="106%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.08"/>
+    </filter>
+    <linearGradient id="grad-header" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+    <linearGradient id="grad-clients" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E0F2F1"/>
+      <stop offset="100%" stop-color="#F1F8F7"/>
+    </linearGradient>
+    <linearGradient id="grad-api" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E3F2FD"/>
+      <stop offset="100%" stop-color="#F0F7FF"/>
+    </linearGradient>
+    <linearGradient id="grad-orch" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EDE7F6"/>
+      <stop offset="100%" stop-color="#F5F2FA"/>
+    </linearGradient>
+    <linearGradient id="grad-knowledge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF3E0"/>
+      <stop offset="100%" stop-color="#FFFAF4"/>
+    </linearGradient>
+    <linearGradient id="grad-infra" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ECEFF1"/>
+      <stop offset="100%" stop-color="#F5F5F5"/>
+    </linearGradient>
+    <linearGradient id="grad-ingest" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E8F5E9"/>
+      <stop offset="100%" stop-color="#F1F8F1"/>
+    </linearGradient>
+    <marker id="arr-dark" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,1 L10,5 L0,9 L2.5,5 Z" fill="#323130"/>
+    </marker>
+    <marker id="arr-purple" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,1 L10,5 L0,9 L2.5,5 Z" fill="#5E35B1"/>
+    </marker>
+    <marker id="arr-teal" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,1 L10,5 L0,9 L2.5,5 Z" fill="#00897B"/>
+    </marker>
+    <marker id="arr-orange" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,1 L10,5 L0,9 L2.5,5 Z" fill="#E65100"/>
+    </marker>
+    <marker id="arr-green" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,1 L10,5 L0,9 L2.5,5 Z" fill="#2E7D32"/>
+    </marker>
+  </defs>
+
+  <rect width="1100" height="880" fill="#FFFFFF"/>
+
+  <!-- ============================================================ -->
+  <!-- TITLE                                                         -->
+  <!-- ============================================================ -->
+  <rect x="30" y="14" width="1040" height="50" rx="8" fill="url(#grad-header)" filter="url(#shadow-md)"/>
+  <text x="50" y="46" font-size="21" font-weight="bold" fill="#FFFFFF" font-family="Segoe UI, Arial" letter-spacing="1">SURF</text>
+  <text x="115" y="46" font-size="21" fill="#8B9DC3" font-family="Segoe UI, Arial">Multi-Agent AI Platform Architecture</text>
+
+  <!-- ============================================================ -->
+  <!-- TIER 1: CLIENTS                                               -->
+  <!-- ============================================================ -->
+  <rect x="30" y="78" width="1040" height="72" rx="10" fill="url(#grad-clients)" stroke="#00897B" stroke-width="1.5" filter="url(#shadow-sm)"/>
+  <rect x="30" y="78" width="120" height="22" rx="10" fill="#00897B"/>
+  <text x="45" y="93" font-size="8" font-weight="bold" fill="#FFF" font-family="Segoe UI, Arial" letter-spacing="0.5">CLIENTS</text>
+
+  <!-- React surf-kit -->
+  <g transform="translate(55, 108)">
+    <rect x="0" y="0" width="300" height="34" rx="6" fill="#FFF" stroke="#00897B" stroke-width="1.5" filter="url(#shadow-inset)"/>
+    <rect x="0" y="0" width="300" height="4" rx="6" fill="#00897B"/>
+    <g transform="translate(16, 18)">
+      <circle cx="0" cy="0" r="2" fill="#00897B"/>
+      <ellipse cx="0" cy="0" rx="8" ry="3" fill="none" stroke="#00897B" stroke-width="0.8"/>
+      <ellipse cx="0" cy="0" rx="8" ry="3" fill="none" stroke="#00897B" stroke-width="0.8" transform="rotate(60)"/>
+      <ellipse cx="0" cy="0" rx="8" ry="3" fill="none" stroke="#00897B" stroke-width="0.8" transform="rotate(-60)"/>
+    </g>
+    <text x="30" y="16" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">React (surf-kit)</text>
+    <text x="30" y="27" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">Staff-facing chat interface</text>
+  </g>
+
+  <!-- Copilot Studio -->
+  <g transform="translate(385, 108)">
+    <rect x="0" y="0" width="300" height="34" rx="6" fill="#FFF" stroke="#00897B" stroke-width="1.5" filter="url(#shadow-inset)"/>
+    <rect x="0" y="0" width="300" height="4" rx="6" fill="#00897B"/>
+    <g transform="translate(16, 18)">
+      <rect x="-6" y="-6" width="12" height="12" rx="2" fill="#E0F2F1"/>
+      <path d="M0,-4 L1,-1 L4,0 L1,1 L0,4 L-1,1 L-4,0 L-1,-1 Z" fill="#00897B" opacity="0.7"/>
+    </g>
+    <text x="30" y="16" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Copilot Studio</text>
+    <text x="30" y="27" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">Microsoft 365 integration</text>
+  </g>
+
+  <!-- Any HTTP Client -->
+  <g transform="translate(715, 108)">
+    <rect x="0" y="0" width="300" height="34" rx="6" fill="#FFF" stroke="#00897B" stroke-width="1.5" filter="url(#shadow-inset)"/>
+    <rect x="0" y="0" width="300" height="4" rx="6" fill="#00897B"/>
+    <g transform="translate(16, 18)">
+      <rect x="-6" y="-6" width="12" height="12" rx="2" fill="#E0F2F1"/>
+      <text x="0" y="3" text-anchor="middle" font-size="6" font-weight="bold" fill="#00897B" font-family="Segoe UI, Arial">{ }</text>
+    </g>
+    <text x="30" y="16" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Any HTTP Client</text>
+    <text x="30" y="27" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">REST API · SSE streaming</text>
+  </g>
+
+  <!-- Flow arrow: Clients → API -->
+  <path d="M 550 150 L 550 164" stroke="#323130" stroke-width="2" marker-end="url(#arr-dark)"/>
+
+  <!-- SSE return arrow (right side) -->
+  <path d="M 1050 164 L 1050 150" stroke="#00897B" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#arr-teal)"/>
+  <text x="1038" y="160" font-size="6" font-weight="bold" fill="#00897B" font-family="Segoe UI, Arial" text-anchor="end">SSE Stream</text>
+
+  <!-- ============================================================ -->
+  <!-- TIER 2: API GATEWAY                                           -->
+  <!-- ============================================================ -->
+  <rect x="30" y="168" width="1040" height="82" rx="10" fill="url(#grad-api)" stroke="#1565C0" stroke-width="1.5" filter="url(#shadow-sm)"/>
+  <rect x="30" y="168" width="150" height="22" rx="10" fill="#1565C0"/>
+  <text x="45" y="183" font-size="8" font-weight="bold" fill="#FFF" font-family="Segoe UI, Arial" letter-spacing="0.5">API GATEWAY</text>
+
+  <!-- Entra ID badge -->
+  <g transform="translate(55, 195)">
+    <rect x="0" y="0" width="120" height="44" rx="6" fill="#FFF" stroke="#0078D4" stroke-width="1.5" filter="url(#shadow-sm)"/>
+    <rect x="0" y="0" width="120" height="4" rx="6" fill="#0078D4"/>
+    <g transform="translate(14, 24)">
+      <rect x="-6" y="-6" width="12" height="12" rx="2" fill="#E3F2FD"/>
+      <path d="M-3,-3 L0,-5 L3,-3 L3,3 L-3,3 Z" fill="none" stroke="#0078D4" stroke-width="1.2"/>
+      <circle cx="0" cy="0" r="1.5" fill="#0078D4"/>
+    </g>
+    <text x="26" y="20" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Entra ID</text>
+    <text x="26" y="31" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">RS256 JWT · JWKS</text>
+  </g>
+
+  <!-- FastAPI Application -->
+  <g transform="translate(190, 195)">
+    <rect x="0" y="0" width="680" height="44" rx="6" fill="#FFF" stroke="#1565C0" stroke-width="1.5" filter="url(#shadow-inset)"/>
+    <rect x="0" y="0" width="680" height="4" rx="6" fill="#1565C0"/>
+    <g transform="translate(16, 24)">
+      <rect x="-7" y="-7" width="14" height="14" rx="3" fill="#E3F2FD"/>
+      <path d="M-3,-2 L0,-5 L3,-2 M0,-5 L0,5" stroke="#1565C0" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    </g>
+    <text x="30" y="20" font-size="8" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">FastAPI Application</text>
+    <g transform="translate(170, 10)">
+      <rect x="0" y="0" width="70" height="18" rx="9" fill="#E3F2FD" stroke="#1565C0" stroke-width="0.8"/>
+      <text x="35" y="12" text-anchor="middle" font-size="6" fill="#1565C0" font-family="Segoe UI, Arial">Rate Limiting</text>
+    </g>
+    <g transform="translate(250, 10)">
+      <rect x="0" y="0" width="70" height="18" rx="9" fill="#E3F2FD" stroke="#1565C0" stroke-width="0.8"/>
+      <text x="35" y="12" text-anchor="middle" font-size="6" fill="#1565C0" font-family="Segoe UI, Arial">SSE Streaming</text>
+    </g>
+    <g transform="translate(330, 10)">
+      <rect x="0" y="0" width="75" height="18" rx="9" fill="#E3F2FD" stroke="#1565C0" stroke-width="0.8"/>
+      <text x="37" y="12" text-anchor="middle" font-size="6" fill="#1565C0" font-family="Segoe UI, Arial">Input Validation</text>
+    </g>
+  </g>
+
+  <!-- Response enrichment badge -->
+  <g transform="translate(885, 195)">
+    <rect x="0" y="0" width="150" height="44" rx="6" fill="#FFF" stroke="#1565C0" stroke-width="1.5" filter="url(#shadow-sm)"/>
+    <rect x="0" y="0" width="150" height="4" rx="6" fill="#1565C0"/>
+    <g transform="translate(14, 24)">
+      <rect x="-6" y="-6" width="12" height="12" rx="2" fill="#E3F2FD"/>
+      <path d="M-3,2 L-1,-1 L1,2 L3.5,-3 L5,0" stroke="#1565C0" fill="none" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="26" y="20" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Enrichment</text>
+    <text x="26" y="31" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">Confidence · Verification</text>
+  </g>
+
+  <!-- Flow arrow: API → Orchestration -->
+  <path d="M 550 250 L 550 264" stroke="#323130" stroke-width="2" marker-end="url(#arr-dark)"/>
+
+  <!-- ============================================================ -->
+  <!-- TIER 3: AGENT ORCHESTRATION (hero)                            -->
+  <!-- ============================================================ -->
+  <rect x="30" y="268" width="1040" height="268" rx="10" fill="url(#grad-orch)" stroke="#5E35B1" stroke-width="2" filter="url(#shadow-lg)"/>
+  <rect x="30" y="268" width="370" height="22" rx="10" fill="#5E35B1"/>
+  <text x="45" y="283" font-size="8" font-weight="bold" fill="#FFF" font-family="Segoe UI, Arial" letter-spacing="0.5">AGENT ORCHESTRATION</text>
+  <text x="195" y="283" font-size="7" fill="#D1C4E9" font-family="Segoe UI, Arial">Microsoft Agent Framework · Hub &amp; Spoke Handoff</text>
+
+  <!-- Coordinator -->
+  <g transform="translate(400, 298)">
+    <rect x="0" y="0" width="270" height="42" rx="8" fill="#5E35B1" stroke="#4527A0" stroke-width="1.5" filter="url(#shadow-md)"/>
+    <g transform="translate(18, 21)">
+      <circle cx="0" cy="0" r="6" fill="none" stroke="#FFF" stroke-width="1.2"/>
+      <circle cx="0" cy="0" r="2" fill="#FFF" opacity="0.8"/>
+      <line x1="0" y1="-6" x2="0" y2="-10" stroke="#FFF" stroke-width="0.8"/>
+      <line x1="5" y1="3" x2="9" y2="5" stroke="#FFF" stroke-width="0.8"/>
+      <line x1="-5" y1="3" x2="-9" y2="5" stroke="#FFF" stroke-width="0.8"/>
+    </g>
+    <text x="36" y="18" font-size="8" font-weight="bold" fill="#FFF" font-family="Segoe UI, Arial">Coordinator Agent</text>
+    <text x="36" y="30" font-size="7" fill="#D1C4E9" font-family="Segoe UI, Arial">Routes queries to domain agents · No tools</text>
+  </g>
+
+  <!-- Handoff arrows -->
+  <path d="M 470 340 L 260 360" stroke="#5E35B1" stroke-width="1.5" marker-end="url(#arr-purple)"/>
+  <path d="M 600 340 L 690 360" stroke="#5E35B1" stroke-width="1.5" marker-end="url(#arr-purple)"/>
+  <path d="M 670 340 L 940 360" stroke="#5E35B1" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr-purple)"/>
+  <text x="340" y="352" font-size="6" fill="#5E35B1" font-family="Segoe UI, Arial">handoff</text>
+  <text x="625" y="352" font-size="6" fill="#5E35B1" font-family="Segoe UI, Arial">handoff</text>
+
+  <!-- HR Domain Group -->
+  <g transform="translate(55, 364)">
+    <rect x="0" y="0" width="395" height="148" rx="8" fill="#FFF" stroke="#5E35B1" stroke-width="1.5" filter="url(#shadow-sm)" opacity="0.95"/>
+    <rect x="0" y="0" width="395" height="22" rx="8" fill="#7E57C2"/>
+    <text x="16" y="15" font-size="8" font-weight="bold" fill="#FFF" font-family="Segoe UI, Arial">HR Domain Agent</text>
+    <g transform="translate(16, 32)">
+      <rect x="0" y="0" width="363" height="42" rx="6" fill="#F3F0FA" stroke="#B39DDB" stroke-width="1.2"/>
+      <g transform="translate(14, 21)">
+        <circle cx="0" cy="0" r="5" fill="none" stroke="#5E35B1" stroke-width="1.2"/>
+        <line x1="4" y1="4" x2="7" y2="7" stroke="#5E35B1" stroke-width="1.5" stroke-linecap="round"/>
+      </g>
+      <text x="28" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Search Agent</text>
+      <text x="28" y="30" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">Calls RAG tool · domain eq 'hr' filter · Returns source chunks</text>
+    </g>
+    <path d="M 197 74 L 197 88" stroke="#5E35B1" stroke-width="1.2" marker-end="url(#arr-purple)"/>
+    <g transform="translate(16, 92)">
+      <rect x="0" y="0" width="363" height="42" rx="6" fill="#F3F0FA" stroke="#B39DDB" stroke-width="1.2"/>
+      <g transform="translate(14, 21)">
+        <rect x="-5" y="-6" width="10" height="12" rx="1.5" fill="none" stroke="#5E35B1" stroke-width="1.2"/>
+        <line x1="-3" y1="-2" x2="3" y2="-2" stroke="#5E35B1" stroke-width="0.8"/>
+        <line x1="-3" y1="1" x2="3" y2="1" stroke="#5E35B1" stroke-width="0.8"/>
+        <line x1="-3" y1="4" x2="1" y2="4" stroke="#5E35B1" stroke-width="0.8"/>
+      </g>
+      <text x="28" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Synthesise Agent</text>
+      <text x="28" y="30" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">Structured JSON · Citations · Confidence · Follow-ups</text>
+    </g>
+  </g>
+
+  <!-- IT Domain Group -->
+  <g transform="translate(480, 364)">
+    <rect x="0" y="0" width="395" height="148" rx="8" fill="#FFF" stroke="#5E35B1" stroke-width="1.5" filter="url(#shadow-sm)" opacity="0.95"/>
+    <rect x="0" y="0" width="395" height="22" rx="8" fill="#7E57C2"/>
+    <text x="16" y="15" font-size="8" font-weight="bold" fill="#FFF" font-family="Segoe UI, Arial">IT Domain Agent</text>
+    <g transform="translate(16, 32)">
+      <rect x="0" y="0" width="363" height="42" rx="6" fill="#F3F0FA" stroke="#B39DDB" stroke-width="1.2"/>
+      <g transform="translate(14, 21)">
+        <circle cx="0" cy="0" r="5" fill="none" stroke="#5E35B1" stroke-width="1.2"/>
+        <line x1="4" y1="4" x2="7" y2="7" stroke="#5E35B1" stroke-width="1.5" stroke-linecap="round"/>
+      </g>
+      <text x="28" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Search Agent</text>
+      <text x="28" y="30" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">Calls RAG tool · domain eq 'it' filter · Returns source chunks</text>
+    </g>
+    <path d="M 197 74 L 197 88" stroke="#5E35B1" stroke-width="1.2" marker-end="url(#arr-purple)"/>
+    <g transform="translate(16, 92)">
+      <rect x="0" y="0" width="363" height="42" rx="6" fill="#F3F0FA" stroke="#B39DDB" stroke-width="1.2"/>
+      <g transform="translate(14, 21)">
+        <rect x="-5" y="-6" width="10" height="12" rx="1.5" fill="none" stroke="#5E35B1" stroke-width="1.2"/>
+        <line x1="-3" y1="-2" x2="3" y2="-2" stroke="#5E35B1" stroke-width="0.8"/>
+        <line x1="-3" y1="1" x2="3" y2="1" stroke="#5E35B1" stroke-width="0.8"/>
+        <line x1="-3" y1="4" x2="1" y2="4" stroke="#5E35B1" stroke-width="0.8"/>
+      </g>
+      <text x="28" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Synthesise Agent</text>
+      <text x="28" y="30" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">Structured JSON · Citations · Confidence · Follow-ups</text>
+    </g>
+  </g>
+
+  <!-- Extensible indicator -->
+  <g transform="translate(905, 364)">
+    <rect x="0" y="0" width="130" height="148" rx="8" fill="#FFF" stroke="#5E35B1" stroke-width="1.5" stroke-dasharray="6 3" filter="url(#shadow-sm)" opacity="0.6"/>
+    <text x="65" y="60" text-anchor="middle" font-size="28" fill="#5E35B1" font-family="Segoe UI, Arial" opacity="0.4">+</text>
+    <text x="65" y="82" text-anchor="middle" font-size="7" font-weight="bold" fill="#5E35B1" font-family="Segoe UI, Arial" opacity="0.6">New Domain</text>
+    <text x="65" y="96" text-anchor="middle" font-size="6" fill="#7E57C2" font-family="Segoe UI, Arial" opacity="0.6">Auto-discovery</text>
+    <text x="65" y="108" text-anchor="middle" font-size="6" fill="#7E57C2" font-family="Segoe UI, Arial" opacity="0.6">Auto-registration</text>
+  </g>
+
+  <!-- Flow arrow: Orchestration → Knowledge -->
+  <path d="M 550 536 L 550 550" stroke="#323130" stroke-width="2" marker-end="url(#arr-dark)"/>
+
+  <!-- ============================================================ -->
+  <!-- TIER 4: KNOWLEDGE & SERVICES                                  -->
+  <!-- ============================================================ -->
+  <rect x="30" y="554" width="1040" height="86" rx="10" fill="url(#grad-knowledge)" stroke="#E65100" stroke-width="1.5" filter="url(#shadow-sm)"/>
+  <rect x="30" y="554" width="210" height="22" rx="10" fill="#E65100"/>
+  <text x="45" y="569" font-size="8" font-weight="bold" fill="#FFF" font-family="Segoe UI, Arial" letter-spacing="0.5">KNOWLEDGE &amp; SERVICES</text>
+
+  <!-- Azure AI Search -->
+  <g transform="translate(55, 584)">
+    <rect x="0" y="0" width="230" height="46" rx="6" fill="#FFF" stroke="#E65100" stroke-width="1.5" filter="url(#shadow-inset)"/>
+    <rect x="0" y="0" width="230" height="4" rx="6" fill="#E65100"/>
+    <g transform="translate(16, 24)">
+      <circle cx="0" cy="0" r="6" fill="none" stroke="#E65100" stroke-width="1.3"/>
+      <line x1="4" y1="4" x2="8" y2="8" stroke="#E65100" stroke-width="1.8" stroke-linecap="round"/>
+    </g>
+    <text x="30" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Azure AI Search</text>
+    <text x="30" y="30" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">Hybrid BM25 + vector · RRF ranking</text>
+    <text x="30" y="40" font-size="6" fill="#E65100" font-family="Segoe UI, Arial">RAG pipeline</text>
+  </g>
+
+  <!-- Cosmos DB -->
+  <g transform="translate(305, 584)">
+    <rect x="0" y="0" width="230" height="46" rx="6" fill="#FFF" stroke="#E65100" stroke-width="1.5" filter="url(#shadow-inset)"/>
+    <rect x="0" y="0" width="230" height="4" rx="6" fill="#E65100"/>
+    <g transform="translate(16, 24)">
+      <ellipse cx="0" cy="-4" rx="7" ry="3" fill="none" stroke="#E65100" stroke-width="1.2"/>
+      <path d="M-7,-4 L-7,4 Q0,10 7,4 L7,-4" fill="none" stroke="#E65100" stroke-width="1.2"/>
+    </g>
+    <text x="30" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Cosmos DB</text>
+    <text x="30" y="30" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">Serverless · Partition /user_id</text>
+    <text x="30" y="40" font-size="6" fill="#E65100" font-family="Segoe UI, Arial">Conversation persistence</text>
+  </g>
+
+  <!-- History return arrow: Cosmos → Orchestration -->
+  <path d="M 420 584 L 420 536" stroke="#E65100" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arr-orange)"/>
+  <text x="428" y="562" font-size="6" fill="#E65100" font-family="Segoe UI, Arial">Last 20 msgs</text>
+
+  <!-- Azure OpenAI -->
+  <g transform="translate(555, 584)">
+    <rect x="0" y="0" width="230" height="46" rx="6" fill="#FFF" stroke="#E65100" stroke-width="1.5" filter="url(#shadow-inset)"/>
+    <rect x="0" y="0" width="230" height="4" rx="6" fill="#E65100"/>
+    <g transform="translate(16, 24)">
+      <rect x="-6" y="-6" width="12" height="12" rx="2" fill="#FFF3E0"/>
+      <path d="M-3,-3 L0,3 L3,-3" fill="none" stroke="#E65100" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="30" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Azure OpenAI</text>
+    <text x="30" y="30" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">text-embedding-3-large</text>
+    <text x="30" y="40" font-size="6" fill="#E65100" font-family="Segoe UI, Arial">Embeddings only</text>
+  </g>
+
+  <!-- Anthropic Claude -->
+  <g transform="translate(805, 584)">
+    <rect x="0" y="0" width="230" height="46" rx="6" fill="#FFF" stroke="#E65100" stroke-width="1.5" filter="url(#shadow-inset)"/>
+    <rect x="0" y="0" width="230" height="4" rx="6" fill="#E65100"/>
+    <g transform="translate(16, 24)">
+      <rect x="-6" y="-6" width="12" height="12" rx="2" fill="#FFF3E0"/>
+      <path d="M0,-4 L1,-1 L4,0 L1,1 L0,4 L-1,1 L-4,0 L-1,-1 Z" fill="#E65100" opacity="0.7"/>
+    </g>
+    <text x="30" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Anthropic Claude</text>
+    <text x="30" y="30" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">claude-sonnet-4-6 via API Key</text>
+    <text x="30" y="40" font-size="6" fill="#E65100" font-family="Segoe UI, Arial">Chat completion · Reasoning</text>
+  </g>
+
+  <!-- Flow arrow: Knowledge → Infrastructure -->
+  <path d="M 550 640 L 550 654" stroke="#323130" stroke-width="2" marker-end="url(#arr-dark)"/>
+
+  <!-- ============================================================ -->
+  <!-- TIER 5: INFRASTRUCTURE                                        -->
+  <!-- ============================================================ -->
+  <rect x="30" y="658" width="1040" height="76" rx="10" fill="url(#grad-infra)" stroke="#607D8B" stroke-width="1.5" filter="url(#shadow-sm)"/>
+  <rect x="30" y="658" width="170" height="22" rx="10" fill="#607D8B"/>
+  <text x="45" y="673" font-size="8" font-weight="bold" fill="#FFF" font-family="Segoe UI, Arial" letter-spacing="0.5">INFRASTRUCTURE</text>
+  <text x="145" y="673" font-size="7" fill="#B0BEC5" font-family="Segoe UI, Arial">Azure</text>
+
+  <!-- Container Apps -->
+  <g transform="translate(55, 686)">
+    <rect x="0" y="0" width="180" height="38" rx="6" fill="#FFF" stroke="#607D8B" stroke-width="1.2" filter="url(#shadow-inset)"/>
+    <rect x="0" y="0" width="180" height="4" rx="6" fill="#607D8B"/>
+    <g transform="translate(14, 20)">
+      <rect x="-5" y="-5" width="10" height="10" rx="1" fill="none" stroke="#607D8B" stroke-width="1.2"/>
+      <rect x="-3" y="-3" width="4" height="4" rx="0.5" fill="#607D8B" opacity="0.4"/>
+      <rect x="2" y="2" width="4" height="4" rx="0.5" fill="#607D8B" opacity="0.4"/>
+    </g>
+    <text x="26" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Container Apps</text>
+    <text x="26" y="29" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">API 0–3 · Ingestion 0–1</text>
+  </g>
+
+  <!-- Key Vault -->
+  <g transform="translate(250, 686)">
+    <rect x="0" y="0" width="155" height="38" rx="6" fill="#FFF" stroke="#607D8B" stroke-width="1.2" filter="url(#shadow-inset)"/>
+    <rect x="0" y="0" width="155" height="4" rx="6" fill="#607D8B"/>
+    <g transform="translate(14, 20)">
+      <rect x="-4" y="0" width="8" height="6" rx="1" fill="none" stroke="#607D8B" stroke-width="1.2"/>
+      <path d="M-2,0 L-2,-3 C-2,-6 2,-6 2,-3 L2,0" fill="none" stroke="#607D8B" stroke-width="1.2"/>
+    </g>
+    <text x="26" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Key Vault</text>
+    <text x="26" y="29" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">Secrets · API keys</text>
+  </g>
+
+  <!-- VNet + PE -->
+  <g transform="translate(420, 686)">
+    <rect x="0" y="0" width="195" height="38" rx="6" fill="#FFF" stroke="#607D8B" stroke-width="1.2" filter="url(#shadow-inset)"/>
+    <rect x="0" y="0" width="195" height="4" rx="6" fill="#607D8B"/>
+    <g transform="translate(14, 20)">
+      <circle cx="-3" cy="-3" r="2" fill="none" stroke="#607D8B" stroke-width="1"/>
+      <circle cx="3" cy="-3" r="2" fill="none" stroke="#607D8B" stroke-width="1"/>
+      <circle cx="0" cy="3" r="2" fill="none" stroke="#607D8B" stroke-width="1"/>
+      <line x1="-1.5" y1="-1.5" x2="-2.5" y2="-2" stroke="#607D8B" stroke-width="0.6"/>
+      <line x1="1.5" y1="-1.5" x2="2.5" y2="-2" stroke="#607D8B" stroke-width="0.6"/>
+      <line x1="0" y1="1" x2="0" y2="0" stroke="#607D8B" stroke-width="0.6"/>
+    </g>
+    <text x="26" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">VNet + Private Endpoints</text>
+    <text x="26" y="29" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">Network isolation</text>
+  </g>
+
+  <!-- Log Analytics -->
+  <g transform="translate(630, 686)">
+    <rect x="0" y="0" width="185" height="38" rx="6" fill="#FFF" stroke="#607D8B" stroke-width="1.2" filter="url(#shadow-inset)"/>
+    <rect x="0" y="0" width="185" height="4" rx="6" fill="#607D8B"/>
+    <g transform="translate(14, 20)">
+      <rect x="-6" y="-6" width="12" height="12" rx="2" fill="#ECEFF1"/>
+      <path d="M-4,2 L-2,-1 L0,2 L2.5,-4 L5,0" stroke="#607D8B" fill="none" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="26" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Log Analytics</text>
+    <text x="26" y="29" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">OpenTelemetry · Observability</text>
+  </g>
+
+  <!-- Blob Storage -->
+  <g transform="translate(830, 686)">
+    <rect x="0" y="0" width="200" height="38" rx="6" fill="#FFF" stroke="#607D8B" stroke-width="1.2" filter="url(#shadow-inset)"/>
+    <rect x="0" y="0" width="200" height="4" rx="6" fill="#607D8B"/>
+    <g transform="translate(14, 20)">
+      <rect x="-6" y="-5" width="12" height="10" rx="1" fill="none" stroke="#607D8B" stroke-width="1.2"/>
+      <line x1="-6" y1="-1" x2="6" y2="-1" stroke="#607D8B" stroke-width="0.6"/>
+    </g>
+    <text x="26" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Blob Storage</text>
+    <text x="26" y="29" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">Source documents · PDFs</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- DOCUMENT INGESTION (offline side-flow)                        -->
+  <!-- ============================================================ -->
+  <g transform="translate(30, 748)">
+    <rect x="0" y="0" width="500" height="52" rx="8" fill="url(#grad-ingest)" stroke="#2E7D32" stroke-width="1.5" filter="url(#shadow-sm)"/>
+    <rect x="0" y="0" width="200" height="22" rx="8" fill="#2E7D32"/>
+    <text x="15" y="15" font-size="8" font-weight="bold" fill="#FFF" font-family="Segoe UI, Arial" letter-spacing="0.5">DOCUMENT INGESTION</text>
+    <text x="150" y="15" font-size="7" fill="#A5D6A7" font-family="Segoe UI, Arial">Offline</text>
+
+    <!-- Pipeline steps as inline pills -->
+    <g transform="translate(16, 32)">
+      <rect x="0" y="0" width="50" height="14" rx="7" fill="#FFF" stroke="#2E7D32" stroke-width="0.8"/>
+      <text x="25" y="10" text-anchor="middle" font-size="6" fill="#2E7D32" font-family="Segoe UI, Arial">PDFs</text>
+    </g>
+    <text x="72" y="43" font-size="7" fill="#2E7D32" font-family="Segoe UI, Arial">→</text>
+    <g transform="translate(82, 32)">
+      <rect x="0" y="0" width="62" height="14" rx="7" fill="#FFF" stroke="#2E7D32" stroke-width="0.8"/>
+      <text x="31" y="10" text-anchor="middle" font-size="6" fill="#2E7D32" font-family="Segoe UI, Arial">Chunking</text>
+    </g>
+    <text x="150" y="43" font-size="7" fill="#2E7D32" font-family="Segoe UI, Arial">→</text>
+    <g transform="translate(160, 32)">
+      <rect x="0" y="0" width="72" height="14" rx="7" fill="#FFF" stroke="#2E7D32" stroke-width="0.8"/>
+      <text x="36" y="10" text-anchor="middle" font-size="6" fill="#2E7D32" font-family="Segoe UI, Arial">Embedding</text>
+    </g>
+    <text x="238" y="43" font-size="7" fill="#2E7D32" font-family="Segoe UI, Arial">→</text>
+    <g transform="translate(248, 32)">
+      <rect x="0" y="0" width="100" height="14" rx="7" fill="#FFF" stroke="#2E7D32" stroke-width="0.8"/>
+      <text x="50" y="10" text-anchor="middle" font-size="6" fill="#2E7D32" font-family="Segoe UI, Arial">Upsert to AI Search</text>
+    </g>
+  </g>
+
+  <!-- Arrow from ingestion up to AI Search -->
+  <path d="M 170 748 L 170 632" stroke="#2E7D32" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arr-green)"/>
+  <text x="178" y="696" font-size="6" fill="#2E7D32" font-family="Segoe UI, Arial">index upsert</text>
+
+  <!-- ============================================================ -->
+  <!-- LEGEND                                                        -->
+  <!-- ============================================================ -->
+  <rect x="548" y="748" width="522" height="52" rx="8" fill="#FAFAFA" stroke="#D2D0CE" stroke-width="1" filter="url(#shadow-sm)"/>
+  <rect x="548" y="748" width="80" height="20" rx="8" fill="#605E5C"/>
+  <text x="588" y="762" text-anchor="middle" font-size="8" font-weight="bold" fill="#FFF" font-family="Segoe UI, Arial">LEGEND</text>
+
+  <g transform="translate(558, 776)">
+    <rect x="0" y="0" width="14" height="10" rx="2" fill="#E0F2F1" stroke="#00897B" stroke-width="1.2"/>
+    <text x="20" y="8" font-size="7" fill="#605E5C" font-family="Segoe UI, Arial">Clients</text>
+
+    <rect x="56" y="0" width="14" height="10" rx="2" fill="#E3F2FD" stroke="#1565C0" stroke-width="1.2"/>
+    <text x="76" y="8" font-size="7" fill="#605E5C" font-family="Segoe UI, Arial">API</text>
+
+    <rect x="98" y="0" width="14" height="10" rx="2" fill="#EDE7F6" stroke="#5E35B1" stroke-width="1.5"/>
+    <text x="118" y="8" font-size="7" fill="#605E5C" font-family="Segoe UI, Arial">Orchestration</text>
+
+    <rect x="188" y="0" width="14" height="10" rx="2" fill="#FFF3E0" stroke="#E65100" stroke-width="1.2"/>
+    <text x="208" y="8" font-size="7" fill="#605E5C" font-family="Segoe UI, Arial">Knowledge</text>
+
+    <rect x="268" y="0" width="14" height="10" rx="2" fill="#ECEFF1" stroke="#607D8B" stroke-width="1.2"/>
+    <text x="288" y="8" font-size="7" fill="#605E5C" font-family="Segoe UI, Arial">Infra</text>
+
+    <line x1="320" y1="5" x2="344" y2="5" stroke="#323130" stroke-width="2" marker-end="url(#arr-dark)"/>
+    <text x="350" y="8" font-size="7" fill="#605E5C" font-family="Segoe UI, Arial">Request</text>
+
+    <line x1="388" y1="5" x2="412" y2="5" stroke="#E65100" stroke-width="1.5" stroke-dasharray="5 3"/>
+    <text x="418" y="8" font-size="7" fill="#605E5C" font-family="Segoe UI, Arial">History / Data</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- FOOTER                                                        -->
+  <!-- ============================================================ -->
+  <line x1="30" y1="816" x2="1070" y2="816" stroke="#E1DFDD" stroke-width="1"/>
+  <text x="50" y="830" font-size="8" fill="#A19F9D" font-style="italic" font-family="Segoe UI, Arial">Surf · Multi-Agent AI Platform · Architecture Overview · March 2026</text>
+</svg>

@@ -30,6 +30,14 @@ param softDeleteRetentionInDays int = 7
 @description('Enable purge protection')
 param enablePurgeProtection bool = false
 
+@description('Allow public network access (enable for dev so CLI and GitHub Actions can manage secrets)')
+@allowed(['Enabled', 'Disabled'])
+param publicNetworkAccess string = 'Enabled'
+
+@secure()
+@description('Anthropic API key (stored as a secret when provided)')
+param anthropicApiKey string = ''
+
 // ---------------------------------------------------------------------------
 // Resources
 // ---------------------------------------------------------------------------
@@ -48,11 +56,23 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableSoftDelete: enableSoftDelete
     softDeleteRetentionInDays: softDeleteRetentionInDays
     enablePurgeProtection: enablePurgeProtection ? true : null
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: publicNetworkAccess
     networkAcls: {
-      defaultAction: 'Deny'
+      defaultAction: publicNetworkAccess == 'Enabled' ? 'Allow' : 'Deny'
       bypass: 'AzureServices'
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Secrets
+// ---------------------------------------------------------------------------
+
+resource anthropicApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(anthropicApiKey)) {
+  parent: keyVault
+  name: 'anthropic-api-key'
+  properties: {
+    value: anthropicApiKey
   }
 }
 

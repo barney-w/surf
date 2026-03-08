@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from openai import AzureOpenAI, RateLimitError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +62,7 @@ async def generate_embeddings(
                 if attempt == max_retries - 1:
                     raise
                 # Azure S0 tier requires at least 60s between retries on 429
-                wait = max(65, 2 ** attempt)
+                wait = max(65, 2**attempt)
                 logger.warning(
                     "Rate limited on batch %d/%d, retrying in %ds (attempt %d/%d)",
                     batch_num,

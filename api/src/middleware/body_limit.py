@@ -1,4 +1,5 @@
 """Middleware to reject oversized request bodies."""
+
 import logging
 
 from starlette.middleware.base import BaseHTTPMiddleware

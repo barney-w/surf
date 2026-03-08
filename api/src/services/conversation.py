@@ -48,9 +48,7 @@ class ConversationService:
         if not _UUID_RE.match(conversation_id):
             return None
         try:
-            item = await self._container.read_item(
-                item=conversation_id, partition_key=user_id
-            )
+            item = await self._container.read_item(item=conversation_id, partition_key=user_id)
             doc = ConversationDocument(**item)
             # Defense-in-depth: verify user_id matches even though partition key should isolate
             if doc.user_id != user_id:
@@ -79,9 +77,7 @@ class ConversationService:
         await self._container.create_item(body=doc.model_dump(mode="json"))
         return doc
 
-    async def add_message(
-        self, conversation_id: str, user_id: str, message: MessageRecord
-    ) -> None:
+    async def add_message(self, conversation_id: str, user_id: str, message: MessageRecord) -> None:
         """Append a message to an existing conversation."""
         now = datetime.now(UTC)
         operations = [
@@ -109,9 +105,7 @@ class ConversationService:
     async def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
         """Delete a conversation. Returns True if deleted, False if not found."""
         try:
-            await self._container.delete_item(
-                item=conversation_id, partition_key=user_id
-            )
+            await self._container.delete_item(item=conversation_id, partition_key=user_id)
             return True
         except CosmosResourceNotFoundError:
             return False

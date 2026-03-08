@@ -34,8 +34,8 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
       name: skuName
     }
     retentionInDays: retentionInDays
-    publicNetworkAccessForIngestion: 'Disabled'
-    publicNetworkAccessForQuery: 'Disabled'
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
   }
 }
 
@@ -51,3 +51,4 @@ output customerId string = logAnalytics.properties.customerId
 
 @description('Name of the Log Analytics workspace')
 output workspaceName string = logAnalytics.name
+

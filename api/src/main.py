@@ -95,9 +95,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         set_search_client(search_client)
         logger.info("Azure AI Search client initialised")
     else:
-        logger.warning(
-            "AZURE_SEARCH_ENDPOINT not set — RAG tool will not be available"
-        )
+        logger.warning("AZURE_SEARCH_ENDPOINT not set — RAG tool will not be available")
 
     # --- Embedding client (for RAG hybrid search) ---
     if settings.azure_openai_endpoint:
@@ -131,9 +129,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await conversation_service.initialize()
         logger.info("ConversationService initialised")
     else:
-        logger.warning(
-            "COSMOS_ENDPOINT not set — ConversationService not connected"
-        )
+        logger.warning("COSMOS_ENDPOINT not set — ConversationService not connected")
     app.state.conversation_service = conversation_service
 
     # --- History context provider ---
@@ -149,6 +145,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             raise SystemExit(1)
         client = create_model_client(settings)
+
         # Store a factory so each request gets a fresh Workflow instance.
         # agent_framework Workflow is stateful and does not allow concurrent runs.
         def _make_workflow():
@@ -157,9 +154,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.workflow = _make_workflow
         logger.info("AI workflow factory initialised")
     else:
-        logger.warning(
-            "AZURE_OPENAI_ENDPOINT not set — running in dev mode without AI workflow"
-        )
+        logger.warning("AZURE_OPENAI_ENDPOINT not set — running in dev mode without AI workflow")
         app.state.workflow = None
 
     yield

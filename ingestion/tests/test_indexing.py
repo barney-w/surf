@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 from src.pipeline.indexing import (
     INDEX_FIELDS,
@@ -89,10 +88,7 @@ class TestUploadChunks:
         client = MagicMock()
         client.upload_documents.return_value = [self._make_result(True)]
 
-        chunks = [
-            {"id": str(i), "document_id": "d1", "content": f"text {i}"}
-            for i in range(5)
-        ]
+        chunks = [{"id": str(i), "document_id": "d1", "content": f"text {i}"} for i in range(5)]
         asyncio.run(upload_chunks(client, chunks, batch_size=2))
         assert client.upload_documents.call_count == 3  # 2+2+1
 

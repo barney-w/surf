@@ -13,7 +13,11 @@ from src.models.conversation import (
     ConversationMetadata,
     MessageRecord,
 )
-from src.orchestrator.history import ConversationHistoryProvider
+from src.orchestrator.history import (
+    ConversationHistoryProvider,
+    current_conversation_id,
+    current_user_id,
+)
 
 
 def _make_conversation(
@@ -74,12 +78,17 @@ class TestConversationHistoryProvider:
 
         context = SessionContext(
             input_messages=[Message("user", ["follow-up question"])],
-            options={"conversation_id": conversation.id, "user_id": "user-1"},
         )
         session = MagicMock()
         agent = MagicMock()
 
-        await provider.before_run(agent=agent, session=session, context=context, state={})
+        token_cid = current_conversation_id.set(conversation.id)
+        token_uid = current_user_id.set("user-1")
+        try:
+            await provider.before_run(agent=agent, session=session, context=context, state={})
+        finally:
+            current_conversation_id.reset(token_cid)
+            current_user_id.reset(token_uid)
 
         # Verify messages were injected
         injected = context.context_messages.get("conversation_history", [])
@@ -108,12 +117,17 @@ class TestConversationHistoryProvider:
 
         context = SessionContext(
             input_messages=[Message("user", ["next question"])],
-            options={"conversation_id": conversation.id, "user_id": "user-1"},
         )
         session = MagicMock()
         agent = MagicMock()
 
-        await provider.before_run(agent=agent, session=session, context=context, state={})
+        token_cid = current_conversation_id.set(conversation.id)
+        token_uid = current_user_id.set("user-1")
+        try:
+            await provider.before_run(agent=agent, session=session, context=context, state={})
+        finally:
+            current_conversation_id.reset(token_cid)
+            current_user_id.reset(token_uid)
 
         injected = context.context_messages.get("conversation_history", [])
         # Should only have 10 messages (the last 10 from the conversation)
@@ -135,12 +149,17 @@ class TestConversationHistoryProvider:
 
         context = SessionContext(
             input_messages=[Message("user", ["What if that doesn't work?"])],
-            options={"conversation_id": conversation.id, "user_id": "user-1"},
         )
         session = MagicMock()
         agent = MagicMock()
 
-        await provider.before_run(agent=agent, session=session, context=context, state={})
+        token_cid = current_conversation_id.set(conversation.id)
+        token_uid = current_user_id.set("user-1")
+        try:
+            await provider.before_run(agent=agent, session=session, context=context, state={})
+        finally:
+            current_conversation_id.reset(token_cid)
+            current_user_id.reset(token_uid)
 
         # Verify history includes the IT context so the coordinator can
         # recognize the ongoing IT topic and route accordingly
@@ -171,12 +190,17 @@ class TestConversationHistoryProvider:
         # User now switches to an IT topic
         context = SessionContext(
             input_messages=[Message("user", ["How do I connect to the VPN?"])],
-            options={"conversation_id": conversation.id, "user_id": "user-1"},
         )
         session = MagicMock()
         agent = MagicMock()
 
-        await provider.before_run(agent=agent, session=session, context=context, state={})
+        token_cid = current_conversation_id.set(conversation.id)
+        token_uid = current_user_id.set("user-1")
+        try:
+            await provider.before_run(agent=agent, session=session, context=context, state={})
+        finally:
+            current_conversation_id.reset(token_cid)
+            current_user_id.reset(token_uid)
 
         # All 4 prior messages are injected so the coordinator sees the full
         # context and can decide to route to a different agent
@@ -213,12 +237,17 @@ class TestConversationHistoryProvider:
 
         context = SessionContext(
             input_messages=[Message("user", ["hello"])],
-            options={"conversation_id": "nonexistent", "user_id": "user-1"},
         )
         session = MagicMock()
         agent = MagicMock()
 
-        await provider.before_run(agent=agent, session=session, context=context, state={})
+        token_cid = current_conversation_id.set("nonexistent")
+        token_uid = current_user_id.set("user-1")
+        try:
+            await provider.before_run(agent=agent, session=session, context=context, state={})
+        finally:
+            current_conversation_id.reset(token_cid)
+            current_user_id.reset(token_uid)
 
         assert context.context_messages.get("conversation_history") is None
 
@@ -234,19 +263,27 @@ class TestConversationHistoryProvider:
 
         first_context = SessionContext(
             input_messages=[Message("user", ["first"])],
-            options={"conversation_id": "conv-a", "user_id": "user-a"},
         )
-        await provider.before_run(
-            agent=agent, session=session, context=first_context, state={}
-        )
+        token_cid = current_conversation_id.set("conv-a")
+        token_uid = current_user_id.set("user-a")
+        try:
+            await provider.before_run(agent=agent, session=session, context=first_context, state={})
+        finally:
+            current_conversation_id.reset(token_cid)
+            current_user_id.reset(token_uid)
 
         second_context = SessionContext(
             input_messages=[Message("user", ["second"])],
-            options={"conversation_id": "conv-b", "user_id": "user-b"},
         )
-        await provider.before_run(
-            agent=agent, session=session, context=second_context, state={}
-        )
+        token_cid = current_conversation_id.set("conv-b")
+        token_uid = current_user_id.set("user-b")
+        try:
+            await provider.before_run(
+                agent=agent, session=session, context=second_context, state={}
+            )
+        finally:
+            current_conversation_id.reset(token_cid)
+            current_user_id.reset(token_uid)
 
         assert mock_service.get_conversation.await_args_list[0].args == ("conv-a", "user-a")
         assert mock_service.get_conversation.await_args_list[1].args == ("conv-b", "user-b")

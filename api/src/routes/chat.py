@@ -128,9 +128,7 @@ async def _run_workflow(
         result = await asyncio.wait_for(_execute(), timeout=LLM_TIMEOUT_SECONDS)
         return (*result, rag_collector)
     except TimeoutError as err:
-        raise LLMTimeoutError(
-            f"LLM workflow timed out after {LLM_TIMEOUT_SECONDS}s"
-        ) from err
+        raise LLMTimeoutError(f"LLM workflow timed out after {LLM_TIMEOUT_SECONDS}s") from err
 
 
 @router.post("/chat")
@@ -255,9 +253,7 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
         timestamp=datetime.now(UTC),
     )
     if cosmos_available:
-        await _persist_message(
-            conversation_service, conversation_id, user_id, assistant_message
-        )
+        await _persist_message(conversation_service, conversation_id, user_id, assistant_message)
         # Track the last active agent for topic-switching detection
         await _update_last_active_agent(
             conversation_service, conversation_id, user_id, routed_agent
@@ -308,7 +304,7 @@ class _MessageFieldExtractor:
     _GUARD_LEN = len(_SOURCE_POLLUTION_PREFIX)
 
     def __init__(self) -> None:
-        self._buf = ""        # pre-marker accumulation
+        self._buf = ""  # pre-marker accumulation
         self._in_value = False
         self._escape = False
         self._done = False
@@ -326,7 +322,7 @@ class _MessageFieldExtractor:
             if not m:
                 return ""
             self._in_value = True
-            remainder = self._buf[m.end():]
+            remainder = self._buf[m.end() :]
             self._buf = ""
             return self._guarded_read(remainder)
 
@@ -378,8 +374,17 @@ class _MessageFieldExtractor:
         for ch in s:
             if self._escape:
                 out.append(
-                    {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\",
-                     "/": "/", "b": "\b", "f": "\f", "u": ""}.get(ch, ch)
+                    {
+                        "n": "\n",
+                        "t": "\t",
+                        "r": "\r",
+                        '"': '"',
+                        "\\": "\\",
+                        "/": "/",
+                        "b": "\b",
+                        "f": "\f",
+                        "u": "",
+                    }.get(ch, ch)
                 )
                 self._escape = False
             elif ch == "\\":
@@ -412,12 +417,18 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
     user_id = user.user_id
 
     if workflow is None:
+
         async def _no_workflow() -> AsyncGenerator[str, None]:
-            yield _sse({"type": "error", "error": {
-                "code": "API_ERROR",
-                "message": "AI workflow not available. Azure OpenAI endpoint not configured.",
-                "retryable": False,
-            }})
+            yield _sse(
+                {
+                    "type": "error",
+                    "error": {
+                        "code": "API_ERROR",
+                        "message": "AI workflow not available. Endpoint not configured.",
+                        "retryable": False,
+                    },
+                }
+            )
 
         return StreamingResponse(_no_workflow(), media_type="text/event-stream")
 
@@ -431,12 +442,18 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                 body.conversation_id, user_id
             )
             if conversation is None:
+
                 async def _not_found() -> AsyncGenerator[str, None]:
-                    yield _sse({"type": "error", "error": {
-                        "code": "API_ERROR",
-                        "message": "Conversation not found",
-                        "retryable": False,
-                    }})
+                    yield _sse(
+                        {
+                            "type": "error",
+                            "error": {
+                                "code": "API_ERROR",
+                                "message": "Conversation not found",
+                                "retryable": False,
+                            },
+                        }
+                    )
 
                 return StreamingResponse(_not_found(), media_type="text/event-stream")
             conversation_id = body.conversation_id
@@ -501,28 +518,43 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                 if kind == "error":
                     exc = item[1]
                     if isinstance(exc, TimeoutError):
-                        yield _sse({"type": "error", "error": {
-                            "code": "TIMEOUT",
-                            "message": "Request timed out. Please try again.",
-                            "retryable": True,
-                        }})
+                        yield _sse(
+                            {
+                                "type": "error",
+                                "error": {
+                                    "code": "TIMEOUT",
+                                    "message": "Request timed out. Please try again.",
+                                    "retryable": True,
+                                },
+                            }
+                        )
                     elif isinstance(exc, OpenAIRateLimitError):
                         logger.warning(
                             "LLM rate limited in SSE stream — quota exhausted after retries"
                         )
-                        yield _sse({"type": "error", "error": {
-                            "code": "RATE_LIMIT",
-                            "message": "The AI service is temporarily busy."
-                            " Please wait a moment and try again.",
-                            "retryable": True,
-                        }})
+                        yield _sse(
+                            {
+                                "type": "error",
+                                "error": {
+                                    "code": "RATE_LIMIT",
+                                    "message": "The AI service is temporarily busy."
+                                    " Please wait a moment and try again.",
+                                    "retryable": True,
+                                },
+                            }
+                        )
                     else:
                         logger.warning("Workflow error in SSE stream", exc_info=exc)
-                        yield _sse({"type": "error", "error": {
-                            "code": "API_ERROR",
-                            "message": "The agent encountered an error. Please try again.",
-                            "retryable": True,
-                        }})
+                        yield _sse(
+                            {
+                                "type": "error",
+                                "error": {
+                                    "code": "API_ERROR",
+                                    "message": "The agent encountered an error. Please try again.",
+                                    "retryable": True,
+                                },
+                            }
+                        )
                     return
 
                 if kind == "heartbeat":
@@ -606,18 +638,28 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                         )
                     )
                     if is_rate_limit:
-                        yield _sse({"type": "error", "error": {
-                            "code": "RATE_LIMIT",
-                            "message": "The AI service is temporarily busy."
-                            " Please wait a moment and try again.",
-                            "retryable": True,
-                        }})
+                        yield _sse(
+                            {
+                                "type": "error",
+                                "error": {
+                                    "code": "RATE_LIMIT",
+                                    "message": "The AI service is temporarily busy."
+                                    " Please wait a moment and try again.",
+                                    "retryable": True,
+                                },
+                            }
+                        )
                     else:
-                        yield _sse({"type": "error", "error": {
-                            "code": "API_ERROR",
-                            "message": "The agent encountered an error. Please try again.",
-                            "retryable": True,
-                        }})
+                        yield _sse(
+                            {
+                                "type": "error",
+                                "error": {
+                                    "code": "API_ERROR",
+                                    "message": "The agent encountered an error. Please try again.",
+                                    "retryable": True,
+                                },
+                            }
+                        )
                     return
 
         finally:
@@ -630,9 +672,12 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             yield _sse({"type": "phase", "phase": "generating"})
 
         # Debug: log what we got from the workflow
-        logger.info("workflow output: structured_result=%s response_text=%r buf_start=%r",
-                    structured_result is not None, response_text[:100] if response_text else None,
-                    domain_agent_json_buf[:300] if domain_agent_json_buf else None)
+        logger.info(
+            "workflow output: structured_result=%s response_text=%r buf_start=%r",
+            structured_result is not None,
+            response_text[:100] if response_text else None,
+            domain_agent_json_buf[:300] if domain_agent_json_buf else None,
+        )
 
         # Build the AgentResponseModel from whatever the workflow produced.
         if structured_result is not None:
@@ -669,11 +714,13 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         yield _sse({"type": "phase", "phase": "verifying"})
         yield _sse({"type": "confidence", "breakdown": enriched.confidence.model_dump()})
         yield _sse({"type": "verification", "result": enriched.verification.model_dump()})
-        yield _sse({
-            "type": "done",
-            "response": enriched.model_dump(mode="json"),
-            "conversation_id": conversation_id,
-        })
+        yield _sse(
+            {
+                "type": "done",
+                "response": enriched.model_dump(mode="json"),
+                "conversation_id": conversation_id,
+            }
+        )
         yield "data: [DONE]\n\n"
 
         # Persist after streaming completes — Cosmos errors here are non-fatal.
@@ -747,9 +794,7 @@ async def delete_conversation(conversation_id: str, request: Request) -> dict:
 
 @router.post("/chat/{conversation_id}/feedback")
 @limiter.limit("30/minute")
-async def submit_feedback(
-    conversation_id: str, feedback: FeedbackRecord, request: Request
-) -> dict:
+async def submit_feedback(conversation_id: str, feedback: FeedbackRecord, request: Request) -> dict:
     """Submit feedback for a message in a conversation."""
     conversation_service = request.app.state.conversation_service
     user = await get_current_user(request)
