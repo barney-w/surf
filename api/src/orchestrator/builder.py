@@ -81,7 +81,20 @@ class _SafeHandoffAnthropicClient(AnthropicClient):
 
     This subclass intercepts the prepared message list and appends a synthetic
     user message when the conversation would otherwise end with an assistant turn.
+    It also strips OpenAI-specific options (like ``store``) that the framework's
+    handoff layer injects but the Anthropic SDK does not accept.
     """
+
+    # OpenAI-specific option keys that the framework may inject but Anthropic does not support.
+    _UNSUPPORTED_OPTION_KEYS = {"store", "conversation_id"}
+
+    def _prepare_options(
+        self, messages: Sequence[Message], options: Any, **kwargs: Any
+    ) -> dict[str, Any]:
+        run_options = super()._prepare_options(messages, options, **kwargs)
+        for key in self._UNSUPPORTED_OPTION_KEYS:
+            run_options.pop(key, None)
+        return run_options
 
     def _prepare_messages_for_anthropic(self, messages: Sequence[Message]) -> list[dict[str, Any]]:
         prepared = super()._prepare_messages_for_anthropic(messages)

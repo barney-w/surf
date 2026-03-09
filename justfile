@@ -41,6 +41,12 @@ setup-dev:
     LOCATION_AI="eastus2"
     STAMP="surf-dev-$(date +%Y%m%d%H%M%S)"
 
+    SUB_NAME=$(az account show --query name -o tsv)
+    SUB_ID=$(az account show --query id -o tsv)
+    echo "Active subscription: $SUB_NAME ($SUB_ID)"
+    read -rp "Continue with this subscription? [y/N] " CONFIRM
+    [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Aborted. Use 'az account set -s <name>' to switch."; exit 1; }
+
     echo "Getting signed-in user..."
     USER_OID=$(az ad signed-in-user show --query id -o tsv)
 
@@ -114,8 +120,37 @@ setup-dev:
     echo "IMPORTANT: Set ANTHROPIC_API_KEY in .env before running."
     echo "Run 'just dev' to start the API."
 
+# Sync files and pages from SharePoint to blob storage
+sync-sharepoint *ARGS:
+    cd ingestion && uv run python -m src sync-sharepoint {{ARGS}}
+
+# Create the indexer pipeline (data source, index, skillset, indexer)
+setup-indexer *ARGS:
+    cd ingestion && uv run python scripts/setup_sharepoint_indexer.py {{ARGS}}
+
+# Trigger an indexer run and optionally wait for completion
+run-indexer *ARGS:
+    cd ingestion && uv run python scripts/run_indexer.py {{ARGS}}
+
+# Verify Microsoft Graph API access to SharePoint
+verify-graph:
+    cd ingestion && uv run python scripts/verify_graph_access.py
+
+# Query the SharePoint index and validate results
+validate-sharepoint *ARGS:
+    cd ingestion && uv run python scripts/validate_sharepoint_index.py {{ARGS}}
+
+# Full end-to-end: sync -> setup indexer -> run indexer -> validate
+test-sharepoint-e2e: sync-sharepoint setup-indexer (run-indexer "--wait") validate-sharepoint
+
 # Delete both dev resource groups and all their resources
 teardown-dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SUB_NAME=$(az account show --query name -o tsv)
+    echo "⚠ This will DELETE rg-surf-dev and rg-surf-dev-ai in subscription: $SUB_NAME"
+    read -rp "Type 'yes' to confirm: " CONFIRM
+    [[ "$CONFIRM" == "yes" ]] || { echo "Aborted."; exit 1; }
     az group delete --name rg-surf-dev    --yes --no-wait
     az group delete --name rg-surf-dev-ai --yes --no-wait
-    @echo "Resource group deletion initiated (runs in background)."
+    echo "Resource group deletion initiated (runs in background)."

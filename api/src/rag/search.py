@@ -1,5 +1,6 @@
+import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -54,9 +55,43 @@ def build_odata_filter(filters: dict[str, str | list[str]]) -> str | None:
     return " and ".join(clauses)
 
 
-async def search_index(
+async def _search_single_index(
     query: str,
     search_client: SearchClient,
+    odata_filter: str | None,
+    top_k: int,
+    vector_queries: list[VectorizedQuery] | None,
+) -> list[SearchResult]:
+    """Query a single search index and return results."""
+    results = await search_client.search(  # pyright: ignore[reportUnknownVariableType,reportUnknownMemberType]
+        search_text=query,
+        filter=odata_filter,
+        top=top_k,
+        vector_queries=cast("list[VectorQuery]", vector_queries) if vector_queries else None,
+    )
+
+    search_results: list[SearchResult] = []
+    async for raw_doc in results:  # pyright: ignore[reportUnknownVariableType]
+        doc: dict[str, Any] = dict(raw_doc)  # pyright: ignore[reportUnknownArgumentType]
+        search_results.append(
+            SearchResult(
+                document_id=doc.get("document_id", doc.get("parent_id", "")),
+                title=doc.get("title", ""),
+                section_heading=doc.get("section_heading"),
+                content=doc.get("content", ""),
+                score=float(doc.get("@search.score", 0.0)),
+                source_url=doc.get("source_url"),
+                domain=doc.get("domain", ""),
+                document_type=doc.get("document_type", ""),
+                chunk_index=int(doc.get("chunk_index", 0)),
+            )
+        )
+    return search_results
+
+
+async def search_index(
+    query: str,
+    search_client: SearchClient | Sequence[SearchClient],
     filters: dict[str, str | list[str]] | None = None,
     top_k: int = 5,
     use_hybrid: bool = True,
@@ -64,10 +99,18 @@ async def search_index(
 ) -> list[SearchResult]:
     """Execute hybrid search (vector + keyword) against Azure AI Search.
 
+    Accepts a single ``SearchClient`` or a sequence of clients to query
+    multiple indexes concurrently.  Results are merged by score and
+    trimmed to *top_k*.
+
     When *use_hybrid* is ``True`` and *embed_query* is provided the query is
     embedded client-side and submitted as a ``RawVectorQuery``.  If
     *embed_query* is ``None`` the search falls back to keyword-only mode.
     """
+    clients: Sequence[SearchClient] = (
+        search_client if isinstance(search_client, Sequence) else [search_client]
+    )
+
     try:
         odata_filter = build_odata_filter(filters) if filters else None
 
@@ -88,30 +131,30 @@ async def search_index(
                     "falling back to keyword-only search"
                 )
 
-        results = await search_client.search(  # pyright: ignore[reportUnknownVariableType,reportUnknownMemberType]
-            search_text=query,
-            filter=odata_filter,
-            top=top_k,
-            vector_queries=cast("list[VectorQuery]", vector_queries) if vector_queries else None,
-        )
-
-        search_results: list[SearchResult] = []
-        async for raw_doc in results:  # pyright: ignore[reportUnknownVariableType]
-            doc: dict[str, Any] = dict(raw_doc)  # pyright: ignore[reportUnknownArgumentType]
-            search_results.append(
-                SearchResult(
-                    document_id=doc.get("document_id", ""),
-                    title=doc.get("title", ""),
-                    section_heading=doc.get("section_heading"),
-                    content=doc.get("content", ""),
-                    score=float(doc.get("@search.score", 0.0)),
-                    source_url=doc.get("source_url"),
-                    domain=doc.get("domain", ""),
-                    document_type=doc.get("document_type", ""),
-                    chunk_index=int(doc.get("chunk_index", 0)),
-                )
+        if len(clients) == 1:
+            return await _search_single_index(
+                query, clients[0], odata_filter, top_k, vector_queries
             )
-        return search_results
+
+        # Query all indexes concurrently and merge results.
+        tasks = [
+            _search_single_index(query, c, odata_filter, top_k, vector_queries)
+            for c in clients
+        ]
+        all_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        merged: list[SearchResult] = []
+        for result_or_exc in all_results:
+            if isinstance(result_or_exc, BaseException):
+                logger.warning(
+                    "Search query failed for one index: %s", result_or_exc
+                )
+                continue
+            merged.extend(result_or_exc)
+
+        merged.sort(key=lambda r: r.score, reverse=True)
+        return merged[:top_k]
+
     except ResourceNotFoundError as exc:
         logger.warning(
             "Configured Azure AI Search index was not found for query=%r",
