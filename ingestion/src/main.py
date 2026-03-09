@@ -401,5 +401,43 @@ def reindex(domain: str) -> None:
     click.echo("Not yet implemented -- requires document store integration.")
 
 
+@cli.command("sync-sharepoint")
+@click.option("--dry-run", is_flag=True, help="List what would be synced without uploading")
+def sync_sharepoint(dry_run: bool) -> None:
+    """Sync files and pages from SharePoint to Azure Blob Storage."""
+    from src.connectors.sharepoint_sync import SharePointSync, SyncConfig
+
+    try:
+        config = SyncConfig.from_env()
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"Syncing from: {config.site_url}")
+    if dry_run:
+        click.echo("DRY RUN — no files will be uploaded.")
+
+    sync = SharePointSync(config)
+    result = asyncio.run(sync.sync(dry_run=dry_run))
+
+    click.echo("\n--- Sync Summary ---")
+    click.echo(f"Files synced     : {result.files_synced}")
+    click.echo(f"Files skipped    : {result.files_skipped}")
+    if result.files_oversized:
+        click.echo(f"Files oversized  : {result.files_oversized}")
+    if result.files_skipped_sensitivity:
+        click.echo(f"Files (sensitive): {result.files_skipped_sensitivity}")
+    if result.files_deleted:
+        click.echo(f"Files deleted    : {result.files_deleted}")
+    click.echo(f"Pages synced     : {result.pages_synced}")
+    click.echo(f"Pages skipped    : {result.pages_skipped}")
+    if result.pages_deleted:
+        click.echo(f"Pages deleted    : {result.pages_deleted}")
+    click.echo(f"Errors           : {len(result.errors)}")
+    if result.errors:
+        click.echo("\nErrors:")
+        for err in result.errors:
+            click.echo(f"  - {err}")
+
+
 if __name__ == "__main__":
     cli()
