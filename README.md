@@ -7,7 +7,7 @@
 
 _FastAPI · Anthropic Claude · Azure RAG · Cosmos DB_
 
-[![CI](https://img.shields.io/github/actions/workflow/status/barney-w/surf/pr-checks.yml?branch=main&label=CI)](https://github.com/barney-w/surf/actions)
+[![CI](https://github.com/barney-w/surf/actions/workflows/pr-checks.yml/badge.svg?branch=main)](https://github.com/barney-w/surf/actions/workflows/pr-checks.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6)](https://github.com/barney-w/surf-kit)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)

@@ -13,7 +13,7 @@ from src.rag.search import SearchIndexNotFoundError, SearchResult, search_index
 
 logger = logging.getLogger(__name__)
 
-_search_client: SearchClient | None = None
+_search_clients: list[SearchClient] = []
 
 # Mutable collector for RAG tool output text during a request.
 # The chat endpoint sets this to a fresh list before running the workflow;
@@ -83,9 +83,13 @@ _embed_func: Callable[[str], Awaitable[list[float]]] | None = None
 
 
 def set_search_client(client: SearchClient) -> None:
-    """Set the module-level search client (called once at startup)."""
-    global _search_client  # noqa: PLW0603
-    _search_client = client
+    """Add a search client (called once per index at startup)."""
+    _search_clients.append(client)
+
+
+def clear_search_clients() -> None:
+    """Remove all search clients (used by tests)."""
+    _search_clients.clear()
 
 
 def set_embed_func(func: Callable[[str], Awaitable[list[float]]]) -> None:
@@ -94,12 +98,12 @@ def set_embed_func(func: Callable[[str], Awaitable[list[float]]]) -> None:
     _embed_func = func
 
 
-def _get_search_client() -> SearchClient:
-    """Return the module-level search client, raising if not initialised."""
-    if _search_client is None:
+def _get_search_clients() -> list[SearchClient]:
+    """Return the module-level search clients, raising if none initialised."""
+    if not _search_clients:
         msg = "Search client not initialised. Call set_search_client() during application startup."
         raise RuntimeError(msg)
-    return _search_client
+    return _search_clients
 
 
 def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
@@ -134,7 +138,7 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
         try:
             results = await search_index(
                 query=query,
-                search_client=_get_search_client(),
+                search_client=_get_search_clients(),
                 filters=filters,
                 top_k=8,
                 use_hybrid=True,

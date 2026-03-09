@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # Azure AI Search
     azure_search_endpoint: str = ""
     azure_search_index_name: str = "surf-index"
+    azure_search_sharepoint_index: str = ""
 
     # Cosmos DB
     cosmos_endpoint: str = ""

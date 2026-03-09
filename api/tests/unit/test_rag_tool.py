@@ -14,7 +14,12 @@ from src.rag.search import (
     build_odata_filter,
     search_index,
 )
-from src.rag.tools import create_rag_tool, set_search_client, stitch_adjacent_chunks
+from src.rag.tools import (
+    clear_search_clients,
+    create_rag_tool,
+    set_search_client,
+    stitch_adjacent_chunks,
+)
 
 # ---------------------------------------------------------------------------
 # OData filter builder
@@ -130,6 +135,14 @@ class TestCreateRagTool:
 # ---------------------------------------------------------------------------
 # Result formatting
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_search_clients():
+    """Clear module-level search clients between tests."""
+    clear_search_clients()
+    yield
+    clear_search_clients()
 
 
 class TestResultFormatting:
@@ -272,3 +285,164 @@ class TestStitchAdjacentChunks:
 
     def test_empty_input_returns_empty(self):
         assert stitch_adjacent_chunks([]) == []
+
+
+# ---------------------------------------------------------------------------
+# Multi-index search (P0 #12, E7)
+# ---------------------------------------------------------------------------
+
+
+class TestMultiIndexSearch:
+    @pytest.mark.asyncio
+    async def test_multi_index_merges_results_by_score(self):
+        """Querying multiple indexes should merge results sorted by score."""
+
+        async def _results_a():
+            yield {
+                "document_id": "doc-a1",
+                "title": "From Index A",
+                "content": "Content A",
+                "@search.score": 0.90,
+                "domain": "hr",
+                "document_type": "policy",
+            }
+
+        async def _results_b():
+            yield {
+                "document_id": "doc-b1",
+                "title": "From Index B",
+                "content": "Content B",
+                "@search.score": 0.95,
+                "domain": "hr",
+                "document_type": "policy",
+            }
+
+        mock_client_a = AsyncMock()
+        mock_client_a.search = AsyncMock(return_value=_results_a())
+        mock_client_b = AsyncMock()
+        mock_client_b.search = AsyncMock(return_value=_results_b())
+
+        results = await search_index(
+            "test query",
+            search_client=[mock_client_a, mock_client_b],
+        )
+
+        assert len(results) == 2
+        # Higher score should come first
+        assert results[0].title == "From Index B"
+        assert results[1].title == "From Index A"
+
+    @pytest.mark.asyncio
+    async def test_multi_index_one_index_failure_returns_other(self):
+        """If one index fails, results from the other should still be returned."""
+
+        async def _results_ok():
+            yield {
+                "document_id": "doc-ok",
+                "title": "Good result",
+                "content": "Some content",
+                "@search.score": 0.8,
+                "domain": "hr",
+                "document_type": "policy",
+            }
+
+        mock_client_ok = AsyncMock()
+        mock_client_ok.search = AsyncMock(return_value=_results_ok())
+        mock_client_fail = AsyncMock()
+        mock_client_fail.search = AsyncMock(
+            side_effect=RuntimeError("Connection refused")
+        )
+
+        results = await search_index(
+            "test query",
+            search_client=[mock_client_ok, mock_client_fail],
+        )
+
+        assert len(results) == 1
+        assert results[0].title == "Good result"
+
+    @pytest.mark.asyncio
+    async def test_multi_index_trims_to_top_k(self):
+        """Merged results should be trimmed to top_k."""
+
+        async def _many_results():
+            for i in range(5):
+                yield {
+                    "document_id": f"doc-{i}",
+                    "title": f"Result {i}",
+                    "content": f"Content {i}",
+                    "@search.score": 0.5 + i * 0.1,
+                    "domain": "hr",
+                    "document_type": "policy",
+                }
+
+        mock_client_a = AsyncMock()
+        mock_client_a.search = AsyncMock(return_value=_many_results())
+        mock_client_b = AsyncMock()
+        mock_client_b.search = AsyncMock(return_value=_many_results())
+
+        results = await search_index(
+            "test",
+            search_client=[mock_client_a, mock_client_b],
+            top_k=3,
+        )
+
+        assert len(results) == 3
+        # Should be the highest 3 scores
+        assert results[0].score >= results[1].score >= results[2].score
+
+    @pytest.mark.asyncio
+    async def test_single_client_backwards_compatible(self):
+        """Passing a single client (not a list) should still work."""
+
+        async def _results():
+            yield {
+                "document_id": "doc-1",
+                "title": "Single",
+                "content": "Content",
+                "@search.score": 0.7,
+                "domain": "hr",
+                "document_type": "policy",
+            }
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=_results())
+
+        results = await search_index(
+            "test",
+            search_client=mock_client,
+        )
+
+        assert len(results) == 1
+        assert results[0].title == "Single"
+
+
+# ---------------------------------------------------------------------------
+# set_search_client / _get_search_clients (multi-client registration)
+# ---------------------------------------------------------------------------
+
+
+class TestSearchClientRegistry:
+    def test_set_search_client_appends(self):
+        """Multiple calls to set_search_client should register all clients."""
+        from src.rag.tools import _get_search_clients
+
+        mock_a = AsyncMock()
+        mock_b = AsyncMock()
+        set_search_client(mock_a)
+        set_search_client(mock_b)
+
+        clients = _get_search_clients()
+        assert len(clients) == 2
+        assert mock_a in clients
+        assert mock_b in clients
+
+    def test_clear_search_clients_empties_list(self):
+        """clear_search_clients should remove all registered clients."""
+        from src.rag.tools import _get_search_clients
+
+        set_search_client(AsyncMock())
+        clear_search_clients()
+
+        with pytest.raises(RuntimeError, match="Search client not initialised"):
+            _get_search_clients()

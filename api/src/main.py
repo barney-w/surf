@@ -94,13 +94,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # --- Azure AI Search ---
     if settings.azure_search_endpoint:
+        credential = DefaultAzureCredential()
         search_client = SearchClient(
             endpoint=settings.azure_search_endpoint,
             index_name=settings.azure_search_index_name,
-            credential=DefaultAzureCredential(),
+            credential=credential,
         )
         set_search_client(search_client)
-        logger.info("Azure AI Search client initialised")
+        logger.info(
+            "Azure AI Search client initialised (index=%s)",
+            settings.azure_search_index_name,
+        )
+
+        if settings.azure_search_sharepoint_index:
+            sp_search_client = SearchClient(
+                endpoint=settings.azure_search_endpoint,
+                index_name=settings.azure_search_sharepoint_index,
+                credential=credential,
+            )
+            set_search_client(sp_search_client)
+            logger.info(
+                "SharePoint search client initialised (index=%s)",
+                settings.azure_search_sharepoint_index,
+            )
     else:
         logger.warning("AZURE_SEARCH_ENDPOINT not set — RAG tool will not be available")
 
