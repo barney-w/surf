@@ -17,11 +17,13 @@ from src.middleware.body_limit import BodySizeLimitMiddleware
 from src.middleware.error_handler import add_error_handlers
 from src.middleware.logging import reset_logging_context, set_logging_context, setup_logging
 from src.middleware.telemetry import setup_telemetry
-from src.orchestrator.builder import build_orchestrator, create_model_client
+from src.orchestrator.builder import build_agent_graph, create_model_client
 from src.orchestrator.history import ConversationHistoryProvider
 from src.rag.tools import clear_search_clients, set_embed_func, set_search_client
 from src.routes.chat import router as chat_router
+from src.routes.user import router as user_router
 from src.services.conversation import ConversationService
+from src.services.graph import GraphService
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +157,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("COSMOS_ENDPOINT not set — ConversationService not connected")
     app.state.conversation_service = conversation_service
 
+    # --- Graph API service (OBO for user profile / photo) ---
+    graph_service = GraphService()
+    app.state.graph_service = graph_service
+
     # --- History context provider ---
     history_provider = ConversationHistoryProvider(conversation_service)
     app.state.history_provider = history_provider
@@ -169,12 +175,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             raise SystemExit(1)
         client = create_model_client(settings)
 
-        # Store a factory so each request gets a fresh Workflow instance.
-        # agent_framework Workflow is stateful and does not allow concurrent runs.
-        def _make_workflow():
-            return build_orchestrator(client, context_providers=[history_provider])
-
-        app.state.workflow = _make_workflow
+        # Build agents once; only the Workflow is recreated per request
+        # (agent_framework Workflow is stateful and does not allow concurrent runs).
+        agent_graph = build_agent_graph(client, context_providers=[history_provider])
+        app.state.workflow = agent_graph.build_workflow
         logger.info("AI workflow factory initialised")
     else:
         logger.warning("AZURE_OPENAI_ENDPOINT not set — running in dev mode without AI workflow")
@@ -215,6 +219,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # py
 
 add_error_handlers(app)
 app.include_router(chat_router)
+app.include_router(user_router)
 
 
 # ---------------------------------------------------------------------------

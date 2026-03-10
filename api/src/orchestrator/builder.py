@@ -119,27 +119,51 @@ def create_model_client(settings: Settings) -> _SafeHandoffAnthropicClient:
     )
 
 
-def build_orchestrator(
+class _CachedAgentGraph:
+    """Pre-built agents and configuration, reused across requests.
+
+    Agent objects (coordinator + domain agents) are stateless descriptors.
+    Only the Workflow needs to be recreated per request since it holds run state.
+    """
+
+    def __init__(
+        self,
+        coordinator: "Agent[ChatOptions[None]]",
+        domain_agents: list["Agent[ChatOptions[None]]"],
+        termination_condition: Any,
+    ):
+        self.coordinator = coordinator
+        self.domain_agents = domain_agents
+        self.termination_condition = termination_condition
+
+    def build_workflow(self) -> Workflow:
+        """Create a fresh Workflow instance from the cached agent graph."""
+        all_participants = [self.coordinator, *self.domain_agents]
+        builder = HandoffBuilder(name="surf", participants=all_participants)
+        builder.with_start_agent(self.coordinator)
+        builder.add_handoff(self.coordinator, self.domain_agents)
+        builder.with_termination_condition(self.termination_condition)
+        return builder.build()
+
+
+def build_agent_graph(
     client: AnthropicClient,
     context_providers: Sequence[BaseContextProvider] | None = None,
-) -> Workflow:
-    """Build the complete HandoffBuilder workflow.
+) -> _CachedAgentGraph:
+    """Build the agent graph once at startup.
 
-    Each domain agent has its own scoped RAG tool and JSON output instructions.
-    The coordinator routes to domain agents, which search and respond in one step.
-
-    Flow: coordinator → domain_agent (calls RAG tool, generates JSON response)
+    Discovers domain agents, creates Agent objects, and returns a cached graph.
+    Call ``graph.build_workflow()`` per request to get a fresh Workflow.
     """
     discover_agents()
     registry = AgentRegistry.get_all()
 
-    domain_agents: dict[str, Agent] = {}
+    domain_agents: list[Agent[ChatOptions[None]]] = []
 
     for name, agent_cls in registry.items():
         agent_def = agent_cls()
         scoped_rag = create_rag_tool(scope=agent_def.rag_scope)
 
-        # Combine JSON output preamble with the domain-specific prompt.
         combined_prompt = _JSON_OUTPUT_PREAMBLE + agent_def.system_prompt
 
         agent = client.as_agent(
@@ -152,9 +176,8 @@ def build_orchestrator(
             if context_providers
             else [StatelessContextProvider(source_id=f"stateless_{agent_def.name}")],
         )
-        domain_agents[name] = cast("Agent[ChatOptions[None]]", agent)
+        domain_agents.append(cast("Agent[ChatOptions[None]]", agent))
 
-    # Coordinator has NO tools — its sole job is to route to domain agents.
     coordinator_prompt = build_coordinator_prompt(AgentRegistry.agent_descriptions())
     coordinator = cast(
         "Agent[ChatOptions[None]]",
@@ -169,14 +192,4 @@ def build_orchestrator(
         ),
     )
 
-    all_participants = [coordinator, *list(domain_agents.values())]
-    builder = HandoffBuilder(name="surf", participants=all_participants)
-    builder.with_start_agent(coordinator)
-
-    # Coordinator hands off to domain agents.
-    builder.add_handoff(coordinator, list(domain_agents.values()))
-
-    # Stop as soon as a domain agent emits its structured JSON response.
-    builder.with_termination_condition(_domain_agent_responded)
-
-    return builder.build()
+    return _CachedAgentGraph(coordinator, domain_agents, _domain_agent_responded)

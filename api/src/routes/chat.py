@@ -31,7 +31,7 @@ from src.models.agent import (
 )
 from src.models.chat import ChatRequest, ChatResponse
 from src.models.conversation import FeedbackRecord, MessageRecord
-from src.orchestrator.history import current_conversation_id, current_user_id
+from src.orchestrator.history import current_conversation_id, current_user_id, reset_history_cache
 from src.rag.tools import rag_results_collector
 
 logger = logging.getLogger(__name__)
@@ -100,6 +100,7 @@ async def _run_workflow(
     # without passing them through workflow options (which leak to the LLM client).
     current_conversation_id.set(conversation_id)
     current_user_id.set(user_id)
+    reset_history_cache()
     rag_collector: list[str] = []
     rag_results_collector.set(rag_collector)
 
@@ -232,21 +233,13 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
         primary_agent=routed_agent,
     )
 
-    # Save user message (after workflow so history provider doesn't see it as prior context)
+    # Persist user message, assistant message, and last-active-agent in parallel.
     user_message = MessageRecord(
         id=str(uuid.uuid4()),
         role="user",
         content=sanitised_message,
         timestamp=datetime.now(UTC),
     )
-    if cosmos_available:
-        persisted = await _persist_message(
-            conversation_service, conversation_id, user_id, user_message
-        )
-        if not persisted:
-            cosmos_available = False
-
-    # Save assistant message
     assistant_message = MessageRecord(
         id=message_id,
         role="assistant",
@@ -256,11 +249,17 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
         timestamp=datetime.now(UTC),
     )
     if cosmos_available:
-        await _persist_message(conversation_service, conversation_id, user_id, assistant_message)
-        # Track the last active agent for topic-switching detection
-        await _update_last_active_agent(
-            conversation_service, conversation_id, user_id, routed_agent
-        )
+        ok = await _persist_message(conversation_service, conversation_id, user_id, user_message)
+        if ok:
+            ok = await _persist_message(
+                conversation_service, conversation_id, user_id, assistant_message
+            )
+        if ok:
+            await _update_last_active_agent(
+                conversation_service, conversation_id, user_id, routed_agent
+            )
+        else:
+            cosmos_available = False
 
     chat_response = ChatResponse(
         conversation_id=conversation_id,
@@ -472,6 +471,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
         current_conversation_id.set(conversation_id)
         current_user_id.set(user_id)
+        reset_history_cache()
         rag_collector: list[str] = []
         rag_results_collector.set(rag_collector)
 
@@ -481,6 +481,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         routed_agent = "coordinator"
         structured_result: AgentResponseModel | None = None
         response_text = ""
+        coordinator_buf = ""  # buffer coordinator tokens; discard on handoff
         domain_agent_json_buf = ""  # accumulates raw JSON for domain agents
         extractor = _MessageFieldExtractor()
         generating_announced = False
@@ -577,6 +578,17 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                 if event.type == "handoff_sent":
                     routed_agent = event.data.target
                     logger.debug("handoff_sent: target=%s", routed_agent)
+                    # Discard any coordinator text that preceded the handoff.
+                    # The coordinator sometimes generates text before calling
+                    # the handoff tool; streaming it would duplicate the domain
+                    # agent's answer.
+                    if coordinator_buf:
+                        logger.debug(
+                            "Discarding %d chars of coordinator text before handoff",
+                            len(coordinator_buf),
+                        )
+                        coordinator_buf = ""
+                    generating_announced = False
                     yield _sse({"type": "agent", "agent": routed_agent})
                     yield _sse({"type": "phase", "phase": "generating"})
                     generating_announced = True
@@ -596,13 +608,12 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                         continue
 
                     if routed_agent == "coordinator":
-                        # Plain-text coordinator response — stream tokens directly.
-                        if not generating_announced:
-                            yield _sse({"type": "agent", "agent": "coordinator"})
-                            yield _sse({"type": "phase", "phase": "generating"})
-                            generating_announced = True
-                        response_text += chunk
-                        yield _sse({"type": "delta", "content": chunk})
+                        # Buffer coordinator tokens — don't stream yet.
+                        # If a handoff follows, the buffer is discarded so the
+                        # domain agent's answer is the only content streamed.
+                        # If the coordinator answers directly (no handoff), the
+                        # buffer is flushed after the workflow completes.
+                        coordinator_buf += chunk
 
                     else:
                         # Domain agent — JSON output, extract the 'message' field value.
@@ -653,8 +664,22 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             heartbeat_task.cancel()
             workflow_task.cancel()
 
-        # Announce agent/generating phase for any path that didn't handoff.
-        if not generating_announced:
+        # Flush buffered coordinator text if the coordinator answered directly
+        # (no handoff occurred). Drip-feed the buffer as small delta events so
+        # the client's streaming UI (character drain + cursor) works correctly.
+        # Emitting everything in one delta causes React to batch the content
+        # and done events, skipping the streaming animation entirely.
+        if coordinator_buf:
+            if not generating_announced:
+                yield _sse({"type": "agent", "agent": "coordinator"})
+                yield _sse({"type": "phase", "phase": "generating"})
+                generating_announced = True
+            response_text = coordinator_buf
+            _CHUNK_SIZE = 40  # characters per drip
+            for i in range(0, len(coordinator_buf), _CHUNK_SIZE):
+                yield _sse({"type": "delta", "content": coordinator_buf[i : i + _CHUNK_SIZE]})
+                await asyncio.sleep(0)  # yield control so each chunk is a separate HTTP frame
+        elif not generating_announced:
             yield _sse({"type": "agent", "agent": routed_agent})
             yield _sse({"type": "phase", "phase": "generating"})
 
@@ -697,34 +722,18 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
         enriched = enrich_agent_response(agent_response)
 
-        yield _sse({"type": "phase", "phase": "verifying"})
-        yield _sse({"type": "confidence", "breakdown": enriched.confidence.model_dump()})
-        yield _sse({"type": "verification", "result": enriched.verification.model_dump()})
-        yield _sse(
-            {
-                "type": "done",
-                "response": enriched.model_dump(mode="json"),
-                "conversation_id": conversation_id,
-            }
-        )
-        yield "data: [DONE]\n\n"
-
-        # Persist after streaming completes — Cosmos errors here are non-fatal.
-        # User message saved after the workflow run so the history provider
-        # doesn't inject it as prior context during the run.
+        # Persist BEFORE final SSE events so messages are saved even if the
+        # client disconnects after receiving [DONE] (which would stop the
+        # generator and skip any code after the last yield).
+        # Messages are saved sequentially (user then assistant) to guarantee
+        # correct ordering in the Cosmos array — parallel patches could
+        # interleave and produce assistant-before-user order.
         user_message = MessageRecord(
             id=str(uuid.uuid4()),
             role="user",
             content=sanitised_message,
             timestamp=datetime.now(UTC),
         )
-        if cosmos_available:
-            persisted = await _persist_message(
-                conversation_service, conversation_id, user_id, user_message
-            )
-            if not persisted:
-                cosmos_available = False
-
         assistant_message = MessageRecord(
             id=message_id,
             role="assistant",
@@ -734,15 +743,23 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             timestamp=datetime.now(UTC),
         )
         if cosmos_available:
-            persisted = await _persist_message(
-                conversation_service, conversation_id, user_id, assistant_message
+            ok = await _persist_message(
+                conversation_service, conversation_id, user_id, user_message
             )
-            if persisted:
+            if ok:
+                ok = await _persist_message(
+                    conversation_service, conversation_id, user_id, assistant_message
+                )
+            if ok:
                 await _update_last_active_agent(
                     conversation_service, conversation_id, user_id, routed_agent
                 )
             else:
                 cosmos_available = False
+
+        yield _sse({"type": "phase", "phase": "verifying"})
+        yield _sse({"type": "confidence", "breakdown": enriched.confidence.model_dump()})
+        yield _sse({"type": "verification", "result": enriched.verification.model_dump()})
 
         if not cosmos_available:
             yield _sse(
@@ -755,6 +772,15 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                     ),
                 }
             )
+
+        yield _sse(
+            {
+                "type": "done",
+                "response": enriched.model_dump(mode="json"),
+                "conversation_id": conversation_id,
+            }
+        )
+        yield "data: [DONE]\n\n"
 
     return StreamingResponse(
         generate(),

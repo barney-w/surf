@@ -9,7 +9,7 @@ from azure.identity.aio import DefaultAzureCredential
 from azure.search.documents.aio import SearchClient
 
 from src.config.settings import get_settings
-from src.orchestrator.builder import build_orchestrator, create_model_client
+from src.orchestrator.builder import build_agent_graph, create_model_client
 from src.rag.tools import set_search_client
 
 
@@ -19,7 +19,8 @@ class DevUIStatelessWorkflow:
     def __init__(self) -> None:
         self._settings = get_settings()
         self._client = create_model_client(self._settings)
-        self._template = build_orchestrator(self._client)
+        self._graph = build_agent_graph(self._client)
+        self._template = self._graph.build_workflow()
         self.name = getattr(self._template, "name", "surf")
         self.description = "Surf workflow (stateless DevUI wrapper)"
 
@@ -72,7 +73,7 @@ class DevUIStatelessWorkflow:
         include_status_events: bool = False,
         **kwargs: Any,
     ) -> Any:
-        workflow = build_orchestrator(self._client)
+        workflow = self._graph.build_workflow()
         if not stream:
             return workflow.run(
                 message=message,

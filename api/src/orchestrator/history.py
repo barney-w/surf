@@ -18,6 +18,18 @@ current_conversation_id: ContextVar[str | None] = ContextVar(
 )
 current_user_id: ContextVar[str | None] = ContextVar("current_user_id", default=None)
 
+# Per-request cache for conversation history messages.  Set to a fresh dict
+# before each workflow run so that the second before_run call (domain agent)
+# reuses the Cosmos result from the first call (coordinator).
+_history_cache: ContextVar[dict[str, list[Message]]] = ContextVar(
+    "_history_cache", default={}
+)
+
+
+def reset_history_cache() -> None:
+    """Reset the per-request history cache.  Call before each workflow run."""
+    _history_cache.set({})
+
 
 class ConversationHistoryProvider(BaseContextProvider):
     """Loads conversation history from Cosmos DB and injects as prior messages."""
@@ -40,6 +52,13 @@ class ConversationHistoryProvider(BaseContextProvider):
         if not conversation_id or not user_id:
             return
 
+        cache = _history_cache.get()
+        cache_key = f"{conversation_id}:{user_id}"
+
+        if cache_key in cache:
+            context.extend_messages(self.source_id, cache[cache_key])
+            return
+
         conversation = await self._service.get_conversation(conversation_id, user_id)
         if not conversation:
             return
@@ -49,7 +68,12 @@ class ConversationHistoryProvider(BaseContextProvider):
         for msg in history_messages:
             if msg.role == "user":
                 framework_messages.append(Message("user", [msg.content or ""]))
-            elif msg.role == "assistant" and msg.response:
-                framework_messages.append(Message("assistant", [msg.response.message]))
+            elif msg.role == "assistant":
+                # Prefer the structured response message, fall back to raw content
+                # so assistant turns are never silently dropped from context.
+                text = (msg.response.message if msg.response else None) or msg.content or ""
+                if text:
+                    framework_messages.append(Message("assistant", [text]))
 
+        cache[cache_key] = framework_messages
         context.extend_messages(self.source_id, framework_messages)
