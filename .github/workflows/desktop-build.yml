@@ -1,0 +1,62 @@
+name: Build Desktop App (Windows)
+
+on:
+  push:
+    tags: ['desktop-v*']
+  workflow_dispatch:
+
+env:
+  VITE_ENTRA_CLIENT_ID: ${{ secrets.ENTRA_CLIENT_ID }}
+  VITE_ENTRA_TENANT_ID: ${{ secrets.ENTRA_TENANT_ID }}
+  VITE_DESKTOP_API_URL: ${{ secrets.DESKTOP_API_URL }}
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/surf-kit
+          path: surf-kit
+          token: ${{ secrets.SURF_KIT_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: web/src-tauri
+
+      - name: Install signing tools
+        run: cargo install trusted-signing-cli
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build Tauri app
+        working-directory: web
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_SIGNING_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_UPDATE_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_UPDATE_KEY_PASSWORD }}
+        run: npm run tauri:build
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: surf-windows-installer
+          path: |
+            web/src-tauri/target/release/bundle/nsis/*.exe
+            web/src-tauri/target/release/bundle/nsis/*.sig

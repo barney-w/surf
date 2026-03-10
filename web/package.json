@@ -8,7 +8,10 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "tsc -b && vite build --mode production 2>&1 | head -0",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@azure/msal-browser": "^4.29.0",
@@ -18,11 +21,16 @@
     "@surf-kit/icons": "file:../../surf-kit/packages/icons",
     "@surf-kit/theme": "file:../../surf-kit/packages/theme",
     "@surf-kit/tokens": "file:../../surf-kit/packages/tokens",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-window-state": "^2",
+    "@tauri-apps/plugin-updater": "^2",
+    "@tauri-apps/plugin-notification": "^2",
     "react": "^19",
     "react-dom": "^19"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4",
+    "@tauri-apps/cli": "^2.10.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "latest",

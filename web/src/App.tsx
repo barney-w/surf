@@ -1,8 +1,9 @@
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { ThemeProvider } from "@surf-kit/theme";
 import type { ColorMode } from "@surf-kit/theme";
 import { Button, DropdownMenu } from "@surf-kit/core";
 import { useAuth } from "./auth/AuthProvider";
+import { isTauri } from "./auth/platform";
 import { ChatPage } from "./pages/ChatPage";
 
 const STORAGE_KEY = "surf-color-mode";
@@ -131,13 +132,54 @@ function NewChatIcon() {
   );
 }
 
+function OfflineBanner() {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  if (isOnline) return null;
+
+  return (
+    <div className="bg-amber-500/90 text-white text-sm text-center py-1.5 px-4">
+      You're offline. Reconnect to continue chatting.
+    </div>
+  );
+}
+
 function AppContent() {
   const [chatKey, setChatKey] = useState(0);
   const [hasMessages, setHasMessages] = useState(false);
   const handleHasMessages = useCallback((has: boolean) => setHasMessages(has), []);
 
+  useEffect(() => {
+    if (!isTauri()) return;
+    import('@tauri-apps/plugin-updater').then(({ check }) => {
+      check().then((update) => {
+        if (update) {
+          if (window.confirm(`Version ${update.version} is available. Update now?`)) {
+            void update.downloadAndInstall();
+          }
+        }
+      }).catch(() => {
+        // Silent fail — don't block app usage
+      });
+    }).catch(() => {
+      // Plugin not available
+    });
+  }, []);
+
   return (
     <div className="flex flex-col h-full bg-canvas">
+      <OfflineBanner />
       <header className="flex items-center gap-3 px-6 py-3 border-b border-border shrink-0">
         <h1 className="font-display text-lg font-semibold text-text-primary tracking-tight flex-1">
           Surf

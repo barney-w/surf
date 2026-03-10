@@ -85,7 +85,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 settings.environment,
             )
             raise SystemExit(1)
-        if any("localhost" in origin for origin in settings.api_cors_origins):
+        if any(
+            "localhost" in origin and "tauri.localhost" not in origin
+            for origin in settings.api_cors_origins
+        ):
             logger.critical(
                 "CORS origins contain localhost in '%s' environment — refusing to start: %s",
                 settings.environment,
@@ -167,10 +170,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # --- AI workflow ---
     if settings.azure_openai_endpoint:
-        if not settings.anthropic_api_key:
+        has_anthropic_creds = bool(
+            settings.anthropic_api_key or settings.anthropic_foundry_base_url
+        )
+        if not has_anthropic_creds:
             logger.critical(
-                "ANTHROPIC_API_KEY is required when AZURE_OPENAI_ENDPOINT is set"
-                " — refusing to start"
+                "Anthropic credentials required when AZURE_OPENAI_ENDPOINT is set."
+                " Set ANTHROPIC_API_KEY (direct) or ANTHROPIC_FOUNDRY_BASE_URL"
+                " + ANTHROPIC_FOUNDRY_API_KEY (Azure AI Foundry) — refusing to start"
             )
             raise SystemExit(1)
         client = create_model_client(settings)

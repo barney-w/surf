@@ -45,9 +45,12 @@ param embeddingCapacity = 10
 // ACR — allow public access so GitHub-hosted runners can push images
 param acrPublicNetworkAccess = 'Enabled'
 
-// Auth — disabled in dev (no SSO)
-param authEnabled = false
+// Auth — enabled (SSO via Entra ID)
+param authEnabled = true
 
-// Static Web App — Standard required for linked backend
-param staticWebAppSku = 'Standard'
-param staticWebAppLocation = 'eastasia'
+// CORS — allow localhost origins
+param apiCorsOrigins = '["http://localhost:3000","https://tauri.localhost"]'
+
+// Web container — scale to zero in dev
+param webMinReplicas = 0
+param webMaxReplicas = 1

@@ -5,6 +5,7 @@ import { StreamingMessage } from "@surf-kit/agent/streaming";
 import { ErrorResponse } from "@surf-kit/agent/response";
 import { WaveLoader } from "@surf-kit/core";
 import { useAuth } from "../auth/AuthProvider";
+import { getApiBase } from "../auth/platform";
 
 const SUGGESTED_QUESTIONS = [
   "What's the leave policy?",
@@ -74,7 +75,7 @@ function useChatConfig() {
 
   return useMemo(
     () => ({
-      apiUrl: import.meta.env.VITE_SURF_API_URL || "/api/v1",
+      apiUrl: getApiBase(),
       streamPath: "/chat/stream",
       feedbackPath: "/feedback",
       conversationsPath: "/conversations",

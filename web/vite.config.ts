@@ -6,6 +6,8 @@ import path from 'path'
 const agentSrc = path.resolve(__dirname, '../../surf-kit/packages/agent/src')
 const coreSrc = path.resolve(__dirname, '../../surf-kit/packages/core/src')
 
+const host = process.env.TAURI_DEV_HOST
+
 export default defineConfig({
   plugins: [
     tailwindcss(),
@@ -38,9 +40,12 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    strictPort: true,
+    host: host || false,
     proxy: {
       '/api': { target: 'http://localhost:8090', changeOrigin: true },
     },
   },
-  build: { outDir: 'dist', sourcemap: true },
+  build: { outDir: 'dist', sourcemap: true, target: 'es2022' },
+  ...(process.env.TAURI_ENV_PLATFORM ? { server: { open: false } } : {}),
 })

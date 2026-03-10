@@ -19,6 +19,8 @@ class TestSettingsDefaults:
         assert settings.azure_openai_api_version == "2024-12-01-preview"
         assert settings.anthropic_api_key == ""
         assert settings.anthropic_model_id == "claude-sonnet-4-6"
+        assert settings.anthropic_foundry_base_url == ""
+        assert settings.anthropic_foundry_api_key == ""
         assert settings.azure_search_endpoint == ""
         assert settings.azure_search_index_name == "surf-index"
         assert settings.cosmos_endpoint == ""
@@ -29,7 +31,7 @@ class TestSettingsDefaults:
         assert settings.auth_enabled is False
         assert settings.entra_tenant_id == ""
         assert settings.entra_client_id == ""
-        assert settings.api_cors_origins == ["http://localhost:3000"]
+        assert settings.api_cors_origins == ["http://localhost:3000", "https://tauri.localhost"]
         assert settings.max_history_messages == 20
 
     def test_get_settings_returns_settings_instance(self):

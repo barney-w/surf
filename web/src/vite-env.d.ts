@@ -4,6 +4,7 @@ interface ImportMetaEnv {
   readonly VITE_SURF_API_URL?: string;
   readonly VITE_ENTRA_CLIENT_ID?: string;
   readonly VITE_ENTRA_TENANT_ID?: string;
+  readonly VITE_DESKTOP_API_URL?: string;
 }
 
 interface ImportMeta {

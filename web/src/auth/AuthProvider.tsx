@@ -13,6 +13,7 @@ import {
   PublicClientApplication,
 } from "@azure/msal-browser";
 import { msalConfig, loginScopes, apiScope } from "./authConfig";
+import { isTauri, getApiBase } from "./platform";
 
 interface UserProfile {
   displayName: string;
@@ -69,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Fetch user profile from our backend
   const fetchProfile = useCallback(async (token: string) => {
-    const apiBase = import.meta.env.VITE_SURF_API_URL || "/api/v1";
+    const apiBase = getApiBase();
     try {
       const resp = await fetch(`${apiBase}/me`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -177,18 +178,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void init();
   }, [fetchProfile]);
 
-  const login = useCallback(() => {
+  const login = useCallback(async () => {
     if (!msalInstance) return;
-    void msalInstance.loginRedirect({ scopes: loginScopes });
-  }, []);
+    if (isTauri()) {
+      try {
+        const result = await msalInstance.loginPopup({ scopes: loginScopes });
+        if (result.account) {
+          setAccount(result.account);
+          msalInstance.setActiveAccount(result.account);
+          const tokenResult = await msalInstance.acquireTokenSilent({
+            scopes: [apiScope],
+            account: result.account,
+          });
+          void fetchProfile(tokenResult.accessToken);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Login failed');
+      }
+    } else {
+      void msalInstance.loginRedirect({ scopes: loginScopes });
+    }
+  }, [fetchProfile]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     if (!msalInstance) return;
     setAccount(null);
     setProfile(null);
     if (photoUrl) URL.revokeObjectURL(photoUrl);
     setPhotoUrl(null);
-    void msalInstance.logoutRedirect();
+    if (isTauri()) {
+      await msalInstance.logoutPopup();
+    } else {
+      void msalInstance.logoutRedirect();
+    }
   }, [photoUrl]);
 
   const getApiToken = useCallback(async (): Promise<string | null> => {
@@ -201,7 +223,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return result.accessToken;
     } catch (err) {
       if (err instanceof InteractionRequiredAuthError) {
-        // Token expired and can't refresh silently — need interaction
+        if (isTauri()) {
+          const result = await msalInstance.acquireTokenPopup({ scopes: [apiScope] });
+          return result.accessToken;
+        }
         void msalInstance.acquireTokenRedirect({ scopes: [apiScope] });
         return null;
       }
