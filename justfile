@@ -120,25 +120,71 @@ setup-dev:
     echo "IMPORTANT: Set ANTHROPIC_API_KEY in .env before running."
     echo "Run 'just dev' to start the API."
 
+# Run web frontend in development mode
+web:
+    cd web && npm run dev
+
+# Build web frontend for production
+web-build:
+    cd web && npm run build
+
+# Lint and typecheck web frontend
+web-lint:
+    cd web && npm run typecheck
+
+# Install web frontend dependencies
+web-install:
+    cd web && npm install
+
+# Deploy API container to Azure Container Apps
+api-deploy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    TAG=$(git rev-parse --short HEAD)
+    ACR_SERVER=$(az acr show --name acrsurfdev --resource-group rg-surf-dev --query loginServer -o tsv)
+    IMAGE="${ACR_SERVER}/surf-api:${TAG}"
+    echo "Logging in to ACR..."
+    az acr login --name acrsurfdev
+    echo "Building ${IMAGE}..."
+    docker build --platform linux/amd64 -t "${IMAGE}" -f api/Dockerfile api/
+    echo "Pushing ${IMAGE}..."
+    docker push "${IMAGE}"
+    echo "Updating Container App..."
+    az containerapp update --name ca-api-surf-dev --resource-group rg-surf-dev --image "${IMAGE}" --output none
+    echo "API deployed: ${IMAGE}"
+
+# Deploy web frontend to Azure Static Web Apps
+web-deploy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    API_FQDN=$(az containerapp show --name ca-api-surf-dev --resource-group rg-surf-dev --query 'properties.configuration.ingress.fqdn' -o tsv)
+    echo "Building with API URL: https://${API_FQDN}/api/v1"
+    cd web && VITE_SURF_API_URL="https://${API_FQDN}/api/v1" npm run build
+    SWA_TOKEN=$(az staticwebapp secrets list --name swa-surf-dev --resource-group rg-surf-dev-ai --query 'properties.apiKey' -o tsv)
+    npx swa deploy dist --deployment-token "$SWA_TOKEN" --app-name swa-surf-dev --env production
+
+# Deploy both API and web frontend
+deploy: api-deploy web-deploy
+
 # Sync files and pages from SharePoint to blob storage
 sync-sharepoint *ARGS:
     cd ingestion && uv run python -m src sync-sharepoint {{ARGS}}
 
 # Create the indexer pipeline (data source, index, skillset, indexer)
 setup-indexer *ARGS:
-    cd ingestion && uv run python scripts/setup_sharepoint_indexer.py {{ARGS}}
+    cd ingestion && uv run python -m scripts.setup_sharepoint_indexer {{ARGS}}
 
 # Trigger an indexer run and optionally wait for completion
 run-indexer *ARGS:
-    cd ingestion && uv run python scripts/run_indexer.py {{ARGS}}
+    cd ingestion && uv run python -m scripts.run_indexer {{ARGS}}
 
 # Verify Microsoft Graph API access to SharePoint
 verify-graph:
-    cd ingestion && uv run python scripts/verify_graph_access.py
+    cd ingestion && uv run python -m scripts.verify_graph_access
 
 # Query the SharePoint index and validate results
 validate-sharepoint *ARGS:
-    cd ingestion && uv run python scripts/validate_sharepoint_index.py {{ARGS}}
+    cd ingestion && uv run python -m scripts.validate_sharepoint_index {{ARGS}}
 
 # Full end-to-end: sync -> setup indexer -> run indexer -> validate
 test-sharepoint-e2e: sync-sharepoint setup-indexer (run-indexer "--wait") validate-sharepoint

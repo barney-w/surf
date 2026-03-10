@@ -44,3 +44,10 @@ param embeddingCapacity = 10
 
 // ACR — allow public access so GitHub-hosted runners can push images
 param acrPublicNetworkAccess = 'Enabled'
+
+// Auth — disabled in dev (no SSO)
+param authEnabled = false
+
+// Static Web App — Standard required for linked backend
+param staticWebAppSku = 'Standard'
+param staticWebAppLocation = 'eastasia'

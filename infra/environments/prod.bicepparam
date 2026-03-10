@@ -40,3 +40,10 @@ param ingestionMaxReplicas = 3
 
 // OpenAI — embeddings only (chat uses Anthropic Claude directly)
 param embeddingCapacity = 50
+
+// Auth — enabled (SSO via Entra ID)
+param authEnabled = true
+
+// Static Web App — Standard required for linked backend
+param staticWebAppSku = 'Standard'
+param staticWebAppLocation = 'eastasia'

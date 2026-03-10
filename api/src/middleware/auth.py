@@ -64,14 +64,20 @@ async def get_current_user(request: Request) -> UserContext:
         jwks_client = _get_jwks_client(jwks_uri)
         signing_key = jwks_client.get_signing_key_from_jwt(token)
 
-        issuer = f"https://login.microsoftonline.com/{settings.entra_tenant_id}/v2.0"
+        # Entra issues v1 tokens (iss: sts.windows.net) for custom API scopes
+        # and v2 tokens (iss: login.microsoftonline.com) for MS Graph scopes.
+        # Accept both.
+        issuers = [
+            f"https://login.microsoftonline.com/{settings.entra_tenant_id}/v2.0",
+            f"https://sts.windows.net/{settings.entra_tenant_id}/",
+        ]
 
         payload = jwt.decode(
             token,
             signing_key.key,
             algorithms=["RS256"],
-            audience=settings.entra_client_id,
-            issuer=issuer,
+            audience=f"api://{settings.entra_client_id}",
+            issuer=issuers,
             options={"require": ["exp", "iss", "aud", "oid"]},
         )
     except jwt.ExpiredSignatureError as e:

@@ -38,6 +38,10 @@ param publicNetworkAccess string = 'Enabled'
 @description('Anthropic API key (stored as a secret when provided)')
 param anthropicApiKey string = ''
 
+@secure()
+@description('Entra ID client secret for OBO flow (stored as a secret when provided)')
+param entraClientSecret string = ''
+
 // ---------------------------------------------------------------------------
 // Resources
 // ---------------------------------------------------------------------------
@@ -73,6 +77,14 @@ resource anthropicApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = 
   name: 'anthropic-api-key'
   properties: {
     value: anthropicApiKey
+  }
+}
+
+resource entraClientSecretSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(entraClientSecret)) {
+  parent: keyVault
+  name: 'entra-client-secret'
+  properties: {
+    value: entraClientSecret
   }
 }
 

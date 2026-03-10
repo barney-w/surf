@@ -94,6 +94,27 @@ param ingestionImageTag string = ''
 @description('Whether the anthropic-api-key secret exists in Key Vault. Set false on first bootstrap if the key has not been stored yet.')
 param anthropicApiKeyExists bool = false
 
+@description('Whether the entra-client-secret secret exists in Key Vault.')
+param entraClientSecretExists bool = false
+
+@description('Entra ID tenant ID')
+param entraTenantId string = ''
+
+@description('Entra ID client ID (app registration)')
+param entraClientId string = ''
+
+@description('Enable authentication (should be true for staging/prod)')
+param authEnabled bool = false
+
+@description('Whether the Container Apps Environment is internal (VNet-only, no public ingress)')
+param environmentInternal bool = false
+
+@description('Whether the surf-api ingress is external to the environment (set true when environmentInternal is false)')
+param apiIngressExternal bool = true
+
+@description('CORS allowed origins for surf-api (JSON array string, e.g. \'["http://localhost:3000"]\')')
+param apiCorsOrigins string = '["http://localhost:3000"]'
+
 // ---------------------------------------------------------------------------
 // Existing resource references
 // ---------------------------------------------------------------------------
@@ -151,7 +172,7 @@ resource containerAppsEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
     }
     vnetConfiguration: {
       infrastructureSubnetId: containerAppsSubnetId
-      internal: true
+      internal: environmentInternal
     }
     workloadProfiles: [
       {
@@ -300,18 +321,27 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
-        external: false
+        external: apiIngressExternal
         targetPort: 8000
         transport: 'auto'
         allowInsecure: false
       }
-      secrets: (!empty(keyVaultName) && anthropicApiKeyExists) ? [
-        {
-          name: 'anthropic-api-key'
-          keyVaultUrl: '${keyVaultUri}secrets/anthropic-api-key'
-          identity: managedIdentity.id
-        }
-      ] : []
+      secrets: concat(
+        (!empty(keyVaultName) && anthropicApiKeyExists) ? [
+          {
+            name: 'anthropic-api-key'
+            keyVaultUrl: '${keyVaultUri}secrets/anthropic-api-key'
+            identity: managedIdentity.id
+          }
+        ] : [],
+        (!empty(keyVaultName) && entraClientSecretExists) ? [
+          {
+            name: 'entra-client-secret'
+            keyVaultUrl: '${keyVaultUri}secrets/entra-client-secret'
+            identity: managedIdentity.id
+          }
+        ] : []
+      )
       registries: [
         {
           server: acr.properties.loginServer
@@ -332,12 +362,19 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_OPENAI_ENDPOINT', value: openAiEndpoint }
             { name: 'AZURE_SEARCH_ENDPOINT', value: aiSearchEndpoint }
             { name: 'AZURE_SEARCH_SHAREPOINT_INDEX', value: aiSearchSharepointIndex }
-            { name: 'AZURE_COSMOS_ENDPOINT', value: cosmosEndpoint }
-            { name: 'AZURE_STORAGE_BLOB_ENDPOINT', value: storageBlobEndpoint }
-            { name: 'AZURE_KEY_VAULT_URI', value: keyVaultUri }
+            { name: 'COSMOS_ENDPOINT', value: cosmosEndpoint }
+            { name: 'AZURE_STORAGE_ACCOUNT_URL', value: storageBlobEndpoint }
+            { name: 'AZURE_KEYVAULT_URL', value: keyVaultUri }
             { name: 'AZURE_CLIENT_ID', value: managedIdentity.properties.clientId }
             { name: 'ANTHROPIC_MODEL_ID', value: anthropicModelId }
-          ], anthropicApiKeyExists ? [{ name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }] : [])
+            { name: 'API_CORS_ORIGINS', value: apiCorsOrigins }
+            { name: 'AUTH_ENABLED', value: string(authEnabled) }
+            { name: 'ENTRA_TENANT_ID', value: entraTenantId }
+            { name: 'ENTRA_CLIENT_ID', value: entraClientId }
+          ], concat(
+            anthropicApiKeyExists ? [{ name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }] : [],
+            entraClientSecretExists ? [{ name: 'ENTRA_CLIENT_SECRET', secretRef: 'entra-client-secret' }] : []
+          ))
           probes: [
             {
               type: 'Liveness'
@@ -418,9 +455,9 @@ resource surfIngestion 'Microsoft.App/containerApps@2024-03-01' = {
           env: [
             { name: 'AZURE_OPENAI_ENDPOINT', value: openAiEndpoint }
             { name: 'AZURE_SEARCH_ENDPOINT', value: aiSearchEndpoint }
-            { name: 'AZURE_COSMOS_ENDPOINT', value: cosmosEndpoint }
-            { name: 'AZURE_STORAGE_BLOB_ENDPOINT', value: storageBlobEndpoint }
-            { name: 'AZURE_KEY_VAULT_URI', value: keyVaultUri }
+            { name: 'COSMOS_ENDPOINT', value: cosmosEndpoint }
+            { name: 'AZURE_STORAGE_ACCOUNT_URL', value: storageBlobEndpoint }
+            { name: 'AZURE_KEYVAULT_URL', value: keyVaultUri }
             { name: 'AZURE_CLIENT_ID', value: managedIdentity.properties.clientId }
           ]
         }
@@ -463,3 +500,6 @@ output managedIdentityClientId string = managedIdentity.properties.clientId
 
 @description('Resource ID of the user-assigned managed identity')
 output managedIdentityId string = managedIdentity.id
+
+@description('Resource ID of the surf-api Container App')
+output surfApiResourceId string = surfApi.id

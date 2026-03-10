@@ -27,6 +27,7 @@ dependencies = [
     "PyJWT[crypto]>=2.8",
     "cryptography>=41.0",
     "slowapi>=0.1.9",
+    "msal>=1.28",
 ]
 
 [tool.uv]

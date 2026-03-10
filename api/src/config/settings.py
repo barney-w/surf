@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     auth_enabled: bool = False
     entra_tenant_id: str = ""
     entra_client_id: str = ""
+    entra_client_secret: str = ""
 
     # API
     api_cors_origins: list[str] = ["http://localhost:3000"]
