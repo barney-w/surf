@@ -30,6 +30,9 @@ param aiSearchReplicaCount int = 1
 @description('Azure AI Search partition count')
 param aiSearchPartitionCount int = 1
 
+@description('Azure AI Search SharePoint index name (empty to disable)')
+param aiSearchSharepointIndex string = ''
+
 @description('Cosmos DB capacity mode')
 @allowed(['Serverless', 'Provisioned'])
 param cosmosCapacityMode string = 'Serverless'
@@ -238,6 +241,7 @@ module containerApps 'modules/container-apps.bicep' = {
     ingestionMaxReplicas: ingestionMaxReplicas
     openAiEndpoint: openAi.outputs.openAiEndpoint
     aiSearchEndpoint: aiSearch.outputs.searchEndpoint
+    aiSearchSharepointIndex: aiSearchSharepointIndex
     cosmosEndpoint: cosmosDb.outputs.cosmosEndpoint
     storageBlobEndpoint: storage.outputs.blobEndpoint
     keyVaultUri: keyVault.outputs.keyVaultUri

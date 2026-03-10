@@ -79,11 +79,11 @@ async def _search_single_index(
                 title=doc.get("title", ""),
                 section_heading=doc.get("section_heading"),
                 content=doc.get("content", ""),
-                score=float(doc.get("@search.score", 0.0)),
+                score=float(doc.get("@search.score") or 0.0),
                 source_url=doc.get("source_url"),
                 domain=doc.get("domain", ""),
                 document_type=doc.get("document_type", ""),
-                chunk_index=int(doc.get("chunk_index", 0)),
+                chunk_index=int(doc.get("chunk_index") or 0),
             )
         )
     return search_results
@@ -143,11 +143,21 @@ async def search_index(
         all_results = await asyncio.gather(*tasks, return_exceptions=True)
 
         merged: list[SearchResult] = []
+        failures: list[BaseException] = []
         for result_or_exc in all_results:
             if isinstance(result_or_exc, BaseException):
+                failures.append(result_or_exc)
                 logger.warning("Search query failed for one index: %s", result_or_exc)
                 continue
             merged.extend(result_or_exc)
+
+        # If every index failed, surface the first error rather than
+        # silently returning empty results.
+        if failures and not merged:
+            first = failures[0]
+            if isinstance(first, ResourceNotFoundError):
+                raise SearchIndexNotFoundError(str(first)) from first
+            raise first
 
         merged.sort(key=lambda r: r.score, reverse=True)
         return merged[:top_k]

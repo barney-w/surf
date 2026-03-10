@@ -19,7 +19,7 @@ from src.middleware.logging import reset_logging_context, set_logging_context, s
 from src.middleware.telemetry import setup_telemetry
 from src.orchestrator.builder import build_orchestrator, create_model_client
 from src.orchestrator.history import ConversationHistoryProvider
-from src.rag.tools import set_embed_func, set_search_client
+from src.rag.tools import clear_search_clients, set_embed_func, set_search_client
 from src.routes.chat import router as chat_router
 from src.services.conversation import ConversationService
 
@@ -183,6 +183,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
     # Shutdown
+    clear_search_clients()
+    logger.info("Search clients cleared")
     await conversation_service.close()
     logger.info("ConversationService closed")
 

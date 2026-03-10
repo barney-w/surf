@@ -104,11 +104,22 @@ class SyncConfig:
             msg = "SHAREPOINT_SITE_URL environment variable is required"
             raise ValueError(msg)
 
+        tenant_id = os.environ.get("SHAREPOINT_TENANT_ID", "")
+        client_id = os.environ.get("SHAREPOINT_CLIENT_ID", "")
+        client_secret = os.environ.get("SHAREPOINT_CLIENT_SECRET") or None
+
+        if client_secret and (not tenant_id or not client_id):
+            msg = (
+                "SHAREPOINT_TENANT_ID and SHAREPOINT_CLIENT_ID are required "
+                "when SHAREPOINT_CLIENT_SECRET is set"
+            )
+            raise ValueError(msg)
+
         return cls(
             site_url=site_url,
-            tenant_id=os.environ.get("SHAREPOINT_TENANT_ID", ""),
-            client_id=os.environ.get("SHAREPOINT_CLIENT_ID", ""),
-            client_secret=os.environ.get("SHAREPOINT_CLIENT_SECRET"),
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret,
             library_name=os.environ.get("SHAREPOINT_LIBRARY_NAME") or None,
             folder_path=os.environ.get("SHAREPOINT_FOLDER_PATH") or None,
             blob_account_url=os.environ.get("AZURE_STORAGE_ACCOUNT_URL", ""),

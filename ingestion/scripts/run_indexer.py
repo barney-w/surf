@@ -52,10 +52,13 @@ def _get_indexer_status(api: SearchApiClient, indexer_name: str) -> dict[str, An
     return resp.json()
 
 
-def _poll_until_complete(api: SearchApiClient, indexer_name: str) -> None:
-    click.echo("Waiting for indexer to complete...")
+def _poll_until_complete(
+    api: SearchApiClient, indexer_name: str, timeout_minutes: int = 30
+) -> None:
+    click.echo(f"Waiting for indexer to complete (timeout: {timeout_minutes}m)...")
 
-    while True:
+    deadline = time.time() + timeout_minutes * 60
+    while time.time() < deadline:
         status_data = _get_indexer_status(api, indexer_name)
         last_result = status_data.get("lastResult", {})
         execution_status = last_result.get("status", "unknown")
@@ -85,6 +88,9 @@ def _poll_until_complete(api: SearchApiClient, indexer_name: str) -> None:
             return
 
         time.sleep(10)
+
+    click.echo(f"ERROR: Indexer did not complete within {timeout_minutes} minutes.", err=True)
+    sys.exit(1)
 
 
 @click.command()

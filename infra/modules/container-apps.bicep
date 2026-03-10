@@ -51,6 +51,9 @@ param openAiEndpoint string = ''
 @description('Azure AI Search endpoint')
 param aiSearchEndpoint string = ''
 
+@description('Azure AI Search SharePoint index name (empty to disable)')
+param aiSearchSharepointIndex string = ''
+
 @description('Cosmos DB endpoint')
 param cosmosEndpoint string = ''
 
@@ -327,7 +330,8 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
           }
           env: concat([
             { name: 'AZURE_OPENAI_ENDPOINT', value: openAiEndpoint }
-            { name: 'AZURE_AI_SEARCH_ENDPOINT', value: aiSearchEndpoint }
+            { name: 'AZURE_SEARCH_ENDPOINT', value: aiSearchEndpoint }
+            { name: 'AZURE_SEARCH_SHAREPOINT_INDEX', value: aiSearchSharepointIndex }
             { name: 'AZURE_COSMOS_ENDPOINT', value: cosmosEndpoint }
             { name: 'AZURE_STORAGE_BLOB_ENDPOINT', value: storageBlobEndpoint }
             { name: 'AZURE_KEY_VAULT_URI', value: keyVaultUri }
@@ -413,7 +417,7 @@ resource surfIngestion 'Microsoft.App/containerApps@2024-03-01' = {
           }
           env: [
             { name: 'AZURE_OPENAI_ENDPOINT', value: openAiEndpoint }
-            { name: 'AZURE_AI_SEARCH_ENDPOINT', value: aiSearchEndpoint }
+            { name: 'AZURE_SEARCH_ENDPOINT', value: aiSearchEndpoint }
             { name: 'AZURE_COSMOS_ENDPOINT', value: cosmosEndpoint }
             { name: 'AZURE_STORAGE_BLOB_ENDPOINT', value: storageBlobEndpoint }
             { name: 'AZURE_KEY_VAULT_URI', value: keyVaultUri }
