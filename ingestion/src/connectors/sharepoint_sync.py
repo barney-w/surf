@@ -17,7 +17,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from html import escape as html_escape
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -150,7 +150,7 @@ class SyncResult:
     pages_synced: int = 0
     pages_skipped: int = 0
     pages_deleted: int = 0
-    errors: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=lambda: [])
 
     @property
     def total_synced(self) -> int:
@@ -276,7 +276,7 @@ class SharePointSync:
         msg = f"Max retries exceeded for {method} {url}"
         raise RuntimeError(msg)
 
-    async def _graph_get(self, url: str) -> dict:
+    async def _graph_get(self, url: str) -> dict[str, Any]:
         """Make an authenticated GET request to Microsoft Graph."""
         resp = await self._graph_request("GET", url)
         return resp.json()
@@ -302,7 +302,7 @@ class SharePointSync:
             logger.warning("Sanitised blob name: %r -> %r", name, sanitised)
         return sanitised
 
-    def _should_skip_sensitivity(self, item: dict) -> bool:
+    def _should_skip_sensitivity(self, item: dict[str, Any]) -> bool:
         """Check if an item's sensitivity label exceeds the threshold.
 
         Returns True if the item should be skipped. If no threshold is
@@ -326,14 +326,14 @@ class SharePointSync:
             return False  # No label = unrestricted
 
         # Graph API returns sensitivityLabel.displayName (string)
-        label_name = ""
+        label_name: str = ""
         if isinstance(label_info, dict):
-            label_name = label_info.get("displayName", "")
+            label_name = str(cast("dict[str, Any]", label_info).get("displayName", ""))
         elif isinstance(label_info, str):
             label_name = label_info
 
         # Normalise: "Highly Confidential" -> "highly_confidential"
-        normalised = label_name.lower().replace(" ", "_")
+        normalised: str = label_name.lower().replace(" ", "_")
         item_level = _SENSITIVITY_LEVELS.get(normalised, -1)
 
         if item_level > threshold_level:
@@ -374,7 +374,7 @@ class SharePointSync:
             raise ValueError(msg)
         return drives[0]["id"]
 
-    async def _list_drive_items(self, drive_id: str) -> list[dict]:
+    async def _list_drive_items(self, drive_id: str) -> list[dict[str, Any]]:
         """List all files in the configured library/folder, recursively.
 
         Each returned item has an added ``_relative_path`` key containing the
@@ -386,7 +386,7 @@ class SharePointSync:
         else:
             url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/root/children"
 
-        all_items: list[dict] = []
+        all_items: list[dict[str, Any]] = []
         folders_to_visit: list[tuple[str, str]] = [(url, "")]
 
         while folders_to_visit:
@@ -488,6 +488,7 @@ class SharePointSync:
                 result.files_synced += 1
                 continue
 
+            assert blob_client is not None  # guaranteed by dry_run guard above
             try:
                 content = await self._graph_get_bytes(download_url)
                 metadata = {
@@ -511,10 +512,10 @@ class SharePointSync:
 
     # -- Site pages ---------------------------------------------------------
 
-    async def _list_pages(self, site_id: str) -> list[dict]:
+    async def _list_pages(self, site_id: str) -> list[dict[str, Any]]:
         """List all published site pages."""
         url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/pages"
-        all_pages: list[dict] = []
+        all_pages: list[dict[str, Any]] = []
         page_url: str | None = url
         while page_url:
             data = await self._graph_get(page_url)
@@ -600,6 +601,7 @@ class SharePointSync:
                 result.pages_synced += 1
                 continue
 
+            assert blob_client is not None  # guaranteed by dry_run guard above
             try:
                 html = await self._get_page_html(full_site_id, page_id, title)
                 if not html:
@@ -704,7 +706,7 @@ class SharePointSync:
                 blob_client = ContainerClient(
                     account_url=self._config.blob_account_url,
                     container_name=self._config.blob_container,
-                    credential=self._azure_credential,
+                    credential=self._azure_credential,  # pyright: ignore[reportArgumentType]  # sync DAC works at runtime
                 )
 
             expected_file_blobs = await self._sync_drive_items(
