@@ -24,12 +24,15 @@ class TestSyncSharepointCommand:
         mock_config = MagicMock()
         mock_config.site_url = "https://example.sharepoint.com"
 
-        with patch(
-            f"{_SP_MODULE}.SyncConfig.from_env",
-            return_value=mock_config,
-        ), patch(
-            f"{_SP_MODULE}.SharePointSync",
-        ) as mock_cls:
+        with (
+            patch(
+                f"{_SP_MODULE}.SyncConfig.from_env",
+                return_value=mock_config,
+            ),
+            patch(
+                f"{_SP_MODULE}.SharePointSync",
+            ) as mock_cls,
+        ):
             mock_instance = mock_cls.return_value
             mock_instance.sync = AsyncMock(return_value=mock_result)
 
@@ -44,9 +47,7 @@ class TestSyncSharepointCommand:
         """Missing SHAREPOINT_SITE_URL should show an error."""
         with patch(
             f"{_SP_MODULE}.SyncConfig.from_env",
-            side_effect=ValueError(
-                "SHAREPOINT_SITE_URL environment variable is required"
-            ),
+            side_effect=ValueError("SHAREPOINT_SITE_URL environment variable is required"),
         ):
             runner = CliRunner()
             result = runner.invoke(cli, ["sync-sharepoint"])
@@ -64,12 +65,15 @@ class TestSyncSharepointCommand:
         mock_config = MagicMock()
         mock_config.site_url = "https://example.sharepoint.com"
 
-        with patch(
-            f"{_SP_MODULE}.SyncConfig.from_env",
-            return_value=mock_config,
-        ), patch(
-            f"{_SP_MODULE}.SharePointSync",
-        ) as mock_cls:
+        with (
+            patch(
+                f"{_SP_MODULE}.SyncConfig.from_env",
+                return_value=mock_config,
+            ),
+            patch(
+                f"{_SP_MODULE}.SharePointSync",
+            ) as mock_cls,
+        ):
             mock_instance = mock_cls.return_value
             mock_instance.sync = AsyncMock(return_value=mock_result)
 
@@ -91,12 +95,15 @@ class TestSyncSharepointCommand:
         mock_config = MagicMock()
         mock_config.site_url = "https://example.sharepoint.com"
 
-        with patch(
-            f"{_SP_MODULE}.SyncConfig.from_env",
-            return_value=mock_config,
-        ), patch(
-            f"{_SP_MODULE}.SharePointSync",
-        ) as mock_cls:
+        with (
+            patch(
+                f"{_SP_MODULE}.SyncConfig.from_env",
+                return_value=mock_config,
+            ),
+            patch(
+                f"{_SP_MODULE}.SharePointSync",
+            ) as mock_cls,
+        ):
             mock_instance = mock_cls.return_value
             mock_instance.sync = AsyncMock(return_value=mock_result)
 
@@ -117,12 +124,15 @@ class TestSyncSharepointCommand:
         mock_config = MagicMock()
         mock_config.site_url = "https://example.sharepoint.com"
 
-        with patch(
-            f"{_SP_MODULE}.SyncConfig.from_env",
-            return_value=mock_config,
-        ), patch(
-            f"{_SP_MODULE}.SharePointSync",
-        ) as mock_cls:
+        with (
+            patch(
+                f"{_SP_MODULE}.SyncConfig.from_env",
+                return_value=mock_config,
+            ),
+            patch(
+                f"{_SP_MODULE}.SharePointSync",
+            ) as mock_cls,
+        ):
             mock_instance = mock_cls.return_value
             mock_instance.sync = AsyncMock(return_value=mock_result)
 
@@ -142,12 +152,15 @@ class TestSyncSharepointCommand:
         mock_config = MagicMock()
         mock_config.site_url = "https://example.sharepoint.com"
 
-        with patch(
-            f"{_SP_MODULE}.SyncConfig.from_env",
-            return_value=mock_config,
-        ), patch(
-            f"{_SP_MODULE}.SharePointSync",
-        ) as mock_cls:
+        with (
+            patch(
+                f"{_SP_MODULE}.SyncConfig.from_env",
+                return_value=mock_config,
+            ),
+            patch(
+                f"{_SP_MODULE}.SharePointSync",
+            ) as mock_cls,
+        ):
             mock_instance = mock_cls.return_value
             mock_instance.sync = AsyncMock(return_value=mock_result)
 

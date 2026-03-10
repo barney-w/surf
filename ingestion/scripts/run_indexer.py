@@ -11,6 +11,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import click
 import httpx
@@ -22,15 +23,11 @@ load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 
 
 def _resolve_indexer_name() -> str:
-    index_name = os.environ.get(
-        "AZURE_SEARCH_SHAREPOINT_INDEX", "surf-sharepoint-index"
-    )
+    index_name = os.environ.get("AZURE_SEARCH_SHAREPOINT_INDEX", "surf-sharepoint-index")
     return f"{index_name}-indexer"
 
 
-def _trigger_indexer(
-    api: SearchApiClient, indexer_name: str
-) -> None:
+def _trigger_indexer(api: SearchApiClient, indexer_name: str) -> None:
     resp = api.request("POST", f"indexers/{indexer_name}/run")
     if resp.status_code in (202, 204):
         click.echo(f"Indexer '{indexer_name}' triggered successfully.")
@@ -38,30 +35,24 @@ def _trigger_indexer(
         click.echo(f"Indexer '{indexer_name}' is already running.")
     else:
         click.echo(
-            f"ERROR: Failed to trigger indexer: "
-            f"{resp.status_code} {resp.text}",
+            f"ERROR: Failed to trigger indexer: {resp.status_code} {resp.text}",
             err=True,
         )
         sys.exit(1)
 
 
-def _get_indexer_status(
-    api: SearchApiClient, indexer_name: str
-) -> dict:
+def _get_indexer_status(api: SearchApiClient, indexer_name: str) -> dict[str, Any]:
     resp = api.request("GET", f"indexers/{indexer_name}/status")
     if resp.status_code != 200:
         click.echo(
-            f"ERROR: Failed to get indexer status: "
-            f"{resp.status_code} {resp.text}",
+            f"ERROR: Failed to get indexer status: {resp.status_code} {resp.text}",
             err=True,
         )
         sys.exit(1)
     return resp.json()
 
 
-def _poll_until_complete(
-    api: SearchApiClient, indexer_name: str
-) -> None:
+def _poll_until_complete(api: SearchApiClient, indexer_name: str) -> None:
     click.echo("Waiting for indexer to complete...")
 
     while True:
@@ -72,17 +63,12 @@ def _poll_until_complete(
         items_processed = last_result.get("itemsProcessed", 0)
         items_failed = last_result.get("itemsFailed", 0)
         click.echo(
-            f"  Status: {execution_status} | "
-            f"Processed: {items_processed} | "
-            f"Failed: {items_failed}"
+            f"  Status: {execution_status} | Processed: {items_processed} | Failed: {items_failed}"
         )
 
         if execution_status != "inProgress":
             if execution_status == "success":
-                click.echo(
-                    f"Indexer completed successfully. "
-                    f"{items_processed} items processed."
-                )
+                click.echo(f"Indexer completed successfully. {items_processed} items processed.")
             elif execution_status == "transientFailure":
                 click.echo(
                     f"WARNING: Indexer finished with transient failures. "
@@ -90,12 +76,9 @@ def _poll_until_complete(
                     err=True,
                 )
             else:
-                error_message = last_result.get(
-                    "errorMessage", "No error message available"
-                )
+                error_message = last_result.get("errorMessage", "No error message available")
                 click.echo(
-                    f"ERROR: Indexer finished with status "
-                    f"'{execution_status}': {error_message}",
+                    f"ERROR: Indexer finished with status '{execution_status}': {error_message}",
                     err=True,
                 )
                 sys.exit(1)

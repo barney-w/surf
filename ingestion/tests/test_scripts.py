@@ -26,9 +26,7 @@ from scripts.setup_sharepoint_indexer import (
 
 class TestExtractStorageAccountName:
     def test_standard_url(self) -> None:
-        result = _extract_storage_account_name(
-            "https://surfdev.blob.core.windows.net"
-        )
+        result = _extract_storage_account_name("https://surfdev.blob.core.windows.net")
         assert result == "surfdev"
 
     def test_url_with_path(self) -> None:
@@ -39,15 +37,11 @@ class TestExtractStorageAccountName:
 
     def test_sovereign_cloud_url(self) -> None:
         """Non-.com domains (sovereign clouds) should work."""
-        result = _extract_storage_account_name(
-            "https://surfdev.blob.core.chinacloudapi.cn"
-        )
+        result = _extract_storage_account_name("https://surfdev.blob.core.chinacloudapi.cn")
         assert result == "surfdev"
 
     def test_trailing_slash(self) -> None:
-        result = _extract_storage_account_name(
-            "https://mystorage.blob.core.windows.net/"
-        )
+        result = _extract_storage_account_name("https://mystorage.blob.core.windows.net/")
         assert result == "mystorage"
 
     def test_empty_url(self) -> None:
@@ -87,11 +81,12 @@ class TestSearchApiClient:
         mock_response = MagicMock(spec=httpx.Response)
         mock_client.request.return_value = mock_response
 
-        with patch(
-            "scripts.search_api.DefaultAzureCredential"
-        ) as mock_cred_cls, patch(
-            "scripts.search_api.get_env",
-            return_value="https://search.example.com",
+        with (
+            patch("scripts.search_api.DefaultAzureCredential") as mock_cred_cls,
+            patch(
+                "scripts.search_api.get_env",
+                return_value="https://search.example.com",
+            ),
         ):
             mock_cred = MagicMock()
             mock_token = MagicMock()
@@ -111,11 +106,12 @@ class TestSearchApiClient:
 
     def test_check_response_success(self) -> None:
         mock_client = MagicMock(spec=httpx.Client)
-        with patch(
-            "scripts.search_api.DefaultAzureCredential"
-        ), patch(
-            "scripts.search_api.get_env",
-            return_value="https://search.example.com",
+        with (
+            patch("scripts.search_api.DefaultAzureCredential"),
+            patch(
+                "scripts.search_api.get_env",
+                return_value="https://search.example.com",
+            ),
         ):
             api = SearchApiClient(mock_client)
 
@@ -127,11 +123,12 @@ class TestSearchApiClient:
 
     def test_check_response_failure_exits(self) -> None:
         mock_client = MagicMock(spec=httpx.Client)
-        with patch(
-            "scripts.search_api.DefaultAzureCredential"
-        ), patch(
-            "scripts.search_api.get_env",
-            return_value="https://search.example.com",
+        with (
+            patch("scripts.search_api.DefaultAzureCredential"),
+            patch(
+                "scripts.search_api.get_env",
+                return_value="https://search.example.com",
+            ),
         ):
             api = SearchApiClient(mock_client)
 
@@ -172,11 +169,12 @@ def _make_api() -> tuple[SearchApiClient, MagicMock]:
     mock_response.text = "{}"
     mock_client.request.return_value = mock_response
 
-    with patch(
-        "scripts.search_api.DefaultAzureCredential"
-    ) as mock_cred_cls, patch(
-        "scripts.search_api.get_env",
-        return_value="https://search.example.com",
+    with (
+        patch("scripts.search_api.DefaultAzureCredential") as mock_cred_cls,
+        patch(
+            "scripts.search_api.get_env",
+            return_value="https://search.example.com",
+        ),
     ):
         mock_cred = MagicMock()
         mock_token = MagicMock()
@@ -279,10 +277,7 @@ class TestCreateSkillset:
             _create_skillset(api, "surf-sharepoint-index")
 
         body = _extract_body(mock_client)
-        split_skill = next(
-            s for s in body["skills"]
-            if s.get("name") == "text-split"
-        )
+        split_skill = next(s for s in body["skills"] if s.get("name") == "text-split")
         assert split_skill["pageOverlapLength"] == 200
 
     def test_projection_maps_content_not_chunk(self) -> None:
@@ -342,12 +337,15 @@ class TestCreateDataSource:
     def test_soft_delete_policy_configured(self) -> None:
         """Data source must have NativeBlobSoftDeleteDeletionDetectionPolicy."""
         api, mock_client = _make_api()
-        with patch(
-            "scripts.setup_sharepoint_indexer.get_env",
-            return_value="https://storage.blob.core.windows.net",
-        ), patch(
-            "scripts.setup_sharepoint_indexer._get_subscription_id",
-            return_value="sub-1",
+        with (
+            patch(
+                "scripts.setup_sharepoint_indexer.get_env",
+                return_value="https://storage.blob.core.windows.net",
+            ),
+            patch(
+                "scripts.setup_sharepoint_indexer._get_subscription_id",
+                return_value="sub-1",
+            ),
         ):
             _create_data_source(api, "test-index", "sharepoint/")
 
@@ -413,9 +411,10 @@ class TestTeardown:
         methods = [c[0][0] for c in delete_calls]
         assert all(m == "DELETE" for m in methods)
         # Verify correct resource order
-        paths = [c[0][1].split("/")[-1] if len(c[0]) > 1
-                 else c.kwargs.get("url", "").split("/")[-1]
-                 for c in delete_calls]
+        paths = [
+            c[0][1].split("/")[-1] if len(c[0]) > 1 else c.kwargs.get("url", "").split("/")[-1]
+            for c in delete_calls
+        ]
         assert paths[0] == "test-index-indexer"
         assert paths[1] == "test-index-skillset"
         assert paths[2] == "test-index-datasource"

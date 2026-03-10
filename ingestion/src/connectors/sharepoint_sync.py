@@ -113,42 +113,23 @@ class SyncConfig:
             folder_path=os.environ.get("SHAREPOINT_FOLDER_PATH") or None,
             blob_account_url=os.environ.get("AZURE_STORAGE_ACCOUNT_URL", ""),
             blob_container=os.environ.get("AZURE_STORAGE_CONTAINER", "documents"),
-            blob_prefix=os.environ.get(
-                "AZURE_STORAGE_BLOB_PREFIX", "sharepoint/"
-            ),
-            sync_pages=(
-                os.environ.get("SHAREPOINT_SYNC_PAGES", "true").lower()
-                == "true"
-            ),
+            blob_prefix=os.environ.get("AZURE_STORAGE_BLOB_PREFIX", "sharepoint/"),
+            sync_pages=(os.environ.get("SHAREPOINT_SYNC_PAGES", "true").lower() == "true"),
             skip_deletion_reconciliation=(
-                os.environ.get(
-                    "SHAREPOINT_SKIP_DELETION_RECONCILIATION", "false"
-                ).lower()
-                == "true"
+                os.environ.get("SHAREPOINT_SKIP_DELETION_RECONCILIATION", "false").lower() == "true"
             ),
             domain=os.environ.get("SHAREPOINT_DOMAIN", "hr"),
-            document_type=os.environ.get(
-                "SHAREPOINT_DOCUMENT_TYPE", "policy"
-            ),
+            document_type=os.environ.get("SHAREPOINT_DOCUMENT_TYPE", "policy"),
             sensitivity_label_threshold=(
-                os.environ.get("SHAREPOINT_SENSITIVITY_LABEL_THRESHOLD")
-                or None
+                os.environ.get("SHAREPOINT_SENSITIVITY_LABEL_THRESHOLD") or None
             ),
-            max_concurrent_requests=int(
-                os.environ.get("SHAREPOINT_MAX_CONCURRENT_REQUESTS", "10")
-            ),
-            max_retries=int(
-                os.environ.get("SHAREPOINT_MAX_RETRIES", "5")
-            ),
-            timeout_seconds=int(
-                os.environ.get("SHAREPOINT_TIMEOUT_SECONDS", "60")
-            ),
+            max_concurrent_requests=int(os.environ.get("SHAREPOINT_MAX_CONCURRENT_REQUESTS", "10")),
+            max_retries=int(os.environ.get("SHAREPOINT_MAX_RETRIES", "5")),
+            timeout_seconds=int(os.environ.get("SHAREPOINT_TIMEOUT_SECONDS", "60")),
             download_timeout_seconds=int(
                 os.environ.get("SHAREPOINT_DOWNLOAD_TIMEOUT_SECONDS", "300")
             ),
-            max_file_size_mb=int(
-                os.environ.get("SHAREPOINT_MAX_FILE_SIZE_MB", "100")
-            ),
+            max_file_size_mb=int(os.environ.get("SHAREPOINT_MAX_FILE_SIZE_MB", "100")),
         )
 
 
@@ -206,16 +187,11 @@ class SharePointSync:
     async def _get_token(self) -> str:
         """Get an access token, using cache when possible."""
         now = time.time()
-        if (
-            self._cached_token
-            and self._token_expires_on > now + _TOKEN_REFRESH_BUFFER_SECONDS
-        ):
+        if self._cached_token and self._token_expires_on > now + _TOKEN_REFRESH_BUFFER_SECONDS:
             return self._cached_token
 
         loop = asyncio.get_running_loop()
-        token = await loop.run_in_executor(
-            None, self._graph_credential.get_token, _GRAPH_SCOPE
-        )
+        token = await loop.run_in_executor(None, self._graph_credential.get_token, _GRAPH_SCOPE)
         self._cached_token = token.token
         self._token_expires_on = token.expires_on
         return token.token
@@ -261,8 +237,7 @@ class SharePointSync:
                     raise
                 wait = min(2**attempt, 60)
                 logger.warning(
-                    "Graph API transport error for %s %s: %s — "
-                    "retrying in %ds (attempt %d/%d)",
+                    "Graph API transport error for %s %s: %s — retrying in %ds (attempt %d/%d)",
                     method,
                     url[:120],
                     exc,
@@ -278,15 +253,10 @@ class SharePointSync:
                     resp.raise_for_status()
 
                 retry_after = resp.headers.get("Retry-After", "")
-                wait = (
-                    int(retry_after)
-                    if retry_after.isdigit()
-                    else min(2**attempt, 60)
-                )
+                wait = int(retry_after) if retry_after.isdigit() else min(2**attempt, 60)
 
                 logger.warning(
-                    "Graph API %s %s returned %d — "
-                    "retrying in %ds (attempt %d/%d)",
+                    "Graph API %s %s returned %d — retrying in %ds (attempt %d/%d)",
                     method,
                     url[:120],
                     resp.status_code,
@@ -329,9 +299,7 @@ class SharePointSync:
         sanitised = _BLOB_NAME_ILLEGAL_RE.sub("_", name)
         sanitised = sanitised.strip(". ")
         if sanitised != name:
-            logger.warning(
-                "Sanitised blob name: %r -> %r", name, sanitised
-            )
+            logger.warning("Sanitised blob name: %r -> %r", name, sanitised)
         return sanitised
 
     def _should_skip_sensitivity(self, item: dict) -> bool:
@@ -347,8 +315,7 @@ class SharePointSync:
         threshold_level = _SENSITIVITY_LEVELS.get(threshold.lower())
         if threshold_level is None:
             logger.warning(
-                "Unknown sensitivity threshold %r — skipping filter. "
-                "Valid values: %s",
+                "Unknown sensitivity threshold %r — skipping filter. Valid values: %s",
                 threshold,
                 ", ".join(_SENSITIVITY_LEVELS),
             )
@@ -391,9 +358,7 @@ class SharePointSync:
 
     async def _resolve_drive_id(self, site_id: str) -> str:
         """Get the drive ID for the configured library (or default)."""
-        data = await self._graph_get(
-            f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives"
-        )
+        data = await self._graph_get(f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives")
         drives = data.get("value", [])
         if self._config.library_name:
             for drive in drives:
@@ -417,15 +382,9 @@ class SharePointSync:
         """
         if self._config.folder_path:
             path = self._config.folder_path.strip("/")
-            url = (
-                "https://graph.microsoft.com/v1.0"
-                f"/drives/{drive_id}/root:/{path}:/children"
-            )
+            url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root:/{path}:/children"
         else:
-            url = (
-                "https://graph.microsoft.com/v1.0"
-                f"/drives/{drive_id}/items/root/children"
-            )
+            url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/root/children"
 
         all_items: list[dict] = []
         folders_to_visit: list[tuple[str, str]] = [(url, "")]
@@ -443,11 +402,7 @@ class SharePointSync:
                             f"/drives/{drive_id}"
                             f"/items/{item['id']}/children"
                         )
-                        child_prefix = (
-                            f"{prefix}{name}/"
-                            if prefix
-                            else f"{name}/"
-                        )
+                        child_prefix = f"{prefix}{name}/" if prefix else f"{name}/"
                         folders_to_visit.append((child_url, child_prefix))
                     elif "file" in item:
                         item["_relative_path"] = f"{prefix}{name}"
@@ -480,9 +435,7 @@ class SharePointSync:
             relative_path = item.get("_relative_path", name)
             ext = os.path.splitext(name)[1].lower()
             if ext not in self._config.extensions:
-                logger.debug(
-                    "Skipping %s (extension %s not in filter)", name, ext
-                )
+                logger.debug("Skipping %s (extension %s not in filter)", name, ext)
                 result.files_skipped += 1
                 continue
 
@@ -501,9 +454,7 @@ class SharePointSync:
                 result.files_oversized += 1
                 continue
 
-            blob_name = self._sanitise_blob_name(
-                f"{self._config.blob_prefix}files/{relative_path}"
-            )
+            blob_name = self._sanitise_blob_name(f"{self._config.blob_prefix}files/{relative_path}")
             expected_blobs.add(blob_name)
             last_modified = item.get("lastModifiedDateTime", "")
 
@@ -514,9 +465,7 @@ class SharePointSync:
                 try:
                     blob = blob_client.get_blob_client(blob_name)
                     props = await blob.get_blob_properties()
-                    existing_modified = (props.metadata or {}).get(
-                        "sp_last_modified", ""
-                    )
+                    existing_modified = (props.metadata or {}).get("sp_last_modified", "")
                     if existing_modified == last_modified:
                         logger.debug("Skipping %s (unchanged)", name)
                         result.files_skipped += 1
@@ -527,8 +476,7 @@ class SharePointSync:
             download_url = item.get("@microsoft.graph.downloadUrl", "")
             if not download_url:
                 download_url = (
-                    "https://graph.microsoft.com/v1.0"
-                    f"/drives/{drive_id}/items/{item['id']}/content"
+                    f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{item['id']}/content"
                 )
 
             if dry_run:
@@ -551,9 +499,7 @@ class SharePointSync:
                     "sp_document_type": self._config.document_type,
                 }
                 blob = blob_client.get_blob_client(blob_name)
-                await blob.upload_blob(
-                    content, overwrite=True, metadata=metadata
-                )
+                await blob.upload_blob(content, overwrite=True, metadata=metadata)
                 logger.info("Synced: %s (%d bytes)", name, len(content))
                 result.files_synced += 1
             except Exception as exc:  # noqa: BLE001
@@ -576,9 +522,7 @@ class SharePointSync:
             page_url = data.get("@odata.nextLink")
         return all_pages
 
-    async def _get_page_html(
-        self, site_id: str, page_id: str, title: str
-    ) -> str:
+    async def _get_page_html(self, site_id: str, page_id: str, title: str) -> str:
         """Fetch a page's text content as HTML.
 
         The ``innerHtml`` from SharePoint text web parts is included without
@@ -619,9 +563,7 @@ class SharePointSync:
 
         Returns the set of expected blob names (for deletion reconciliation).
         """
-        site_data = await self._graph_get(
-            f"https://graph.microsoft.com/v1.0/sites/{site_id}"
-        )
+        site_data = await self._graph_get(f"https://graph.microsoft.com/v1.0/sites/{site_id}")
         full_site_id = site_data.get("id", site_id)
 
         pages = await self._list_pages(full_site_id)
@@ -635,9 +577,7 @@ class SharePointSync:
             last_modified = page.get("lastModifiedDateTime", "")
 
             html_name = name.replace(".aspx", ".html")
-            blob_name = self._sanitise_blob_name(
-                f"{self._config.blob_prefix}pages/{html_name}"
-            )
+            blob_name = self._sanitise_blob_name(f"{self._config.blob_prefix}pages/{html_name}")
             expected_blobs.add(blob_name)
 
             if not dry_run:
@@ -647,13 +587,9 @@ class SharePointSync:
                 try:
                     blob = blob_client.get_blob_client(blob_name)
                     props = await blob.get_blob_properties()
-                    existing_modified = (props.metadata or {}).get(
-                        "sp_last_modified", ""
-                    )
+                    existing_modified = (props.metadata or {}).get("sp_last_modified", "")
                     if existing_modified == last_modified:
-                        logger.debug(
-                            "Skipping page %s (unchanged)", title
-                        )
+                        logger.debug("Skipping page %s (unchanged)", title)
                         result.pages_skipped += 1
                         continue
                 except ResourceNotFoundError:
@@ -665,13 +601,9 @@ class SharePointSync:
                 continue
 
             try:
-                html = await self._get_page_html(
-                    full_site_id, page_id, title
-                )
+                html = await self._get_page_html(full_site_id, page_id, title)
                 if not html:
-                    logger.debug(
-                        "Skipping page %s (no text content)", title
-                    )
+                    logger.debug("Skipping page %s (no text content)", title)
                     result.pages_skipped += 1
                     continue
 
@@ -690,9 +622,7 @@ class SharePointSync:
                     overwrite=True,
                     metadata=metadata,
                 )
-                logger.info(
-                    "Synced page: %s (%d bytes)", title, len(html)
-                )
+                logger.info("Synced page: %s (%d bytes)", title, len(html))
                 result.pages_synced += 1
             except Exception as exc:  # noqa: BLE001
                 error_msg = f"Failed to sync page '{title}': {exc}"
@@ -720,17 +650,13 @@ class SharePointSync:
         automatic removal from the search index.
         """
         orphaned: list[str] = []
-        async for blob_props in blob_client.list_blobs(
-            name_starts_with=prefix
-        ):
+        async for blob_props in blob_client.list_blobs(name_starts_with=prefix):
             if blob_props.name not in expected_blobs:
                 orphaned.append(blob_props.name)
 
         for blob_name in orphaned:
             if dry_run:
-                logger.info(
-                    "[DRY RUN] Would delete orphaned blob: %s", blob_name
-                )
+                logger.info("[DRY RUN] Would delete orphaned blob: %s", blob_name)
             else:
                 await blob_client.delete_blob(blob_name)
                 logger.info("Deleted orphaned blob: %s", blob_name)
@@ -768,17 +694,12 @@ class SharePointSync:
         self._http = httpx.AsyncClient(
             timeout=float(self._config.timeout_seconds),
         )
-        self._semaphore = asyncio.Semaphore(
-            self._config.max_concurrent_requests
-        )
+        self._semaphore = asyncio.Semaphore(self._config.max_concurrent_requests)
 
         try:
             if not dry_run:
                 if not self._config.blob_account_url:
-                    msg = (
-                        "AZURE_STORAGE_ACCOUNT_URL is required "
-                        "for non-dry-run sync"
-                    )
+                    msg = "AZURE_STORAGE_ACCOUNT_URL is required for non-dry-run sync"
                     raise ValueError(msg)
                 blob_client = ContainerClient(
                     account_url=self._config.blob_account_url,
@@ -797,10 +718,7 @@ class SharePointSync:
                 )
 
             # Deletion reconciliation — remove orphaned blobs
-            if (
-                blob_client is not None
-                and not self._config.skip_deletion_reconciliation
-            ):
+            if blob_client is not None and not self._config.skip_deletion_reconciliation:
                 files_prefix = f"{self._config.blob_prefix}files/"
                 await self._reconcile_deletions(
                     blob_client,

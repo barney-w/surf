@@ -207,7 +207,7 @@ def test_sanitise_blob_name_clean() -> None:
 
 
 def test_sanitise_blob_name_illegal_chars() -> None:
-    result = SharePointSync._sanitise_blob_name('files/report#2024?.pdf')
+    result = SharePointSync._sanitise_blob_name("files/report#2024?.pdf")
     assert "#" not in result
     assert "?" not in result
     assert result == "files/report_2024_.pdf"
@@ -889,9 +889,7 @@ async def test_sync_pages_uploads_html() -> None:
     blob = _mock_blob_client()
     blob_instance = blob.get_blob_client.return_value
 
-    blob_instance.get_blob_properties = AsyncMock(
-        side_effect=ResourceNotFoundError("not found")
-    )
+    blob_instance.get_blob_properties = AsyncMock(side_effect=ResourceNotFoundError("not found"))
 
     sync._graph_get = AsyncMock(  # pyright: ignore[reportPrivateUsage]
         side_effect=[
@@ -1010,8 +1008,12 @@ async def test_reconcile_deletions_removes_orphaned_blobs() -> None:
 
     expected = {"sp/files/keep.pdf"}
     await sync._reconcile_deletions(  # pyright: ignore[reportPrivateUsage]
-        blob, "sp/files/", expected, result,
-        dry_run=False, counter_attr="files_deleted",
+        blob,
+        "sp/files/",
+        expected,
+        result,
+        dry_run=False,
+        counter_attr="files_deleted",
     )
 
     assert result.files_deleted == 2
@@ -1039,8 +1041,12 @@ async def test_reconcile_deletions_preserves_active_blobs() -> None:
 
     expected = {"sp/files/active.pdf"}
     await sync._reconcile_deletions(  # pyright: ignore[reportPrivateUsage]
-        blob, "sp/files/", expected, result,
-        dry_run=False, counter_attr="files_deleted",
+        blob,
+        "sp/files/",
+        expected,
+        result,
+        dry_run=False,
+        counter_attr="files_deleted",
     )
 
     assert result.files_deleted == 0
@@ -1067,8 +1073,12 @@ async def test_reconcile_deletions_dry_run_no_actual_delete() -> None:
     blob.delete_blob = AsyncMock()
 
     await sync._reconcile_deletions(  # pyright: ignore[reportPrivateUsage]
-        blob, "sp/pages/", set(), result,
-        dry_run=True, counter_attr="pages_deleted",
+        blob,
+        "sp/pages/",
+        set(),
+        result,
+        dry_run=True,
+        counter_attr="pages_deleted",
     )
 
     assert result.pages_deleted == 1
@@ -1104,9 +1114,7 @@ async def test_resolve_drive_id_named_library_not_found() -> None:
     sync = _make_sync(_make_config(library_name="Nonexistent"))
     _init_http(sync)
     sync._graph_get = AsyncMock(  # pyright: ignore[reportPrivateUsage]
-        return_value={
-            "value": [{"id": "d1", "name": "Documents"}]
-        }
+        return_value={"value": [{"id": "d1", "name": "Documents"}]}
     )
 
     with pytest.raises(ValueError, match="Nonexistent"):
@@ -1182,9 +1190,7 @@ async def test_sync_drive_items_uploads_correct_metadata() -> None:
     result = SyncResult()
     blob = _mock_blob_client()
     blob_instance = blob.get_blob_client.return_value
-    blob_instance.get_blob_properties = AsyncMock(
-        side_effect=ResourceNotFoundError("not found")
-    )
+    blob_instance.get_blob_properties = AsyncMock(side_effect=ResourceNotFoundError("not found"))
 
     sync._resolve_drive_id = AsyncMock(return_value="d1")  # pyright: ignore[reportPrivateUsage]
     sync._list_drive_items = AsyncMock(  # pyright: ignore[reportPrivateUsage]
@@ -1428,9 +1434,7 @@ async def test_get_page_html_title_html_escaped() -> None:
 @pytest.mark.asyncio
 async def test_sync_calls_reconciliation_when_enabled() -> None:
     """sync() should call _reconcile_deletions for both files and pages."""
-    sync = _make_sync(
-        _make_config(skip_deletion_reconciliation=False, sync_pages=True)
-    )
+    sync = _make_sync(_make_config(skip_deletion_reconciliation=False, sync_pages=True))
     sync._sync_drive_items = AsyncMock(return_value={"sp/files/a.pdf"})  # pyright: ignore[reportPrivateUsage]
     sync._sync_pages = AsyncMock(return_value={"sp/pages/b.html"})  # pyright: ignore[reportPrivateUsage]
     sync._reconcile_deletions = AsyncMock()  # pyright: ignore[reportPrivateUsage]
@@ -1450,9 +1454,7 @@ async def test_sync_calls_reconciliation_when_enabled() -> None:
 @pytest.mark.asyncio
 async def test_sync_skips_reconciliation_when_flag_set() -> None:
     """skip_deletion_reconciliation should prevent deletion phase."""
-    sync = _make_sync(
-        _make_config(skip_deletion_reconciliation=True, sync_pages=True)
-    )
+    sync = _make_sync(_make_config(skip_deletion_reconciliation=True, sync_pages=True))
     sync._sync_drive_items = AsyncMock(return_value=set())  # pyright: ignore[reportPrivateUsage]
     sync._sync_pages = AsyncMock(return_value=set())  # pyright: ignore[reportPrivateUsage]
     sync._reconcile_deletions = AsyncMock()  # pyright: ignore[reportPrivateUsage]
@@ -1511,10 +1513,12 @@ async def test_sync_drive_items_none_blob_client_raises_in_non_dry_run() -> None
 @pytest.mark.asyncio
 async def test_sync_download_timeout_used_for_binary_downloads() -> None:
     """_graph_get_bytes should use download_timeout_seconds, not the default."""
-    sync = _make_sync(_make_config(
-        timeout_seconds=10,
-        download_timeout_seconds=999,
-    ))
+    sync = _make_sync(
+        _make_config(
+            timeout_seconds=10,
+            download_timeout_seconds=999,
+        )
+    )
     _init_http(sync)
     sync._get_token = AsyncMock(return_value="token")  # pyright: ignore[reportPrivateUsage]
 

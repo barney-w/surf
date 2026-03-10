@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -49,15 +50,12 @@ def _get_credential() -> ClientSecretCredential | DefaultAzureCredential:
         )
 
     print(
-        "SHAREPOINT_CLIENT_SECRET not set — "
-        "using DefaultAzureCredential (managed identity / CLI)."
+        "SHAREPOINT_CLIENT_SECRET not set — using DefaultAzureCredential (managed identity / CLI)."
     )
     return DefaultAzureCredential()
 
 
-def _graph_get(
-    client: httpx.Client, token: str, url: str
-) -> dict:
+def _graph_get(client: httpx.Client, token: str, url: str) -> dict[str, Any]:
     """Make an authenticated GET to Microsoft Graph."""
     resp = client.get(url, headers={"Authorization": f"Bearer {token}"})
     resp.raise_for_status()
@@ -81,21 +79,12 @@ def run_checks() -> None:
             sites = data.get("value", [])
             if sites:
                 for site in sites:
-                    print(
-                        f"   - {site.get('displayName')}: "
-                        f"{site.get('webUrl')}"
-                    )
+                    print(f"   - {site.get('displayName')}: {site.get('webUrl')}")
             else:
-                print(
-                    "   No sites found "
-                    "(this is normal for a fresh tenant)"
-                )
+                print("   No sites found (this is normal for a fresh tenant)")
         except httpx.HTTPStatusError as exc:
             print(f"   FAILED — HTTP {exc.response.status_code}")
-            print(
-                "   Check that Sites.Read.All permission is "
-                "granted with admin consent"
-            )
+            print("   Check that Sites.Read.All permission is granted with admin consent")
             sys.exit(1)
 
         # Test 2: Resolve configured site
@@ -105,38 +94,27 @@ def run_checks() -> None:
                 parsed = urlparse(site_url)
                 hostname = parsed.hostname or ""
                 site_path = parsed.path.rstrip("/")
-                site_id = (
-                    hostname
-                    if not site_path
-                    else f"{hostname}:{site_path}"
-                )
+                site_id = hostname if not site_path else f"{hostname}:{site_path}"
 
                 site = _graph_get(
                     client,
                     token,
                     f"https://graph.microsoft.com/v1.0/sites/{site_id}",
                 )
-                print(
-                    f"   OK — Site: {site.get('displayName')} "
-                    f"(ID: {site.get('id')})"
-                )
+                print(f"   OK — Site: {site.get('displayName')} (ID: {site.get('id')})")
 
                 # List drives
                 full_id = site.get("id", site_id)
                 drives_data = _graph_get(
                     client,
                     token,
-                    f"https://graph.microsoft.com/v1.0"
-                    f"/sites/{full_id}/drives",
+                    f"https://graph.microsoft.com/v1.0/sites/{full_id}/drives",
                 )
                 drives = drives_data.get("value", [])
                 if drives:
                     print("   Document libraries:")
                     for drive in drives:
-                        print(
-                            f"     - {drive.get('name')} "
-                            f"(ID: {drive.get('id')})"
-                        )
+                        print(f"     - {drive.get('name')} (ID: {drive.get('id')})")
                 else:
                     print("   No document libraries found.")
             except httpx.HTTPStatusError as exc:
@@ -144,10 +122,7 @@ def run_checks() -> None:
                 print("   Check that SHAREPOINT_SITE_URL is correct")
                 sys.exit(1)
         else:
-            print(
-                "\n2. Skipping site resolution "
-                "(SHAREPOINT_SITE_URL not set)"
-            )
+            print("\n2. Skipping site resolution (SHAREPOINT_SITE_URL not set)")
 
     print("\nAll checks passed! Graph API access is working.")
 

@@ -138,17 +138,14 @@ async def search_index(
 
         # Query all indexes concurrently and merge results.
         tasks = [
-            _search_single_index(query, c, odata_filter, top_k, vector_queries)
-            for c in clients
+            _search_single_index(query, c, odata_filter, top_k, vector_queries) for c in clients
         ]
         all_results = await asyncio.gather(*tasks, return_exceptions=True)
 
         merged: list[SearchResult] = []
         for result_or_exc in all_results:
             if isinstance(result_or_exc, BaseException):
-                logger.warning(
-                    "Search query failed for one index: %s", result_or_exc
-                )
+                logger.warning("Search query failed for one index: %s", result_or_exc)
                 continue
             merged.extend(result_or_exc)
 

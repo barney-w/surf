@@ -31,8 +31,7 @@ load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 _EMBEDDING_DEPLOYMENT_DEFAULT = "text-embedding-3-large"
 _EMBEDDING_MODEL = "text-embedding-3-large"
 _INDEXED_EXTENSIONS = (
-    ".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.html,.htm,.csv,.md,.rtf,"
-    ".msg,.xml,.odt,.ods,.odp,.txt"
+    ".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.html,.htm,.csv,.md,.rtf,.msg,.xml,.odt,.ods,.odp,.txt"
 )
 
 
@@ -73,9 +72,7 @@ def _get_resource_group() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _create_data_source(
-    api: SearchApiClient, index_name: str, blob_prefix: str
-) -> None:
+def _create_data_source(api: SearchApiClient, index_name: str, blob_prefix: str) -> None:
     """Create or update the blob storage data source."""
     storage_url = get_env("AZURE_STORAGE_ACCOUNT_URL").rstrip("/")
     container = os.environ.get("AZURE_STORAGE_CONTAINER", "documents")
@@ -99,10 +96,7 @@ def _create_data_source(
             "query": blob_prefix.rstrip("/"),
         },
         "dataDeletionDetectionPolicy": {
-            "@odata.type": (
-                "#Microsoft.Azure.Search"
-                ".NativeBlobSoftDeleteDeletionDetectionPolicy"
-            ),
+            "@odata.type": ("#Microsoft.Azure.Search.NativeBlobSoftDeleteDeletionDetectionPolicy"),
         },
     }
 
@@ -251,9 +245,7 @@ def _create_skillset(api: SearchApiClient, index_name: str) -> None:
                 ],
             },
             {
-                "@odata.type": (
-                    "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill"
-                ),
+                "@odata.type": ("#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill"),
                 "name": "embedding",
                 "description": "Generate embeddings for chunks",
                 "resourceUri": openai_endpoint,
@@ -365,8 +357,7 @@ def _teardown(api: SearchApiClient, index_name: str) -> None:
             click.echo(f"  {resource_type}/{name}: {status}")
         else:
             click.echo(
-                f"  FAILED to delete {resource_type}/{name}: "
-                f"{resp.status_code}",
+                f"  FAILED to delete {resource_type}/{name}: {resp.status_code}",
                 err=True,
             )
 
@@ -380,17 +371,14 @@ def _teardown(api: SearchApiClient, index_name: str) -> None:
 @click.option(
     "--index-name",
     default=None,
-    help="Index name (default: AZURE_SEARCH_SHAREPOINT_INDEX "
-    "or surf-sharepoint-index)",
+    help="Index name (default: AZURE_SEARCH_SHAREPOINT_INDEX or surf-sharepoint-index)",
 )
 def main(teardown: bool, index_name: str | None) -> None:
     """Create or teardown the SharePoint indexer pipeline."""
     resolved_name = index_name or os.environ.get(
         "AZURE_SEARCH_SHAREPOINT_INDEX", "surf-sharepoint-index"
     )
-    blob_prefix = os.environ.get(
-        "AZURE_STORAGE_BLOB_PREFIX", "sharepoint/"
-    )
+    blob_prefix = os.environ.get("AZURE_STORAGE_BLOB_PREFIX", "sharepoint/")
 
     click.echo(f"Index: {resolved_name}")
 
@@ -405,10 +393,7 @@ def main(teardown: bool, index_name: str | None) -> None:
             _create_index(api, resolved_name)
             _create_skillset(api, resolved_name)
             _create_indexer(api, resolved_name)
-            click.echo(
-                "\nDone! Run the indexer with: "
-                "uv run python scripts/run_indexer.py"
-            )
+            click.echo("\nDone! Run the indexer with: uv run python scripts/run_indexer.py")
 
 
 if __name__ == "__main__":
