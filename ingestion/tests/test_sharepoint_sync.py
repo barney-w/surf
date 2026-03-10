@@ -201,32 +201,32 @@ def test_resolve_site_id_trailing_slash() -> None:
 
 
 def test_sanitise_blob_name_clean() -> None:
-    assert SharePointSync._sanitise_blob_name("sharepoint/files/doc.pdf") == (
+    assert SharePointSync._sanitise_blob_name("sharepoint/files/doc.pdf") == (  # pyright: ignore[reportPrivateUsage]
         "sharepoint/files/doc.pdf"
     )
 
 
 def test_sanitise_blob_name_illegal_chars() -> None:
-    result = SharePointSync._sanitise_blob_name("files/report#2024?.pdf")
+    result = SharePointSync._sanitise_blob_name("files/report#2024?.pdf")  # pyright: ignore[reportPrivateUsage]
     assert "#" not in result
     assert "?" not in result
     assert result == "files/report_2024_.pdf"
 
 
 def test_sanitise_blob_name_strips_dots_and_spaces() -> None:
-    result = SharePointSync._sanitise_blob_name("  .leading-dots. ")
+    result = SharePointSync._sanitise_blob_name("  .leading-dots. ")  # pyright: ignore[reportPrivateUsage]
     assert not result.startswith(" ")
     assert not result.startswith(".")
     assert not result.endswith(" ")
 
 
 def test_sanitise_blob_name_preserves_slashes() -> None:
-    result = SharePointSync._sanitise_blob_name("path/to/file.pdf")
+    result = SharePointSync._sanitise_blob_name("path/to/file.pdf")  # pyright: ignore[reportPrivateUsage]
     assert result == "path/to/file.pdf"
 
 
 def test_sanitise_blob_name_all_illegal() -> None:
-    result = SharePointSync._sanitise_blob_name('a*b"c<d>e|f\\g')
+    result = SharePointSync._sanitise_blob_name('a*b"c<d>e|f\\g')  # pyright: ignore[reportPrivateUsage]
     assert result == "a_b_c_d_e_f_g"
 
 
@@ -402,11 +402,11 @@ async def test_list_drive_items_pagination() -> None:
     sync = _make_sync()
     _init_http(sync)
 
-    page1 = {
+    page1: dict[str, Any] = {
         "value": [{"id": "f1", "name": "a.pdf", "file": {}}],
         "@odata.nextLink": "https://graph.microsoft.com/page2",
     }
-    page2 = {
+    page2: dict[str, Any] = {
         "value": [{"id": "f2", "name": "b.pdf", "file": {}}],
     }
 
@@ -421,13 +421,13 @@ async def test_list_drive_items_nested_folders() -> None:
     sync = _make_sync()
     _init_http(sync)
 
-    root_response = {
+    root_response: dict[str, Any] = {
         "value": [
             {"id": "folder-1", "name": "subfolder", "folder": {"childCount": 1}},
             {"id": "f1", "name": "root.pdf", "file": {}},
         ],
     }
-    subfolder_response = {
+    subfolder_response: dict[str, Any] = {
         "value": [
             {"id": "f2", "name": "nested.docx", "file": {}},
         ],
@@ -633,6 +633,7 @@ async def test_graph_request_retries_on_429() -> None:
         request=httpx.Request("GET", "https://graph.microsoft.com/test"),
     )
 
+    assert sync._http is not None  # pyright: ignore[reportPrivateUsage]
     sync._http.request = AsyncMock(side_effect=[throttled, success])  # pyright: ignore[reportPrivateUsage]
 
     resp = await sync._graph_request("GET", "https://graph.microsoft.com/test")  # pyright: ignore[reportPrivateUsage]
@@ -657,6 +658,7 @@ async def test_graph_request_retries_on_503() -> None:
         request=httpx.Request("GET", "https://graph.microsoft.com/test"),
     )
 
+    assert sync._http is not None  # pyright: ignore[reportPrivateUsage]
     sync._http.request = AsyncMock(side_effect=[unavailable, success])  # pyright: ignore[reportPrivateUsage]
 
     resp = await sync._graph_request("GET", "https://graph.microsoft.com/test")  # pyright: ignore[reportPrivateUsage]
@@ -676,6 +678,7 @@ async def test_graph_request_max_retries_exceeded() -> None:
         request=httpx.Request("GET", "https://graph.microsoft.com/test"),
     )
 
+    assert sync._http is not None  # pyright: ignore[reportPrivateUsage]
     sync._http.request = AsyncMock(return_value=throttled)  # pyright: ignore[reportPrivateUsage]
 
     with pytest.raises(httpx.HTTPStatusError):
@@ -695,6 +698,7 @@ async def test_graph_request_retries_on_transport_error() -> None:
         request=httpx.Request("GET", "https://graph.microsoft.com/test"),
     )
 
+    assert sync._http is not None  # pyright: ignore[reportPrivateUsage]
     sync._http.request = AsyncMock(  # pyright: ignore[reportPrivateUsage]
         side_effect=[httpx.ConnectError("conn refused"), success]
     )
@@ -710,6 +714,7 @@ async def test_graph_request_transport_error_max_retries() -> None:
     _init_http(sync)
     sync._get_token = AsyncMock(return_value="token")  # pyright: ignore[reportPrivateUsage]
 
+    assert sync._http is not None  # pyright: ignore[reportPrivateUsage]
     sync._http.request = AsyncMock(  # pyright: ignore[reportPrivateUsage]
         side_effect=httpx.ConnectError("conn refused")
     )
@@ -993,7 +998,7 @@ async def test_reconcile_deletions_removes_orphaned_blobs() -> None:
 
     # Simulate 3 blobs in storage, only 1 is expected
     # Note: MagicMock(name=...) sets the mock's repr name, not an attribute.
-    blob_items = []
+    blob_items: list[MagicMock] = []
     for n in ("sp/files/keep.pdf", "sp/files/orphan1.pdf", "sp/files/orphan2.docx"):
         m = MagicMock()
         m.name = n
@@ -1168,7 +1173,7 @@ async def test_list_drive_items_empty_folder() -> None:
             {"id": "folder-1", "name": "empty", "folder": {"childCount": 0}},
         ],
     }
-    subfolder_response = {"value": []}
+    subfolder_response: dict[str, Any] = {"value": []}
 
     sync._graph_get = AsyncMock(  # pyright: ignore[reportPrivateUsage]
         side_effect=[root_response, subfolder_response],
@@ -1358,6 +1363,7 @@ async def test_graph_request_uses_retry_after_value() -> None:
         request=httpx.Request("GET", "https://graph.microsoft.com/test"),
     )
 
+    assert sync._http is not None  # pyright: ignore[reportPrivateUsage]
     sync._http.request = AsyncMock(side_effect=[throttled, success])  # pyright: ignore[reportPrivateUsage]
 
     # Should succeed (the 0-second wait means instant retry)
@@ -1383,6 +1389,7 @@ async def test_graph_request_non_digit_retry_after_uses_backoff() -> None:
         request=httpx.Request("GET", "https://graph.microsoft.com/test"),
     )
 
+    assert sync._http is not None  # pyright: ignore[reportPrivateUsage]
     sync._http.request = AsyncMock(side_effect=[throttled, success])  # pyright: ignore[reportPrivateUsage]
 
     resp = await sync._graph_request("GET", "https://graph.microsoft.com/test")  # pyright: ignore[reportPrivateUsage]
@@ -1527,6 +1534,7 @@ async def test_sync_download_timeout_used_for_binary_downloads() -> None:
         content=b"binary-data",
         request=httpx.Request("GET", "https://graph.microsoft.com/download"),
     )
+    assert sync._http is not None  # pyright: ignore[reportPrivateUsage]
     sync._http.request = AsyncMock(return_value=success)  # pyright: ignore[reportPrivateUsage]
 
     await sync._graph_get_bytes("https://graph.microsoft.com/download")  # pyright: ignore[reportPrivateUsage]

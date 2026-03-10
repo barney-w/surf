@@ -89,7 +89,7 @@ def check_vector_fields(api: SearchApiClient, index_name: str) -> bool:
         )
         return False
 
-    dims = len(cast(list[Any], vector))
+    dims = len(cast("list[Any]", vector))
     if dims != EXPECTED_VECTOR_DIMS:
         click.echo(
             f"  FAIL  Vector fields — dimensionality is {dims}, expected {EXPECTED_VECTOR_DIMS}"

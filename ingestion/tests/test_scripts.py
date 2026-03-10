@@ -10,13 +10,13 @@ import pytest
 
 from scripts.search_api import SearchApiClient, get_env
 from scripts.setup_sharepoint_indexer import (
-    _create_data_source,
-    _create_index,
-    _create_indexer,
-    _create_skillset,
-    _extract_storage_account_name,
-    _get_subscription_id,
-    _teardown,
+    _create_data_source,  # pyright: ignore[reportPrivateUsage]
+    _create_index,  # pyright: ignore[reportPrivateUsage]
+    _create_indexer,  # pyright: ignore[reportPrivateUsage]
+    _create_skillset,  # pyright: ignore[reportPrivateUsage]
+    _extract_storage_account_name,  # pyright: ignore[reportPrivateUsage]
+    _get_subscription_id,  # pyright: ignore[reportPrivateUsage]
+    _teardown,  # pyright: ignore[reportPrivateUsage]
 )
 
 # ---------------------------------------------------------------------------
