@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 from azure.identity import DefaultAzureCredential
@@ -20,9 +20,7 @@ def get_env(name: str) -> str:
     """Read a required environment variable or exit with an error."""
     val = os.environ.get(name, "")
     if not val:
-        click.echo(
-            f"ERROR: {name} environment variable is required", err=True
-        )
+        click.echo(f"ERROR: {name} environment variable is required", err=True)
         sys.exit(1)
     return val
 
@@ -50,14 +48,12 @@ class SearchApiClient:
         self,
         method: str,
         path: str,
-        body: dict | None = None,
+        body: dict[str, Any] | None = None,
     ) -> httpx.Response:
         """Send an authenticated request to the Search REST API."""
         url = f"{self._endpoint}/{path}"
         params = {"api-version": API_VERSION}
-        return self._client.request(
-            method, url, params=params, headers=self._headers(), json=body
-        )
+        return self._client.request(method, url, params=params, headers=self._headers(), json=body)
 
     def check_response(self, resp: httpx.Response, resource: str) -> None:
         """Validate a response, exiting on failure."""
@@ -65,8 +61,7 @@ class SearchApiClient:
             click.echo(f"  {resource} created/updated.")
         else:
             click.echo(
-                f"  FAILED to create {resource}: "
-                f"{resp.status_code} {resp.text}",
+                f"  FAILED to create {resource}: {resp.status_code} {resp.text}",
                 err=True,
             )
             sys.exit(1)

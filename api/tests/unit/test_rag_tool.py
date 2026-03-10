@@ -138,7 +138,7 @@ class TestCreateRagTool:
 
 
 @pytest.fixture(autouse=True)
-def _reset_search_clients():
+def _reset_search_clients():  # pyright: ignore[reportUnusedFunction]
     """Clear module-level search clients between tests."""
     clear_search_clients()
     yield
@@ -349,9 +349,7 @@ class TestMultiIndexSearch:
         mock_client_ok = AsyncMock()
         mock_client_ok.search = AsyncMock(return_value=_results_ok())
         mock_client_fail = AsyncMock()
-        mock_client_fail.search = AsyncMock(
-            side_effect=RuntimeError("Connection refused")
-        )
+        mock_client_fail.search = AsyncMock(side_effect=RuntimeError("Connection refused"))
 
         results = await search_index(
             "test query",
@@ -425,7 +423,7 @@ class TestMultiIndexSearch:
 class TestSearchClientRegistry:
     def test_set_search_client_appends(self):
         """Multiple calls to set_search_client should register all clients."""
-        from src.rag.tools import _get_search_clients
+        from src.rag.tools import _get_search_clients  # pyright: ignore[reportPrivateUsage]
 
         mock_a = AsyncMock()
         mock_b = AsyncMock()
@@ -439,7 +437,7 @@ class TestSearchClientRegistry:
 
     def test_clear_search_clients_empties_list(self):
         """clear_search_clients should remove all registered clients."""
-        from src.rag.tools import _get_search_clients
+        from src.rag.tools import _get_search_clients  # pyright: ignore[reportPrivateUsage]
 
         set_search_client(AsyncMock())
         clear_search_clients()
