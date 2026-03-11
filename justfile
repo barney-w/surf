@@ -136,6 +136,22 @@ web-lint:
 web-install:
     cd web && npm install
 
+# Install mobile app dependencies
+mobile-install:
+    cd mobile && npm install
+
+# Start mobile app (Expo dev server)
+mobile:
+    cd mobile && npx expo start
+
+# Start mobile app for iOS simulator
+mobile-ios:
+    cd mobile && npx expo start --ios
+
+# Start mobile app for Android emulator
+mobile-android:
+    cd mobile && npx expo start --android
+
 # Deploy API container to Azure Container Apps
 api-deploy:
     #!/usr/bin/env bash
@@ -153,15 +169,31 @@ api-deploy:
     az containerapp update --name ca-api-surf-dev --resource-group rg-surf-dev --image "${IMAGE}" --output none
     echo "API deployed: ${IMAGE}"
 
-# Deploy web frontend to Azure Static Web Apps
+# Deploy web frontend to Azure Container Apps (nginx reverse proxy)
 web-deploy:
     #!/usr/bin/env bash
     set -euo pipefail
-    API_FQDN=$(az containerapp show --name ca-api-surf-dev --resource-group rg-surf-dev --query 'properties.configuration.ingress.fqdn' -o tsv)
-    echo "Building with API URL: https://${API_FQDN}/api/v1"
-    cd web && VITE_SURF_API_URL="https://${API_FQDN}/api/v1" npm run build
-    SWA_TOKEN=$(az staticwebapp secrets list --name swa-surf-dev --resource-group rg-surf-dev-ai --query 'properties.apiKey' -o tsv)
-    npx swa deploy dist --deployment-token "$SWA_TOKEN" --app-name swa-surf-dev --env production
+    TAG=$(git rev-parse --short HEAD)
+    ACR_SERVER=$(az acr show --name acrsurfdev --resource-group rg-surf-dev --query loginServer -o tsv)
+    IMAGE="${ACR_SERVER}/surf-web:${TAG}"
+    # Read Entra env vars from web/.env.local (Vite doesn't load .env.local for production builds)
+    if [[ -f web/.env.local ]]; then
+        export $(grep -E '^VITE_ENTRA_' web/.env.local | xargs)
+    fi
+    VITE_ENTRA_TENANT_ID="${VITE_ENTRA_TENANT_ID:-$(az account show --query tenantId -o tsv)}"
+    echo "Entra Client ID: ${VITE_ENTRA_CLIENT_ID:-not set}"
+    echo "Entra Tenant ID: ${VITE_ENTRA_TENANT_ID}"
+    echo "Building web SPA..."
+    cd web && VITE_ENTRA_CLIENT_ID="${VITE_ENTRA_CLIENT_ID:-}" VITE_ENTRA_TENANT_ID="${VITE_ENTRA_TENANT_ID}" npm run build && cd ..
+    echo "Logging in to ACR..."
+    az acr login --name acrsurfdev
+    echo "Building ${IMAGE}..."
+    docker build --platform linux/amd64 -t "${IMAGE}" -f web/Dockerfile web/
+    echo "Pushing ${IMAGE}..."
+    docker push "${IMAGE}"
+    echo "Updating Container App..."
+    az containerapp update --name ca-web-surf-dev --resource-group rg-surf-dev --image "${IMAGE}" --output none
+    echo "Web deployed: ${IMAGE}"
 
 # Deploy both API and web frontend
 deploy: api-deploy web-deploy
@@ -186,8 +218,17 @@ verify-graph:
 validate-sharepoint *ARGS:
     cd ingestion && uv run python -m scripts.validate_sharepoint_index {{ARGS}}
 
+# Diagnose the SharePoint indexing pipeline (blobs, index, indexer status)
+diagnose-sharepoint *ARGS:
+    cd ingestion && uv run python -m scripts.diagnose_sharepoint {{ARGS}}
+
+# Upload a file to SharePoint via Graph API
+upload-sharepoint FILE *ARGS:
+    cd ingestion && uv run python -m scripts.upload_to_sharepoint "{{FILE}}" {{ARGS}}
+
 # Full end-to-end: sync -> setup indexer -> run indexer -> validate
-test-sharepoint-e2e: sync-sharepoint setup-indexer (run-indexer "--wait") validate-sharepoint
+test-sharepoint-e2e *ARGS:
+    cd ingestion && uv run python -m scripts.test_e2e_sharepoint {{ARGS}}
 
 # Delete both dev resource groups and all their resources
 teardown-dev:

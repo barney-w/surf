@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Surf",
+    "slug": "surf-mobile",
+    "version": "0.1.0",
+    "scheme": "surf",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#041F26"
+    },
+    "ios": {
+      "bundleIdentifier": "com.surf.mobile",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.surf.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#041F26"
+      }
+    },
+    "plugins": ["expo-router"]
+  }
+}

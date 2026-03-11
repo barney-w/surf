@@ -1,0 +1,14 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@surf-kit/agent": ["../../surf-kit/packages/agent/src/index.ts"],
+      "@surf-kit/agent/*": [
+        "../../surf-kit/packages/agent/src/*/index.ts",
+        "../../surf-kit/packages/agent/src/*.ts"
+      ]
+    }
+  },
+  "include": ["app", "src", "nativewind-env.d.ts"]
+}
