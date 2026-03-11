@@ -144,7 +144,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const redirectUri = AuthSession.makeRedirectUri({ scheme: "surf" });
+  const redirectUri = AuthSession.makeRedirectUri({
+    scheme: "surf",
+    path: "auth/callback",
+  });
+
+  // Log the redirect URI in dev mode so developers know what to register in Azure
+  useEffect(() => {
+    if (__DEV__) {
+      console.log("[Auth] Redirect URI:", redirectUri);
+    }
+  }, [redirectUri]);
 
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
     {

@@ -23,7 +23,7 @@ function SignInGate() {
   return (
     <div className="w-full max-w-[640px] mx-auto anim-fade-up">
       <div className="glass-panel px-6 py-5 flex flex-col items-center gap-4 text-center">
-        <div className="w-10 h-10 rounded-full bg-brand-cyan/15 flex items-center justify-center">
+        <div className="w-10 h-10 rounded-full bg-accent-subtle flex items-center justify-center">
           <svg
             width="20"
             height="20"
@@ -33,7 +33,7 @@ function SignInGate() {
             strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="text-brand-cyan"
+            className="text-accent"
           >
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
             <path d="M7 11V7a5 5 0 0 1 10 0v4" />
@@ -52,10 +52,10 @@ function SignInGate() {
         <button
           onClick={login}
           className="group relative mt-1 px-6 py-2.5 rounded-xl font-display font-semibold text-sm
-                     bg-brand-cyan text-brand-dark
-                     hover:shadow-glow-cyan active:scale-[0.97]
+                     bg-accent text-white
+                     hover:bg-accent-hover active:scale-[0.97]
                      transition-all duration-200 cursor-pointer
-                     focus-visible:outline-2 focus-visible:outline-brand-cyan focus-visible:outline-offset-2"
+                     focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
         >
           <span className="relative z-10 flex items-center gap-2">
             <svg

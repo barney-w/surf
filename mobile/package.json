@@ -5,9 +5,10 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "ios": "expo start --ios",
-    "android": "expo start --android",
-    "typecheck": "tsc --noEmit"
+    "ios": "expo run:ios",
+    "android": "expo run:android",
+    "typecheck": "tsc --noEmit",
+    "lint": "expo lint"
   },
   "dependencies": {
     "@react-native-community/netinfo": "11.4.1",
@@ -36,6 +37,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.10",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~10.0.0",
     "typescript": "^5.9"
   }
 }

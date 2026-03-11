@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useState } from "react";
 import { View, Text } from "react-native";
 import { Slot } from "expo-router";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { ThemeProvider } from "@surf-kit/theme";
 import { AuthProvider } from "../src/auth/AuthProvider";
@@ -35,7 +35,8 @@ function OfflineBanner() {
   );
 }
 
-export default function RootLayout() {
+function AppContent() {
+  const insets = useSafeAreaInsets();
   const [colorMode, setColorMode] = useState<"brand" | "light">("brand");
   const [chatKey, setChatKey] = useState(0);
   const [hasMessages, setHasMessages] = useState(false);
@@ -54,24 +55,30 @@ export default function RootLayout() {
   }, []);
 
   return (
+    <AuthProvider>
+      <ThemeProvider colorMode={colorMode}>
+        <View className="flex-1 flex-col bg-canvas" style={{ paddingTop: insets.top }}>
+          <StatusBar style={colorMode === "brand" ? "light" : "dark"} />
+          <OfflineBanner />
+          <Header
+            hasMessages={hasMessages}
+            onNewChat={handleNewChat}
+            colorMode={colorMode}
+            onToggleColorMode={toggleColorMode}
+          />
+          <ChatContext.Provider value={{ chatKey, reportHasMessages }}>
+            <Slot />
+          </ChatContext.Provider>
+        </View>
+      </ThemeProvider>
+    </AuthProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <ThemeProvider colorMode={colorMode}>
-          <View className="flex-1 flex-col bg-canvas">
-            <StatusBar style={colorMode === "brand" ? "light" : "dark"} />
-            <OfflineBanner />
-            <Header
-              hasMessages={hasMessages}
-              onNewChat={handleNewChat}
-              colorMode={colorMode}
-              onToggleColorMode={toggleColorMode}
-            />
-            <ChatContext.Provider value={{ chatKey, reportHasMessages }}>
-              <Slot />
-            </ChatContext.Provider>
-          </View>
-        </ThemeProvider>
-      </AuthProvider>
+      <AppContent />
     </SafeAreaProvider>
   );
 }

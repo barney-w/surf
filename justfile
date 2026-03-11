@@ -132,6 +132,14 @@ web-build:
 web-lint:
     cd web && npm run typecheck
 
+# Run desktop app in development mode (Tauri + Vite)
+desktop:
+    cd web && npm run tauri:dev
+
+# Build desktop app for production
+desktop-build:
+    cd web && npm run tauri:build
+
 # Install web frontend dependencies
 web-install:
     cd web && npm install

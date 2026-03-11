@@ -6,14 +6,16 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .setup(|_app| {
+        .setup(|app| {
             #[cfg(debug_assertions)]
             {
                 use tauri::Manager;
-                if let Some(window) = _app.get_webview_window("main") {
+                if let Some(window) = app.get_webview_window("main") {
                     window.open_devtools();
                 }
             }
+            // Suppress unused variable warning in release builds
+            let _ = app;
             Ok(())
         })
         .run(tauri::generate_context!())

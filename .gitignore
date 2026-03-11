@@ -29,6 +29,9 @@ pyrightconfig.json
 # Ruff
 .ruff_cache/
 
+# Rust
+target/
+
 # Node
 node_modules/
 npm-debug.log*
