@@ -34,6 +34,18 @@ _BLOB_NAME_ILLEGAL_RE = re.compile(r'[#?*"<>|\\]')
 _GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 _TOKEN_REFRESH_BUFFER_SECONDS = 300
 
+# Known standardWebPart type GUIDs from SharePoint.
+_QUICK_LINKS_GUIDS = {"c70391ea-0b10-4ee9-b2b4-006d3fcad0cd"}
+_HERO_GUIDS = {"46698648-fcd5-41fc-9526-c7f7b2ace919"}
+_EVENTS_GUIDS = {"20745d7d-8581-4a6c-bf26-68279bc123fc"}
+
+# Keys to look for when recursively extracting text from web part properties.
+_TEXT_PROPERTY_KEYS = {
+    "title", "description", "altText", "text", "name",
+    "innerHTML", "content", "richText", "headerText",
+    "caption", "label", "value", "header",
+}
+
 # Sensitivity label priority ordering (lower = less sensitive).
 # Actual integer values depend on tenant configuration; these names are
 # used as a configurable threshold string.
@@ -534,6 +546,95 @@ class SharePointSync:
             page_url = data.get("@odata.nextLink")
         return all_pages
 
+    @staticmethod
+    def _classify_standard_webpart(wp: dict[str, Any]) -> str | None:
+        """Return a category string for a recognised standard web part, or None."""
+        wpt = wp.get("webPartType", "").lower()
+        wp_id = wp.get("id", "").lower()
+        identifier = f"{wpt} {wp_id}"
+
+        if wpt in _QUICK_LINKS_GUIDS or "quicklinks" in identifier:
+            return "quickLinks"
+        if wpt in _HERO_GUIDS or "hero" in identifier:
+            return "hero"
+        if wpt in _EVENTS_GUIDS or "events" in identifier or "calendar" in identifier:
+            return "events"
+        return None
+
+    @staticmethod
+    def _extract_standard_webpart_text(wp: dict[str, Any], category: str) -> str:
+        """Extract human-readable text from a standardWebPart's data.properties.
+
+        Returns simple HTML paragraphs. Never raises — returns empty string on
+        unexpected structure.
+        """
+        data = wp.get("data") or {}
+        props = data.get("properties") or {}
+        spc = data.get("serverProcessedContent") or {}
+        fragments: list[str] = []
+
+        # Keys whose child values are all HTML/text (e.g. htmlStrings, searchablePlainTexts).
+        _SPC_TEXT_CONTAINERS = {"htmlStrings", "searchablePlainTexts", "customMetadata"}
+
+        def _collect_text(obj: Any, *, grab_all_strings: bool = False) -> None:  # noqa: ANN401
+            """Recursively collect string values from known text keys.
+
+            When *grab_all_strings* is True, every string value is collected
+            regardless of its key — used for serverProcessedContent containers
+            where all values are meaningful text.
+            """
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    if key in _SPC_TEXT_CONTAINERS and isinstance(value, dict):
+                        _collect_text(value, grab_all_strings=True)
+                    elif (grab_all_strings or key in _TEXT_PROPERTY_KEYS) and isinstance(value, str) and value.strip():
+                        fragments.append(value.strip())
+                    else:
+                        _collect_text(value, grab_all_strings=grab_all_strings)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _collect_text(item, grab_all_strings=grab_all_strings)
+
+        if category == "quickLinks":
+            # Quick Links stores links under properties.items
+            items = props.get("items") or []
+            for item in items:
+                t = (item.get("title") or "").strip()
+                d = (item.get("description") or "").strip()
+                if t:
+                    fragments.append(html_escape(t))
+                if d:
+                    fragments.append(html_escape(d))
+
+        elif category == "hero":
+            # Hero web parts have top-level title/description and nested items
+            for key in ("title", "description"):
+                val = props.get(key)
+                if isinstance(val, str) and val.strip():
+                    fragments.append(html_escape(val.strip()))
+            hero_items = props.get("items") or []
+            for item in hero_items:
+                t = (item.get("title") or "").strip()
+                d = (item.get("description") or "").strip()
+                if t:
+                    fragments.append(html_escape(t))
+                if d:
+                    fragments.append(html_escape(d))
+
+        elif category == "events":
+            # Events web parts — extract any text properties recursively
+            _collect_text(props)
+
+        if not fragments:
+            # Fallback: try recursive extraction for any category
+            _collect_text(props)
+            _collect_text(spc)
+
+        if not fragments:
+            return ""
+
+        return "\n".join(f"<p>{f}</p>" for f in fragments)
+
     async def _get_page_html(self, site_id: str, page_id: str, title: str) -> str:
         """Fetch a page's text content as HTML.
 
@@ -548,15 +649,38 @@ class SharePointSync:
         data = await self._graph_get(url)
         html_parts: list[str] = []
         for wp in data.get("value", []):
-            if wp.get("@odata.type") == "#microsoft.graph.textWebPart":
+            odata_type = wp.get("@odata.type", "")
+
+            if odata_type == "#microsoft.graph.textWebPart":
                 inner = wp.get("innerHtml", "")
                 if inner:
                     html_parts.append(inner)
 
-        if not html_parts:
-            return ""
+            elif odata_type == "#microsoft.graph.standardWebPart":
+                category = self._classify_standard_webpart(wp)
+                wpt = wp.get("webPartType", "unknown")
+                if category:
+                    logger.debug(
+                        "Page %r: processing %s standardWebPart (type=%s)",
+                        title, category, wpt,
+                    )
+                    extracted = self._extract_standard_webpart_text(wp, category)
+                else:
+                    # Extract text from any unrecognised web part type
+                    # (collapsible sections, tables, markdown, etc.)
+                    logger.debug(
+                        "Page %r: extracting text from standardWebPart (type=%s)",
+                        title, wpt,
+                    )
+                    extracted = self._extract_standard_webpart_text(wp, "unknown")
+                if extracted:
+                    html_parts.append(extracted)
 
         escaped_title = html_escape(title)
+        if not html_parts:
+            # Always return content — use title so the page is still indexed.
+            html_parts.append(f"<h1>{escaped_title}</h1>")
+
         return (
             f"<html><head><title>{escaped_title}</title></head><body>\n"
             + "\n".join(html_parts)
@@ -615,11 +739,6 @@ class SharePointSync:
             assert blob_client is not None  # guaranteed by dry_run guard above
             try:
                 html = await self._get_page_html(full_site_id, page_id, title)
-                if not html:
-                    logger.debug("Skipping page %s (no text content)", title)
-                    result.pages_skipped += 1
-                    continue
-
                 metadata = {
                     "sp_last_modified": last_modified,
                     "sp_page_id": page_id,
