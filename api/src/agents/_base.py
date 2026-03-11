@@ -6,7 +6,11 @@ from typing import Any
 
 @dataclass
 class RAGScope:
-    """Defines how this agent's RAG queries are filtered."""
+    """Defines how this agent's RAG queries are filtered.
+
+    ``metadata_filters`` supports any filterable index field as a key,
+    including ``content_source`` (e.g. ``{"content_source": "website"}``).
+    """
 
     domain: str
     document_types: list[str] = field(default_factory=lambda: [])

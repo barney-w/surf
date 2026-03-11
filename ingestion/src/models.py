@@ -6,6 +6,8 @@ from datetime import date
 class DocumentMetadata:
     domain: str  # "hr", "it", "governance"
     document_type: str  # "policy", "procedure", "agreement"
+    content_source: str = ""  # "website", "sharepoint", "pdf-manual"
+    section_path: str = ""  # URL/folder path, e.g. "Services/Waste-recycling"
     version: str | None = None
     effective_date: date | None = None
     expiry_date: date | None = None

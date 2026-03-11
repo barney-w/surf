@@ -39,6 +39,8 @@ class TestCreateOrUpdateIndex:
             "document_id",
             "domain",
             "document_type",
+            "content_source",
+            "section_path",
             "title",
             "section_heading",
             "content",
@@ -62,6 +64,17 @@ class TestCreateOrUpdateIndex:
         domain_field = next(f for f in INDEX_FIELDS if f.name == "domain")
         assert domain_field.filterable is True
         assert domain_field.facetable is True
+
+    def test_content_source_is_filterable_and_facetable(self):
+        """content_source field is filterable and facetable."""
+        field = next(f for f in INDEX_FIELDS if f.name == "content_source")
+        assert field.filterable is True
+        assert field.facetable is True
+
+    def test_section_path_is_searchable(self):
+        """section_path field is searchable."""
+        field = next(f for f in INDEX_FIELDS if f.name == "section_path")
+        assert field.searchable is True
 
 
 class TestUploadChunks:
@@ -124,3 +137,27 @@ class TestChunkToDocument:
         }
         doc: dict[str, Any] = _chunk_to_document(chunk)  # pyright: ignore[reportPrivateUsage]
         assert doc["metadata"] == '{"already": "json"}'
+
+    def test_passes_through_content_source_and_section_path(self):
+        """content_source and section_path are passed through when present."""
+        chunk = {
+            "id": "c1",
+            "document_id": "d1",
+            "content": "text",
+            "content_source": "website",
+            "section_path": "Services/Waste-recycling",
+        }
+        doc: dict[str, Any] = _chunk_to_document(chunk)  # pyright: ignore[reportPrivateUsage]
+        assert doc["content_source"] == "website"
+        assert doc["section_path"] == "Services/Waste-recycling"
+
+    def test_defaults_content_source_and_section_path_when_absent(self):
+        """content_source and section_path default to empty string when absent."""
+        chunk = {
+            "id": "c1",
+            "document_id": "d1",
+            "content": "text",
+        }
+        doc: dict[str, Any] = _chunk_to_document(chunk)  # pyright: ignore[reportPrivateUsage]
+        assert doc["content_source"] == ""
+        assert doc["section_path"] == ""

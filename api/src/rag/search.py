@@ -27,6 +27,7 @@ class SearchResult:
     source_url: str | None
     domain: str
     document_type: str
+    content_source: str = ""
     chunk_index: int = 0
 
 
@@ -83,6 +84,7 @@ async def _search_single_index(
                 source_url=doc.get("source_url"),
                 domain=doc.get("domain", ""),
                 document_type=doc.get("document_type", ""),
+                content_source=doc.get("content_source", ""),
                 chunk_index=int(doc.get("chunk_index") or 0),
             )
         )

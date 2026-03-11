@@ -64,6 +64,7 @@ def stitch_adjacent_chunks(results: list[SearchResult]) -> list[SearchResult]:
                     source_url=group[0].source_url,
                     domain=group[0].domain,
                     document_type=group[0].document_type,
+                    content_source=group[0].content_source,
                     chunk_index=group[0].chunk_index,
                 )
                 stitched.append(merged)
@@ -184,6 +185,11 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
                 f'section: "{r.section_heading}"' if r.section_heading else "section: null"
             )
             url_line = f'url: "{r.source_url}"' if r.source_url else "url: null"
+            source_line = (
+                f'content_source: "{r.content_source}"'
+                if r.content_source
+                else "content_source: null"
+            )
             snippet_text = r.content[:200].rstrip()
             if len(r.content) > 200:
                 snippet_text += "..."
@@ -194,6 +200,7 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
                 f'document_id: "{r.document_id}"\n'
                 f"relevance: {relevance}\n"
                 f"{url_line}\n"
+                f"{source_line}\n"
                 f'snippet: "{snippet_text}"\n\n'
                 f"CONTENT:\n{r.content}\n\n"
                 f"=== END SOURCE {i} ==="

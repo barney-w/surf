@@ -327,7 +327,9 @@ async def test_get_page_html_empty_page() -> None:
     _init_http(sync)
     sync._graph_get = AsyncMock(return_value={"value": []})  # pyright: ignore[reportPrivateUsage]
     html = await sync._get_page_html("site-id", "page-1", "Empty")  # pyright: ignore[reportPrivateUsage]
-    assert html == ""
+    # Empty pages still get a title-only HTML wrapper so they are indexed
+    assert "<h1>Empty</h1>" in html
+    assert "<title>Empty</title>" in html
 
 
 @pytest.mark.asyncio
@@ -370,7 +372,9 @@ async def test_get_page_html_empty_inner_html_skipped() -> None:
         }
     )
     html = await sync._get_page_html("site-id", "p1", "Blank")  # pyright: ignore[reportPrivateUsage]
-    assert html == ""
+    # Empty inner HTML still produces a title-only wrapper
+    assert "<h1>Blank</h1>" in html
+    assert "<title>Blank</title>" in html
 
 
 # ---------------------------------------------------------------------------
@@ -822,7 +826,7 @@ async def test_sync_pages_incremental_skip() -> None:
 
 @pytest.mark.asyncio
 async def test_sync_pages_empty_content_skipped() -> None:
-    """Pages with no text web parts should be skipped."""
+    """Pages with no text web parts still get synced with title-only wrapper."""
     sync = _make_sync()
     _init_http(sync)
     result = SyncResult()
@@ -851,8 +855,9 @@ async def test_sync_pages_empty_content_skipped() -> None:
 
     await sync._sync_pages("site", blob, result, dry_run=False)  # pyright: ignore[reportPrivateUsage]
 
-    assert result.pages_synced == 0
-    assert result.pages_skipped == 1
+    # Empty pages now get a title-only wrapper and are still synced
+    assert result.pages_synced == 1
+    assert result.pages_skipped == 0
 
 
 @pytest.mark.asyncio

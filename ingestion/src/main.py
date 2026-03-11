@@ -18,6 +18,19 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 
 from src.connectors.pdf import create_document_from_pdf  # noqa: E402
+from src.connectors.website_crawler import (  # noqa: E402
+    CrawlConfig,
+    CrawledPage,
+    CrawledPDF,
+    CrawlManifest,
+    CrawlResult,
+    WebsiteCrawler,
+    crawled_page_to_document,
+    crawled_pdf_to_document,
+    delete_website_documents,
+    load_manifest_from_blob,
+    save_manifest_to_blob,
+)
 from src.pipeline.chunking import ChunkingConfig, chunk_document  # noqa: E402
 from src.pipeline.embedding import generate_embeddings  # noqa: E402
 from src.pipeline.indexing import create_or_update_index, upload_chunks  # noqa: E402
@@ -119,6 +132,8 @@ def _chunks_to_dicts(chunks: list[Chunk], embeddings: list[list[float]]) -> list
             "document_id": chunk.document_id,
             "domain": chunk.metadata.domain,
             "document_type": chunk.metadata.document_type,
+            "content_source": chunk.metadata.content_source,
+            "section_path": chunk.metadata.section_path,
             "title": chunk.document_title or chunk.section_heading or "",
             "section_heading": chunk.section_heading or "",
             "content": chunk.content,
@@ -436,6 +451,323 @@ def sync_sharepoint(dry_run: bool) -> None:
     if result.errors:
         click.echo("\nErrors:")
         for err in result.errors:
+            click.echo(f"  - {err}")
+
+
+@cli.command("crawl-website")
+@click.option("--base-url", required=True, help="Website base URL to crawl")
+@click.option(
+    "--output-dir", type=click.Path(), required=True, help="Local directory for crawl output"
+)
+@click.option("--dry-run", is_flag=True, help="Enumerate pages only, don't download content")
+@click.option("--pages-only", is_flag=True, help="Skip PDF downloads")
+def crawl_website(base_url: str, output_dir: str, dry_run: bool, pages_only: bool) -> None:
+    """Crawl a website via its sitemap and save results locally."""
+    config = CrawlConfig(base_url=base_url)
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    crawler = WebsiteCrawler(config)
+
+    if dry_run:
+
+        async def _dry_run() -> list[str]:
+            try:
+                return await crawler.parse_sitemap()
+            finally:
+                await crawler.close()
+
+        urls = asyncio.run(_dry_run())
+        click.echo(f"Sitemap contains {len(urls)} URL(s).")
+        for url in urls:
+            click.echo(f"  {url}")
+        return
+
+    async def _crawl() -> (
+        tuple[list[CrawledPage], list[CrawledPDF], CrawlResult]    ):
+        try:
+            return await crawler.crawl(pages_only=pages_only)
+        finally:
+            await crawler.close()
+
+    pages, pdfs, result = asyncio.run(_crawl())
+
+    # Save pages
+    pages_data = [
+        {
+            "url": p.url,
+            "title": p.title,
+            "section_path": p.section_path,
+            "content_text": p.content_text,
+            "content_hash": p.content_hash,
+            "pdf_links": p.pdf_links,
+        }
+        for p in pages
+    ]
+    pages_file = out_path / "pages.json"
+    pages_file.write_text(json.dumps(pages_data, indent=2, ensure_ascii=False))
+    click.echo(f"Saved {len(pages_data)} page(s) to {pages_file}")
+
+    # Save PDFs metadata
+    pdfs_data = [asdict(pdf) for pdf in pdfs]
+    pdfs_file = out_path / "pdfs.json"
+    pdfs_file.write_text(json.dumps(pdfs_data, indent=2, ensure_ascii=False))
+    click.echo(f"Saved {len(pdfs_data)} PDF record(s) to {pdfs_file}")
+
+    # Summary
+    click.echo("\n--- Crawl Summary ---")
+    click.echo(f"Pages crawled    : {result.pages_crawled}")
+    click.echo(f"Pages skipped    : {result.pages_skipped}")
+    click.echo(f"PDFs discovered  : {result.pdfs_discovered}")
+    click.echo(f"PDFs downloaded  : {result.pdfs_downloaded}")
+    click.echo(f"Errors           : {len(result.errors)}")
+    if result.errors:
+        click.echo("\nErrors:")
+        for err in result.errors:
+            click.echo(f"  - {err}")
+
+
+@cli.command("index-website")
+@click.option("--base-url", required=True, help="Website base URL to crawl")
+@click.option("--dry-run", is_flag=True, help="Crawl and chunk only, don't embed or index")
+@click.option("--pages-only", is_flag=True, help="Skip PDF indexing")
+@click.option(
+    "--incremental", is_flag=True, help="Only process new/changed pages since last run"
+)
+@click.option(
+    "--chunk-size", default=700, show_default=True, help="Maximum tokens per chunk"
+)
+@click.option(
+    "--overlap", default=150, show_default=True, help="Token overlap between chunks"
+)
+@click.option(
+    "--embed-batch-size",
+    default=16,
+    show_default=True,
+    help="Chunks per embedding call",
+)
+def index_website(
+    base_url: str,
+    dry_run: bool,
+    pages_only: bool,
+    incremental: bool,
+    chunk_size: int,
+    overlap: int,
+    embed_batch_size: int,
+) -> None:
+    """Crawl a website and index its content into Azure AI Search."""
+    import tempfile
+
+    config = CrawlConfig(base_url=base_url)
+    chunking_config = ChunkingConfig(max_chunk_tokens=chunk_size, overlap_tokens=overlap)
+    crawler = WebsiteCrawler(config)
+
+    async def _crawl_and_collect() -> (
+        tuple[list[CrawledPage], list[CrawledPDF], CrawlResult, dict[str, bytes]]
+    ):
+        try:
+            pages, pdfs, result = await crawler.crawl(pages_only=pages_only)
+
+            # Download PDF content for conversion
+            pdf_bytes: dict[str, bytes] = {}
+            if not pages_only:
+                for pdf in pdfs:
+                    dl = await crawler.download_pdf(pdf.url)
+                    if dl is not None:
+                        pdf_bytes[pdf.url] = dl[0]
+
+            return pages, pdfs, result, pdf_bytes
+        finally:
+            await crawler.close()
+
+    all_pages, all_pdfs, result, pdf_bytes = asyncio.run(_crawl_and_collect())
+
+    click.echo(
+        f"Crawled {result.pages_crawled} page(s), "
+        f"{result.pdfs_discovered} PDF(s) discovered."
+    )
+
+    # Incremental: diff against previous manifest
+    pages_to_process = all_pages
+    pdfs_to_process = all_pdfs
+    removed_page_paths: list[str] = []
+    removed_pdf_paths: list[str] = []
+    n_unchanged_pages = 0
+    n_unchanged_pdfs = 0
+    container_client: Any = None
+    previous_manifest: CrawlManifest | None = None
+
+    if incremental:
+        from azure.identity.aio import DefaultAzureCredential as AsyncDefaultAzureCredential
+        from azure.storage.blob.aio import ContainerClient
+
+        storage_account_url = os.environ.get("AZURE_STORAGE_ACCOUNT_URL", "")
+        storage_container = os.environ.get("AZURE_STORAGE_CONTAINER", "documents")
+        if not storage_account_url:
+            raise click.ClickException(
+                "AZURE_STORAGE_ACCOUNT_URL environment variable is required "
+                "for incremental mode"
+            )
+
+        async def _load_previous_manifest() -> (
+            tuple[CrawlManifest | None, Any]
+        ):
+            credential = AsyncDefaultAzureCredential()
+            cc = ContainerClient(
+                account_url=storage_account_url,
+                container_name=storage_container,
+                credential=credential,
+            )
+            manifest = await load_manifest_from_blob(cc)
+            return manifest, cc
+
+        previous_manifest, container_client = asyncio.run(_load_previous_manifest())
+
+        if previous_manifest is not None:
+            new_pages, changed_pages, removed_page_paths = (
+                previous_manifest.diff_pages(all_pages)
+            )
+            new_pdfs, changed_pdfs, removed_pdf_paths = (
+                previous_manifest.diff_pdfs(all_pdfs)
+            )
+            n_unchanged_pages = (
+                len(all_pages) - len(new_pages) - len(changed_pages)
+            )
+            n_unchanged_pdfs = (
+                len(all_pdfs) - len(new_pdfs) - len(changed_pdfs)
+            )
+            pages_to_process = new_pages + changed_pages
+            pdfs_to_process = new_pdfs + changed_pdfs
+
+            click.echo("\n--- Incremental Diff ---")
+            click.echo(
+                f"Pages: {len(new_pages)} new, {len(changed_pages)} changed, "
+                f"{len(removed_page_paths)} removed, {n_unchanged_pages} unchanged"
+            )
+            click.echo(
+                f"PDFs:  {len(new_pdfs)} new, {len(changed_pdfs)} changed, "
+                f"{len(removed_pdf_paths)} removed, {n_unchanged_pdfs} unchanged"
+            )
+        else:
+            click.echo("No previous manifest found — processing all items.")
+
+    # Convert pages to documents and chunk
+    documents: list[IngestedDocument] = []
+    all_chunks: list[Chunk] = []
+    errors: list[str] = list(result.errors)
+
+    for page in pages_to_process:
+        try:
+            doc = crawled_page_to_document(page, base_url)
+            documents.append(doc)
+            chunks = chunk_document(doc, chunking_config)
+            _validate_chunks(chunks, page.url)
+            all_chunks.extend(chunks)
+            click.echo(f"  Page {page.url}: {len(chunks)} chunk(s)")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"Page {page.url}: {exc}")
+            click.echo(f"  ERROR Page {page.url}: {exc}", err=True)
+
+    # Convert PDFs to documents and chunk
+    if not pages_only:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            for pdf in pdfs_to_process:
+                if pdf.url not in pdf_bytes:
+                    errors.append(f"PDF {pdf.url}: no content downloaded")
+                    continue
+                try:
+                    doc = crawled_pdf_to_document(pdf, pdf_bytes[pdf.url], tmp_path)
+                    documents.append(doc)
+                    chunks = chunk_document(doc, chunking_config)
+                    _validate_chunks(chunks, pdf.filename)
+                    all_chunks.extend(chunks)
+                    click.echo(f"  PDF {pdf.filename}: {len(chunks)} chunk(s)")
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"PDF {pdf.filename}: {exc}")
+                    click.echo(f"  ERROR PDF {pdf.filename}: {exc}", err=True)
+
+    # Embed and index (unless dry-run)
+    if not dry_run and all_chunks:
+        try:
+            click.echo(
+                f"Generating embeddings ({embed_batch_size} chunks/batch) "
+                f"and uploading to index..."
+            )
+            uploaded = asyncio.run(
+                _embed_and_index(all_chunks, embed_batch_size=embed_batch_size)
+            )
+            click.echo(f"Indexed {uploaded} chunk(s).")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"Embedding/indexing: {exc}")
+            click.echo(f"  ERROR Embedding/indexing failed: {exc}", err=True)
+    elif dry_run:
+        click.echo("Dry-run mode: skipping embedding and indexing.")
+
+    # Delete removed items from index (incremental mode only)
+    if incremental and not dry_run:
+        all_removed = removed_page_paths + removed_pdf_paths
+        if all_removed:
+            try:
+                from azure.identity import DefaultAzureCredential
+                from azure.search.documents import SearchClient
+
+                credential = DefaultAzureCredential()
+                search_endpoint = os.environ.get("AZURE_SEARCH_ENDPOINT")
+                if not search_endpoint:
+                    raise click.ClickException(
+                        "AZURE_SEARCH_ENDPOINT environment variable is not set"
+                    )
+                search_client = SearchClient(
+                    endpoint=search_endpoint,
+                    index_name=_resolve_index_name(),
+                    credential=credential,
+                )
+                deleted = asyncio.run(
+                    delete_website_documents(search_client, all_removed)
+                )
+                click.echo(f"Deleted {deleted} chunk(s) for removed items.")
+            except click.ClickException:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"Deletion: {exc}")
+                click.echo(f"  ERROR Deletion failed: {exc}", err=True)
+
+    # Save manifest after successful indexing
+    if incremental and not dry_run:
+        try:
+            manifest = previous_manifest or CrawlManifest(
+                crawl_timestamp="",
+                base_url=base_url,
+            )
+            manifest.update(all_pages, all_pdfs)
+
+            if container_client is not None:
+
+                async def _save() -> None:
+                    await save_manifest_to_blob(manifest, container_client)
+                    await container_client.close()
+
+                asyncio.run(_save())
+                click.echo("Manifest saved to blob storage.")
+            else:
+                click.echo("WARNING: No container client — manifest not saved.", err=True)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"Manifest save: {exc}")
+            click.echo(f"  ERROR Manifest save failed: {exc}", err=True)
+    elif incremental and dry_run:
+        click.echo("Dry-run mode: skipping manifest save.")
+        if container_client is not None:
+            asyncio.run(container_client.close())
+
+    # Summary
+    click.echo("\n--- Indexing Summary ---")
+    click.echo(f"Documents created : {len(documents)}")
+    click.echo(f"Chunks created    : {len(all_chunks)}")
+    click.echo(f"Errors            : {len(errors)}")
+    if errors:
+        click.echo("\nErrors:")
+        for err in errors:
             click.echo(f"  - {err}")
 
 
