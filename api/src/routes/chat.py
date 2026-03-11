@@ -675,9 +675,9 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                 yield _sse({"type": "phase", "phase": "generating"})
                 generating_announced = True
             response_text = coordinator_buf
-            _CHUNK_SIZE = 40  # characters per drip
-            for i in range(0, len(coordinator_buf), _CHUNK_SIZE):
-                yield _sse({"type": "delta", "content": coordinator_buf[i : i + _CHUNK_SIZE]})
+            chunk_size = 40  # characters per drip
+            for i in range(0, len(coordinator_buf), chunk_size):
+                yield _sse({"type": "delta", "content": coordinator_buf[i : i + chunk_size]})
                 await asyncio.sleep(0)  # yield control so each chunk is a separate HTTP frame
         elif not generating_announced:
             yield _sse({"type": "agent", "agent": routed_agent})

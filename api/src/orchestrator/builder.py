@@ -112,7 +112,25 @@ class _SafeHandoffAnthropicClient(AnthropicClient):
 
 
 def create_model_client(settings: Settings) -> _SafeHandoffAnthropicClient:
-    """Create the Anthropic chat client used by all agents."""
+    """Create the Anthropic chat client used by all agents.
+
+    Supports two modes:
+    - Direct Anthropic API: set ANTHROPIC_API_KEY
+    - Azure AI Foundry: set ANTHROPIC_FOUNDRY_BASE_URL + ANTHROPIC_FOUNDRY_API_KEY
+    """
+    if settings.anthropic_foundry_base_url:
+        from anthropic import AsyncAnthropicFoundry
+
+        foundry_client = AsyncAnthropicFoundry(
+            base_url=settings.anthropic_foundry_base_url,
+            api_key=settings.anthropic_foundry_api_key,
+        )
+        logger.info("Using Anthropic via Azure AI Foundry: %s", settings.anthropic_foundry_base_url)
+        return _SafeHandoffAnthropicClient(
+            anthropic_client=foundry_client,
+            model_id=settings.anthropic_model_id,
+        )
+
     return _SafeHandoffAnthropicClient(
         api_key=settings.anthropic_api_key or None,
         model_id=settings.anthropic_model_id,
@@ -160,7 +178,7 @@ def build_agent_graph(
 
     domain_agents: list[Agent[ChatOptions[None]]] = []
 
-    for name, agent_cls in registry.items():
+    for _name, agent_cls in registry.items():
         agent_def = agent_cls()
         scoped_rag = create_rag_tool(scope=agent_def.rag_scope)
 

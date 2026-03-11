@@ -13,6 +13,73 @@ const SUGGESTED_QUESTIONS = [
   "What IT equipment can I request?",
 ];
 
+/* ------------------------------------------------------------------ */
+/*  Sign-in gate — shown in place of the composer when not authed      */
+/* ------------------------------------------------------------------ */
+
+function SignInGate() {
+  const { login } = useAuth();
+
+  return (
+    <div className="w-full max-w-[640px] mx-auto anim-fade-up">
+      <div className="glass-panel px-6 py-5 flex flex-col items-center gap-4 text-center">
+        <div className="w-10 h-10 rounded-full bg-brand-cyan/15 flex items-center justify-center">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-brand-cyan"
+          >
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+        </div>
+
+        <div>
+          <p className="text-text-primary font-display font-semibold text-base">
+            Sign in to start chatting
+          </p>
+          <p className="text-text-secondary text-sm mt-1 max-w-xs">
+            Authenticate with your organisation account to ask questions and get personalised answers.
+          </p>
+        </div>
+
+        <button
+          onClick={login}
+          className="group relative mt-1 px-6 py-2.5 rounded-xl font-display font-semibold text-sm
+                     bg-brand-cyan text-brand-dark
+                     hover:shadow-glow-cyan active:scale-[0.97]
+                     transition-all duration-200 cursor-pointer
+                     focus-visible:outline-2 focus-visible:outline-brand-cyan focus-visible:outline-offset-2"
+        >
+          <span className="relative z-10 flex items-center gap-2">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+              <polyline points="10 17 15 12 10 7" />
+              <line x1="15" y1="12" x2="3" y2="12" />
+            </svg>
+            Sign in
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const BG_IMAGES = [
   "/branding/bg.jpg",
   "/branding/bg2.jpg",
@@ -62,16 +129,16 @@ function BackgroundSlideshow() {
 
 function useChatConfig() {
   const { getApiToken, isAuthenticated } = useAuth();
-  const [token, setToken] = useState<string | null>(null);
+  const getApiTokenRef = useRef(getApiToken);
+  getApiTokenRef.current = getApiToken;
+  const isAuthenticatedRef = useRef(isAuthenticated);
+  isAuthenticatedRef.current = isAuthenticated;
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setToken(null);
-      return;
-    }
-    // Acquire token for API calls
-    void getApiToken().then(setToken);
-  }, [isAuthenticated, getApiToken]);
+  const getHeaders = useCallback(async (): Promise<Record<string, string>> => {
+    if (!isAuthenticatedRef.current) return {};
+    const token = await getApiTokenRef.current();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }, []);
 
   return useMemo(
     () => ({
@@ -80,9 +147,9 @@ function useChatConfig() {
       feedbackPath: "/feedback",
       conversationsPath: "/conversations",
       timeout: 60000,
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      headers: getHeaders,
     }),
-    [token],
+    [getHeaders],
   );
 }
 
@@ -91,7 +158,9 @@ function useChatConfig() {
 /* ------------------------------------------------------------------ */
 
 export function ChatPage({ onHasMessages }: { onHasMessages?: (has: boolean) => void }) {
-  const { profile, isLoading: authLoading } = useAuth();
+  const { profile, isLoading: authLoading, isAuthenticated } = useAuth();
+  const authRequired = !!import.meta.env.VITE_ENTRA_CLIENT_ID;
+  const gated = authRequired && !isAuthenticated;
   const chatConfig = useChatConfig();
   const { state, actions } = useAgentChat(chatConfig);
   const [isDraining, setIsDraining] = useState(false);
@@ -178,23 +247,30 @@ export function ChatPage({ onHasMessages }: { onHasMessages?: (has: boolean) => 
         <div className="flex-1 flex flex-col items-center">
           <div className="flex-[3]" />
           <WelcomeScreen
-            title={welcomeTitle}
-            message="Ask me anything — I'll coordinate with my specialist agents to find you the best answer."
+            title={gated ? "Hi, I'm Surf." : welcomeTitle}
+            message={gated
+              ? "I can coordinate specialist agents to answer your questions — sign in to get started."
+              : "Ask me anything — I'll coordinate with my specialist agents to find you the best answer."
+            }
             icon={
               <img src="/surf.png" alt="Surf" className="w-32 h-30 rounded-md" />
             }
-            suggestedQuestions={SUGGESTED_QUESTIONS}
+            suggestedQuestions={gated ? [] : SUGGESTED_QUESTIONS}
             onQuestionSelect={handleSend}
             className="flex-none mb-6"
           />
-          <div className="w-full max-w-[640px]">
-            <MessageComposer
-              onSend={handleSend}
-              isLoading={state.isLoading}
-              placeholder="Ask a question..."
-              className="bg-surface border-border"
-            />
-          </div>
+          {gated ? (
+            <SignInGate />
+          ) : (
+            <div className="w-full max-w-[640px]">
+              <MessageComposer
+                onSend={handleSend}
+                isLoading={state.isLoading}
+                placeholder="Ask a question..."
+                className="bg-surface border-border"
+              />
+            </div>
+          )}
           <div className="flex-[2]" />
         </div>
       )}

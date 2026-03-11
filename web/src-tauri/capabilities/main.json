@@ -3,7 +3,6 @@
   "identifier": "main-capability",
   "description": "Permissions for the main Surf window",
   "windows": ["main"],
-  "platforms": ["windows"],
   "permissions": [
     "core:default",
     "core:window:default",
@@ -14,9 +13,9 @@
     "core:window:allow-unmaximize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-set-focus",
-    "notification:default",
     "updater:default",
     "window-state:default",
-    "single-instance:default"
+    "store:default",
+    "log:default"
   ]
 }

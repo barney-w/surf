@@ -5,7 +5,8 @@ Files under 4MB use simple PUT; larger files use an upload session.
 
 Usage:
     cd ingestion && uv run python -m scripts.upload_to_sharepoint /path/to/file.pdf
-    cd ingestion && uv run python -m scripts.upload_to_sharepoint /path/to/file.pdf --folder Policies
+    cd ingestion && uv run python -m scripts.upload_to_sharepoint \\
+        /path/to/file.pdf --folder Policies
 """
 
 from __future__ import annotations
@@ -199,7 +200,7 @@ def main(file_path: str, folder: str | None, library: str | None) -> None:
 
     web_url = result.get("webUrl", "(unknown)")
     item_id = result.get("id", "(unknown)")
-    click.echo(f"\nUpload successful!")
+    click.echo("\nUpload successful!")
     click.echo(f"  Item ID: {item_id}")
     click.echo(f"  URL:     {web_url}")
 

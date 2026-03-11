@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import nativewindPreset from "nativewind/preset";
 import { surfKitPreset } from "@surf-kit/theme";
 
 export default {
@@ -8,5 +9,5 @@ export default {
     "../../surf-kit/packages/agent/src/**/*.native.tsx",
     "../../surf-kit/packages/core/src/**/*.native.tsx",
   ],
-  presets: [surfKitPreset],
+  presets: [nativewindPreset, surfKitPreset],
 } satisfies Config;

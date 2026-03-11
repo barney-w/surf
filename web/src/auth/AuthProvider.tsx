@@ -13,7 +13,8 @@ import {
   PublicClientApplication,
 } from "@azure/msal-browser";
 import { msalConfig, loginScopes, apiScope } from "./authConfig";
-import { isTauri, getApiBase } from "./platform";
+import { needsPopupAuth, getApiBase, isTauri } from "./platform";
+import { restoreMsalCache, persistMsalCache, clearMsalCache } from "./tauriTokenCache";
 
 interface UserProfile {
   displayName: string;
@@ -55,10 +56,20 @@ export function useAuth() {
 
 const clientId = import.meta.env.VITE_ENTRA_CLIENT_ID ?? "";
 
-// Only create MSAL instance when client ID is configured
+// MSAL instance is created lazily — in Tauri we need to restore the
+// persisted token cache into localStorage before MSAL reads it.
 let msalInstance: PublicClientApplication | null = null;
-if (clientId) {
-  msalInstance = new PublicClientApplication(msalConfig);
+let msalReady: Promise<PublicClientApplication | null> | null = null;
+
+function getMsalInstance(): Promise<PublicClientApplication | null> {
+  if (!clientId) return Promise.resolve(null);
+  if (msalReady) return msalReady;
+  msalReady = (async () => {
+    await restoreMsalCache();
+    msalInstance = new PublicClientApplication(msalConfig);
+    return msalInstance;
+  })();
+  return msalReady;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -98,27 +109,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Initialize MSAL and attempt silent SSO
   useEffect(() => {
-    if (!msalInstance) {
+    if (!clientId) {
       setIsLoading(false);
       return;
     }
 
     const init = async () => {
       try {
-        await msalInstance!.initialize();
+        const msal = await getMsalInstance();
+        if (!msal) {
+          setIsLoading(false);
+          return;
+        }
+        await msal.initialize();
 
         // Handle redirect response (if returning from loginRedirect)
-        const redirectResult = await msalInstance!.handleRedirectPromise();
+        const redirectResult = await msal.handleRedirectPromise();
         if (redirectResult?.account) {
           setAccount(redirectResult.account);
-          msalInstance!.setActiveAccount(redirectResult.account);
+          msal.setActiveAccount(redirectResult.account);
           setIsLoading(false);
           // Acquire API-scoped token (redirect token has User.Read audience)
           try {
-            const tokenResult = await msalInstance!.acquireTokenSilent({
+            const tokenResult = await msal.acquireTokenSilent({
               scopes: [apiScope],
               account: redirectResult.account,
             });
+            void persistMsalCache();
             void fetchProfile(tokenResult.accessToken);
           } catch {
             // Silent token acquisition failed — profile won't load
@@ -127,18 +144,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         // Check for existing account in cache
-        const accounts = msalInstance!.getAllAccounts();
+        const accounts = msal.getAllAccounts();
         if (accounts.length > 0) {
-          msalInstance!.setActiveAccount(accounts[0]);
+          msal.setActiveAccount(accounts[0]);
           setAccount(accounts[0]);
           setIsLoading(false);
 
           // Get token for profile fetch
           try {
-            const tokenResult = await msalInstance!.acquireTokenSilent({
+            const tokenResult = await msal.acquireTokenSilent({
               scopes: [apiScope],
               account: accounts[0],
             });
+            void persistMsalCache();
             void fetchProfile(tokenResult.accessToken);
           } catch {
             // Token refresh failed — user is still "authenticated" from cache
@@ -147,24 +165,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         // Try ssoSilent (hidden iframe checks for existing Entra session)
-        try {
-          const ssoResult = await msalInstance!.ssoSilent({
-            scopes: loginScopes,
-          });
-          if (ssoResult.account) {
-            setAccount(ssoResult.account);
-            msalInstance!.setActiveAccount(ssoResult.account);
-            setIsLoading(false);
-
-            const tokenResult = await msalInstance!.acquireTokenSilent({
-              scopes: [apiScope],
-              account: ssoResult.account,
+        // Skip in Tauri — iframe-based SSO is blocked by WebView policies
+        if (!isTauri()) {
+          try {
+            const ssoResult = await msal.ssoSilent({
+              scopes: loginScopes,
             });
-            void fetchProfile(tokenResult.accessToken);
-            return;
+            if (ssoResult.account) {
+              setAccount(ssoResult.account);
+              msal.setActiveAccount(ssoResult.account);
+              setIsLoading(false);
+
+              const tokenResult = await msal.acquireTokenSilent({
+                scopes: [apiScope],
+                account: ssoResult.account,
+              });
+              void fetchProfile(tokenResult.accessToken);
+              return;
+            }
+          } catch {
+            // ssoSilent failed — user will see the "Sign in" button
           }
-        } catch {
-          // ssoSilent failed — user will see the "Sign in" button
         }
 
         // No silent auth possible
@@ -180,7 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async () => {
     if (!msalInstance) return;
-    if (isTauri()) {
+    if (needsPopupAuth()) {
       try {
         const result = await msalInstance.loginPopup({ scopes: loginScopes });
         if (result.account) {
@@ -190,6 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             scopes: [apiScope],
             account: result.account,
           });
+          void persistMsalCache();
           void fetchProfile(tokenResult.accessToken);
         }
       } catch (err) {
@@ -206,7 +228,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
     if (photoUrl) URL.revokeObjectURL(photoUrl);
     setPhotoUrl(null);
-    if (isTauri()) {
+    void clearMsalCache();
+    if (needsPopupAuth()) {
       await msalInstance.logoutPopup();
     } else {
       void msalInstance.logoutRedirect();
@@ -220,16 +243,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         scopes: [apiScope],
         account,
       });
+      void persistMsalCache();
       return result.accessToken;
     } catch (err) {
-      if (err instanceof InteractionRequiredAuthError) {
-        if (isTauri()) {
-          const result = await msalInstance.acquireTokenPopup({ scopes: [apiScope] });
-          return result.accessToken;
+      // In Tauri, any token failure should attempt popup re-auth before
+      // giving up — silent renewal often fails due to WebView limitations.
+      if (err instanceof InteractionRequiredAuthError || needsPopupAuth()) {
+        if (needsPopupAuth()) {
+          try {
+            const result = await msalInstance.acquireTokenPopup({ scopes: [apiScope] });
+            void persistMsalCache();
+            return result.accessToken;
+          } catch {
+            // Popup was closed or failed — clear auth state so UI shows login
+            setAccount(null);
+            setProfile(null);
+            void clearMsalCache();
+            return null;
+          }
         }
         void msalInstance.acquireTokenRedirect({ scopes: [apiScope] });
         return null;
       }
+      // Non-interaction error (e.g. network failure, cache cleared) —
+      // clear auth state so the user can re-login
+      setAccount(null);
+      setProfile(null);
       return null;
     }
   }, [account]);

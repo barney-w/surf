@@ -108,6 +108,52 @@ class TestInitSubclassRegistration:
         assert AgentRegistry.get("test_agent") is TestAgent
 
 
+class TestCreateModelClient:
+    """Verify create_model_client picks the right backend."""
+
+    def test_direct_anthropic_when_no_foundry_url(self):
+        from src.config.settings import Settings
+        from src.orchestrator.builder import create_model_client
+
+        settings = Settings(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            anthropic_api_key="sk-ant-test",
+            anthropic_model_id="claude-sonnet-4-6",
+        )
+        client = create_model_client(settings)
+        base_url = str(client.anthropic_client.base_url)
+        assert "anthropic.com" in base_url
+
+    def test_foundry_when_base_url_set(self):
+        from src.config.settings import Settings
+        from src.orchestrator.builder import create_model_client
+
+        settings = Settings(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            anthropic_foundry_base_url="https://test-resource.services.ai.azure.com/anthropic/",
+            anthropic_foundry_api_key="foundry-test-key",
+            anthropic_model_id="claude-sonnet-4-6",
+        )
+        client = create_model_client(settings)
+        base_url = str(client.anthropic_client.base_url)
+        assert "services.ai.azure.com" in base_url
+
+    def test_foundry_takes_precedence_over_direct_key(self):
+        from src.config.settings import Settings
+        from src.orchestrator.builder import create_model_client
+
+        settings = Settings(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            anthropic_api_key="sk-ant-should-not-use",
+            anthropic_foundry_base_url="https://test-resource.services.ai.azure.com/anthropic/",
+            anthropic_foundry_api_key="foundry-test-key",
+            anthropic_model_id="claude-sonnet-4-6",
+        )
+        client = create_model_client(settings)
+        base_url = str(client.anthropic_client.base_url)
+        assert "services.ai.azure.com" in base_url
+
+
 class TestSafeHandoffAnthropicClient:
     """Verify the client subclass fixes conversations ending with assistant messages."""
 

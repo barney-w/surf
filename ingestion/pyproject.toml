@@ -44,3 +44,4 @@ asyncio_mode = "auto"
 [tool.pyright]
 typeCheckingMode = "strict"
 pythonVersion = "3.12"
+exclude = ["scripts/"]

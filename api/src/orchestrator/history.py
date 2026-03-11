@@ -21,9 +21,7 @@ current_user_id: ContextVar[str | None] = ContextVar("current_user_id", default=
 # Per-request cache for conversation history messages.  Set to a fresh dict
 # before each workflow run so that the second before_run call (domain agent)
 # reuses the Cosmos result from the first call (coordinator).
-_history_cache: ContextVar[dict[str, list[Message]]] = ContextVar(
-    "_history_cache", default={}
-)
+_history_cache: ContextVar[dict[str, list[Message]]] = ContextVar("_history_cache")
 
 
 def reset_history_cache() -> None:
@@ -52,7 +50,11 @@ class ConversationHistoryProvider(BaseContextProvider):
         if not conversation_id or not user_id:
             return
 
-        cache = _history_cache.get()
+        try:
+            cache = _history_cache.get()
+        except LookupError:
+            cache: dict[str, list[Message]] = {}
+            _history_cache.set(cache)
         cache_key = f"{conversation_id}:{user_id}"
 
         if cache_key in cache:

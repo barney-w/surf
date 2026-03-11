@@ -298,13 +298,15 @@ def check_discrepancies(blob_counts: dict[str, int], index_doc_count: int) -> No
         click.echo(f"\n  OK: Index has {index_doc_count} documents from {blob_total} blobs.")
         click.echo("  This is expected — documents are chunked during indexing.")
     else:
-        click.echo(f"\n  WARNING: Index ({index_doc_count}) has fewer documents than blobs ({blob_total}).")
+        click.echo(
+            f"\n  WARNING: Index ({index_doc_count}) has fewer documents than blobs ({blob_total})."
+        )
         click.echo("  ACTION: Some blobs may not have been indexed. Check:")
         click.echo("    - Indexer errors (see above)")
         click.echo("    - Skillset configuration")
         click.echo("    - Blob format compatibility")
 
-    click.echo(f"\n  Blobs breakdown:")
+    click.echo("\n  Blobs breakdown:")
     click.echo(f"    Files: {blob_counts['files']}")
     click.echo(f"    Pages: {blob_counts['pages']}")
 

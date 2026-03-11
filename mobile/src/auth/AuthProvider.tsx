@@ -1,0 +1,370 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type PropsWithChildren,
+} from "react";
+import * as AuthSession from "expo-auth-session";
+import * as SecureStore from "expo-secure-store";
+import * as WebBrowser from "expo-web-browser";
+import {
+  discovery,
+  clientId,
+  allScopes,
+  isAuthConfigured,
+  TOKEN_KEYS,
+} from "./authConfig";
+import { getApiUrl } from "../utils/apiUrl";
+
+WebBrowser.maybeCompleteAuthSession();
+
+interface UserProfile {
+  displayName: string;
+  givenName: string | null;
+  department: string | null;
+  jobTitle: string | null;
+  mail: string | null;
+  photoUrl: string | null;
+  groups: string[];
+}
+
+interface Account {
+  name: string | null;
+  email: string | null;
+}
+
+interface AuthState {
+  isLoading: boolean;
+  isAuthenticated: boolean;
+  account: Account | null;
+  profile: UserProfile | null;
+  photoUrl: string | null;
+  error: string | null;
+  login: () => void;
+  logout: () => void;
+  getApiToken: () => Promise<string | null>;
+}
+
+const defaultState: AuthState = {
+  isLoading: false,
+  isAuthenticated: false,
+  account: null,
+  profile: null,
+  photoUrl: null,
+  error: null,
+  login: () => {},
+  logout: () => {},
+  getApiToken: async () => null,
+};
+
+const AuthContext = createContext<AuthState>(defaultState);
+
+export function useAuth() {
+  return useContext(AuthContext);
+}
+
+// --- Token management helpers ---
+
+async function saveTokens(
+  accessToken: string,
+  refreshToken: string | null,
+  expiresIn: number,
+  idToken?: string,
+) {
+  const expiry = String(Date.now() + expiresIn * 1000);
+  await SecureStore.setItemAsync(TOKEN_KEYS.accessToken, accessToken);
+  await SecureStore.setItemAsync(TOKEN_KEYS.tokenExpiry, expiry);
+  if (refreshToken) {
+    await SecureStore.setItemAsync(TOKEN_KEYS.refreshToken, refreshToken);
+  }
+  if (idToken) {
+    await SecureStore.setItemAsync(TOKEN_KEYS.idToken, idToken);
+  }
+}
+
+async function loadTokens() {
+  const accessToken = await SecureStore.getItemAsync(TOKEN_KEYS.accessToken);
+  const refreshToken = await SecureStore.getItemAsync(TOKEN_KEYS.refreshToken);
+  const expiryStr = await SecureStore.getItemAsync(TOKEN_KEYS.tokenExpiry);
+  if (!accessToken || !expiryStr) return null;
+  return { accessToken, refreshToken, expiry: Number(expiryStr) };
+}
+
+async function clearTokens() {
+  await Promise.all(
+    Object.values(TOKEN_KEYS).map((key) => SecureStore.deleteItemAsync(key)),
+  );
+}
+
+async function refreshAccessToken(refreshToken: string) {
+  try {
+    const params = new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: clientId,
+      refresh_token: refreshToken,
+      scope: allScopes.join(" "),
+    });
+    const resp = await fetch(discovery.tokenEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return {
+      accessToken: data.access_token as string,
+      refreshToken: (data.refresh_token as string) ?? refreshToken,
+      expiresIn: data.expires_in as number,
+      idToken: data.id_token as string | undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const payload = token.split(".")[1];
+    // Base64url decode
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const json = atob(base64);
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+export function AuthProvider({ children }: PropsWithChildren) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [account, setAccount] = useState<Account | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const redirectUri = AuthSession.makeRedirectUri({ scheme: "surf" });
+
+  const [request, response, promptAsync] = AuthSession.useAuthRequest(
+    {
+      clientId,
+      scopes: allScopes,
+      redirectUri,
+      usePKCE: true,
+      responseType: AuthSession.ResponseType.Code,
+    },
+    discovery,
+  );
+
+  const fetchProfile = useCallback(async (token: string) => {
+    const apiUrl = getApiUrl();
+    try {
+      const resp = await fetch(`${apiUrl}/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) return;
+      const data = (await resp.json()) as UserProfile;
+      setProfile(data);
+
+      // Fetch photo — convert to base64 data URI (no URL.createObjectURL in RN)
+      try {
+        const photoResp = await fetch(`${apiUrl}/me/photo`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (photoResp.ok) {
+          const buffer = await photoResp.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = "";
+          for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          const base64 = btoa(binary);
+          setPhotoUrl(`data:image/jpeg;base64,${base64}`);
+        }
+      } catch {
+        // Photo fetch is optional
+      }
+    } catch {
+      // Profile fetch is optional
+    }
+  }, []);
+
+  const setAuthenticatedState = useCallback(
+    (tokens: { accessToken: string; idToken?: string }) => {
+      setIsAuthenticated(true);
+      setError(null);
+
+      // Parse ID token for account info
+      if (tokens.idToken) {
+        const claims = decodeJwtPayload(tokens.idToken);
+        if (claims) {
+          setAccount({
+            name: (claims.name as string) ?? null,
+            email: (claims.preferred_username as string) ?? null,
+          });
+        }
+      }
+
+      void fetchProfile(tokens.accessToken);
+    },
+    [fetchProfile],
+  );
+
+  // Attempt silent auth on mount
+  useEffect(() => {
+    if (!isAuthConfigured) {
+      setIsLoading(false);
+      return;
+    }
+
+    void (async () => {
+      try {
+        const tokens = await loadTokens();
+        if (!tokens) {
+          setIsLoading(false);
+          return;
+        }
+
+        if (tokens.expiry > Date.now()) {
+          // Access token still valid
+          setAuthenticatedState({ accessToken: tokens.accessToken });
+          setIsLoading(false);
+          return;
+        }
+
+        // Try refresh
+        if (tokens.refreshToken) {
+          const refreshed = await refreshAccessToken(tokens.refreshToken);
+          if (refreshed) {
+            await saveTokens(
+              refreshed.accessToken,
+              refreshed.refreshToken,
+              refreshed.expiresIn,
+              refreshed.idToken,
+            );
+            setAuthenticatedState({
+              accessToken: refreshed.accessToken,
+              idToken: refreshed.idToken,
+            });
+            setIsLoading(false);
+            return;
+          }
+        }
+
+        // Tokens expired and refresh failed
+        await clearTokens();
+        setIsLoading(false);
+      } catch {
+        setIsLoading(false);
+      }
+    })();
+  }, [setAuthenticatedState]);
+
+  // Handle auth code response
+  useEffect(() => {
+    if (response?.type !== "success" || !request?.codeVerifier) return;
+
+    void (async () => {
+      try {
+        const { code } = response.params;
+        const params = new URLSearchParams({
+          grant_type: "authorization_code",
+          code,
+          client_id: clientId,
+          redirect_uri: redirectUri,
+          code_verifier: request.codeVerifier!,
+          scope: allScopes.join(" "),
+        });
+
+        const tokenResp = await fetch(discovery.tokenEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: params.toString(),
+        });
+
+        if (!tokenResp.ok) {
+          setError("Token exchange failed");
+          return;
+        }
+
+        const data = await tokenResp.json();
+        await saveTokens(
+          data.access_token,
+          data.refresh_token ?? null,
+          data.expires_in,
+          data.id_token,
+        );
+
+        setAuthenticatedState({
+          accessToken: data.access_token,
+          idToken: data.id_token,
+        });
+      } catch {
+        setError("Authentication failed");
+      }
+    })();
+  }, [response, request, redirectUri, setAuthenticatedState]);
+
+  const login = useCallback(() => {
+    void promptAsync();
+  }, [promptAsync]);
+
+  const logout = useCallback(async () => {
+    await clearTokens();
+    setIsAuthenticated(false);
+    setAccount(null);
+    setProfile(null);
+    setPhotoUrl(null);
+    setError(null);
+  }, []);
+
+  const getApiToken = useCallback(async (): Promise<string | null> => {
+    const tokens = await loadTokens();
+    if (!tokens) return null;
+
+    if (tokens.expiry > Date.now()) {
+      return tokens.accessToken;
+    }
+
+    if (tokens.refreshToken) {
+      const refreshed = await refreshAccessToken(tokens.refreshToken);
+      if (refreshed) {
+        await saveTokens(
+          refreshed.accessToken,
+          refreshed.refreshToken,
+          refreshed.expiresIn,
+          refreshed.idToken,
+        );
+        return refreshed.accessToken;
+      }
+    }
+
+    setError("Session expired. Please sign in again.");
+    return null;
+  }, []);
+
+  if (!isAuthConfigured) {
+    return (
+      <AuthContext.Provider value={defaultState}>{children}</AuthContext.Provider>
+    );
+  }
+
+  return (
+    <AuthContext.Provider
+      value={{
+        isLoading,
+        isAuthenticated,
+        account,
+        profile,
+        photoUrl,
+        error,
+        login,
+        logout,
+        getApiToken,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}

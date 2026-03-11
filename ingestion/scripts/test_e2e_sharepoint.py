@@ -11,16 +11,15 @@ Orchestrates the full pipeline with assertions:
 Usage:
     cd ingestion && uv run python -m scripts.test_e2e_sharepoint /path/to/test.pdf
     cd ingestion && uv run python -m scripts.test_e2e_sharepoint /path/to/test.pdf --cleanup
-    cd ingestion && uv run python -m scripts.test_e2e_sharepoint /path/to/test.pdf --query "search terms"
+    cd ingestion && uv run python -m scripts.test_e2e_sharepoint \\
+        /path/to/test.pdf --query "search terms"
 """
 
 from __future__ import annotations
 
-import asyncio
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import click
@@ -58,7 +57,16 @@ def step_upload(file_path: str, folder: str) -> None:
     """Step 1: Upload test file to SharePoint."""
     _step(1, "Upload test document to SharePoint")
     _run(
-        ["uv", "run", "python", "-m", "scripts.upload_to_sharepoint", file_path, "--folder", folder],
+        [
+            "uv",
+            "run",
+            "python",
+            "-m",
+            "scripts.upload_to_sharepoint",
+            file_path,
+            "--folder",
+            folder,
+        ],
         "Upload to SharePoint",
     )
     click.echo("  OK: File uploaded to SharePoint.")
@@ -155,7 +163,9 @@ def step_cleanup(file_name: str, folder: str) -> None:
 
     if client_secret:
         credential = ClientSecretCredential(
-            tenant_id=tenant_id, client_id=client_id, client_secret=client_secret,
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret,
         )
     else:
         credential = DefaultAzureCredential()
@@ -172,13 +182,15 @@ def step_cleanup(file_name: str, folder: str) -> None:
 
         # Resolve site and drive
         resp = client.get(
-            f"https://graph.microsoft.com/v1.0/sites/{site_identifier}", headers=headers,
+            f"https://graph.microsoft.com/v1.0/sites/{site_identifier}",
+            headers=headers,
         )
         resp.raise_for_status()
         full_site_id = resp.json()["id"]
 
         resp = client.get(
-            f"https://graph.microsoft.com/v1.0/sites/{full_site_id}/drives", headers=headers,
+            f"https://graph.microsoft.com/v1.0/sites/{full_site_id}/drives",
+            headers=headers,
         )
         resp.raise_for_status()
         drives = resp.json().get("value", [])
@@ -215,9 +227,7 @@ def step_cleanup(file_name: str, folder: str) -> None:
 @click.option("--query", default=None, help="Search query (default: derived from file name)")
 @click.option("--cleanup", is_flag=True, help="Delete test document from SharePoint after test")
 @click.option("--skip-upload", is_flag=True, help="Skip upload step (file already in SharePoint)")
-def main(
-    file_path: str, folder: str, query: str | None, cleanup: bool, skip_upload: bool
-) -> None:
+def main(file_path: str, folder: str, query: str | None, cleanup: bool, skip_upload: bool) -> None:
     """Run end-to-end SharePoint ingestion test."""
     local_path = Path(file_path)
     file_name = local_path.name

@@ -26,7 +26,7 @@
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' blob: data: https:; connect-src 'self' https://login.microsoftonline.com https://*.login.microsoftonline.com https://graph.microsoft.com https://*.azurecontainerapps.io; frame-src https://login.microsoftonline.com",
-      "freezePrototype": true
+      "freezePrototype": false
     }
   },
   "bundle": {
@@ -39,7 +39,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "createUpdaterArtifacts": true,
     "windows": {
       "nsis": {
         "installMode": "both"
@@ -48,7 +47,6 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "REPLACE_WITH_PUBLIC_KEY",
       "endpoints": [
         "https://surf-releases.blob.core.windows.net/desktop/latest.json"
       ],

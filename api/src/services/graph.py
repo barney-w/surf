@@ -120,11 +120,7 @@ class GraphService:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                return [
-                    g["displayName"]
-                    for g in data.get("value", [])
-                    if g.get("displayName")
-                ]
+                return [g["displayName"] for g in data.get("value", []) if g.get("displayName")]
         except Exception:
             logger.warning("Failed to fetch user groups from Graph", exc_info=True)
             return []

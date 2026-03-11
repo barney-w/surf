@@ -22,9 +22,10 @@
     "@surf-kit/theme": "file:../../surf-kit/packages/theme",
     "@surf-kit/tokens": "file:../../surf-kit/packages/tokens",
     "@tauri-apps/api": "^2.10.1",
-    "@tauri-apps/plugin-window-state": "^2",
-    "@tauri-apps/plugin-updater": "^2",
     "@tauri-apps/plugin-notification": "^2",
+    "@tauri-apps/plugin-store": "^2.4.2",
+    "@tauri-apps/plugin-updater": "^2",
+    "@tauri-apps/plugin-window-state": "^2",
     "react": "^19",
     "react-dom": "^19"
   },

@@ -33,7 +33,7 @@ def _build_token(
         "department": "IT",
         "jobTitle": "Engineer",
         "iss": f"https://login.microsoftonline.com/{TENANT_ID}/v2.0",
-        "aud": CLIENT_ID,
+        "aud": f"api://{CLIENT_ID}",
         "iat": now - datetime.timedelta(minutes=5),
         "exp": (
             now - datetime.timedelta(minutes=1) if expired else now + datetime.timedelta(hours=1)

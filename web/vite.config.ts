@@ -42,10 +42,16 @@ export default defineConfig({
     port: 3000,
     strictPort: true,
     host: host || false,
+    open: !process.env.TAURI_ENV_PLATFORM,
     proxy: {
       '/api': { target: 'http://localhost:8090', changeOrigin: true },
     },
   },
+  optimizeDeps: {
+    // Tauri plugin-store uses IPC internals that fail when pre-bundled by Vite
+    // in a browser context. Exclude it so the dynamic import in tauriTokenCache
+    // only resolves at runtime inside the Tauri WebView.
+    exclude: ['@tauri-apps/plugin-store'],
+  },
   build: { outDir: 'dist', sourcemap: true, target: 'es2022' },
-  ...(process.env.TAURI_ENV_PLATFORM ? { server: { open: false } } : {}),
 })

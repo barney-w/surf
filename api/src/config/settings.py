@@ -43,7 +43,11 @@ class Settings(BaseSettings):
     entra_client_secret: str = ""
 
     # API
-    api_cors_origins: list[str] = ["http://localhost:3000", "https://tauri.localhost"]
+    api_cors_origins: list[str] = [
+        "http://localhost:3000",
+        "https://tauri.localhost",
+        "http://localhost:8081",  # Expo dev server
+    ]
 
     # Conversation
     max_history_messages: int = 20

@@ -31,7 +31,11 @@ class TestSettingsDefaults:
         assert settings.auth_enabled is False
         assert settings.entra_tenant_id == ""
         assert settings.entra_client_id == ""
-        assert settings.api_cors_origins == ["http://localhost:3000", "https://tauri.localhost"]
+        assert settings.api_cors_origins == [
+            "http://localhost:3000",
+            "https://tauri.localhost",
+            "http://localhost:8081",
+        ]
         assert settings.max_history_messages == 20
 
     def test_get_settings_returns_settings_instance(self):

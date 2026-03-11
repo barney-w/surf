@@ -144,6 +144,24 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
                 use_hybrid=True,
                 embed_query=_embed_func,
             )
+
+            # Fallback: if the document_type exact filter yielded nothing,
+            # retry without it.  The scope's document_type_in list still
+            # applies, so results stay within the agent's domain.
+            if not results and document_type:
+                fallback_filters = {k: v for k, v in filters.items() if k != "document_type"}
+                logger.info(
+                    "search_knowledge_base: 0 results with document_type=%r, retrying without",
+                    document_type,
+                )
+                results = await search_index(
+                    query=query,
+                    search_client=_get_search_clients(),
+                    filters=fallback_filters or None,
+                    top_k=8,
+                    use_hybrid=True,
+                    embed_query=_embed_func,
+                )
         except SearchIndexNotFoundError as exc:
             return (
                 "Knowledge search is unavailable because the configured Azure AI Search "

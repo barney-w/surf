@@ -41,9 +41,19 @@ _EVENTS_GUIDS = {"20745d7d-8581-4a6c-bf26-68279bc123fc"}
 
 # Keys to look for when recursively extracting text from web part properties.
 _TEXT_PROPERTY_KEYS = {
-    "title", "description", "altText", "text", "name",
-    "innerHTML", "content", "richText", "headerText",
-    "caption", "label", "value", "header",
+    "title",
+    "description",
+    "altText",
+    "text",
+    "name",
+    "innerHTML",
+    "content",
+    "richText",
+    "headerText",
+    "caption",
+    "label",
+    "value",
+    "header",
 }
 
 # Sensitivity label priority ordering (lower = less sensitive).
@@ -574,7 +584,7 @@ class SharePointSync:
         fragments: list[str] = []
 
         # Keys whose child values are all HTML/text (e.g. htmlStrings, searchablePlainTexts).
-        _SPC_TEXT_CONTAINERS = {"htmlStrings", "searchablePlainTexts", "customMetadata"}
+        spc_text_containers = {"htmlStrings", "searchablePlainTexts", "customMetadata"}
 
         def _collect_text(obj: Any, *, grab_all_strings: bool = False) -> None:  # noqa: ANN401
             """Recursively collect string values from known text keys.
@@ -585,9 +595,13 @@ class SharePointSync:
             """
             if isinstance(obj, dict):
                 for key, value in obj.items():
-                    if key in _SPC_TEXT_CONTAINERS and isinstance(value, dict):
+                    if key in spc_text_containers and isinstance(value, dict):
                         _collect_text(value, grab_all_strings=True)
-                    elif (grab_all_strings or key in _TEXT_PROPERTY_KEYS) and isinstance(value, str) and value.strip():
+                    elif (
+                        (grab_all_strings or key in _TEXT_PROPERTY_KEYS)
+                        and isinstance(value, str)
+                        and value.strip()
+                    ):
                         fragments.append(value.strip())
                     else:
                         _collect_text(value, grab_all_strings=grab_all_strings)
@@ -662,7 +676,9 @@ class SharePointSync:
                 if category:
                     logger.debug(
                         "Page %r: processing %s standardWebPart (type=%s)",
-                        title, category, wpt,
+                        title,
+                        category,
+                        wpt,
                     )
                     extracted = self._extract_standard_webpart_text(wp, category)
                 else:
@@ -670,7 +686,8 @@ class SharePointSync:
                     # (collapsible sections, tables, markdown, etc.)
                     logger.debug(
                         "Page %r: extracting text from standardWebPart (type=%s)",
-                        title, wpt,
+                        title,
+                        wpt,
                     )
                     extracted = self._extract_standard_webpart_text(wp, "unknown")
                 if extracted:
