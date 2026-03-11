@@ -1,41 +1,62 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    Build and deploy web frontend to Azure Static Web Apps (Windows equivalent of 'just web-deploy').
+    Build and deploy web frontend to Azure Container Apps (Windows equivalent of 'just web-deploy').
+
+.PARAMETER AcrName
+    ACR name. Default: acrsurfdev
 
 .PARAMETER ContainerAppName
-    Container App name to look up the API FQDN. Default: ca-api-surf-dev
+    Container App name for the web frontend. Default: ca-web-surf-dev
 
 .PARAMETER ResourceGroup
     Resource group containing the Container App. Default: rg-surf-dev
-
-.PARAMETER SwaName
-    Static Web App name. Default: swa-surf-dev
-
-.PARAMETER SwaResourceGroup
-    Resource group containing the Static Web App. Default: rg-surf-dev-ai
 #>
 [CmdletBinding()]
 param(
-    [string]$ContainerAppName = 'ca-api-surf-dev',
-    [string]$ResourceGroup = 'rg-surf-dev',
-    [string]$SwaName = 'swa-surf-dev',
-    [string]$SwaResourceGroup = 'rg-surf-dev-ai'
+    [string]$AcrName = 'acrsurfdev',
+    [string]$ContainerAppName = 'ca-web-surf-dev',
+    [string]$ResourceGroup = 'rg-surf-dev'
 )
 
 $ErrorActionPreference = 'Stop'
 
-$ApiFqdn = az containerapp show --name $ContainerAppName --resource-group $ResourceGroup --query 'properties.configuration.ingress.fqdn' -o tsv
-$ApiUrl = "https://${ApiFqdn}/api/v1"
-Write-Host "Building with API URL: $ApiUrl"
+$Tag = (git rev-parse --short HEAD)
+$AcrServer = (az acr show --name $AcrName --resource-group $ResourceGroup --query loginServer -o tsv)
+$Image = "${AcrServer}/surf-web:${Tag}"
 
-$env:VITE_SURF_API_URL = $ApiUrl
+# Read Entra env vars from web/.env.local (Vite doesn't load .env.local for production builds)
+if (Test-Path 'web/.env.local') {
+    foreach ($line in Get-Content 'web/.env.local') {
+        if ($line -match '^VITE_ENTRA_CLIENT_ID=(.+)') { $env:VITE_ENTRA_CLIENT_ID = $Matches[1] }
+        if ($line -match '^VITE_ENTRA_TENANT_ID=(.+)') { $env:VITE_ENTRA_TENANT_ID = $Matches[1] }
+    }
+}
+if (-not $env:VITE_ENTRA_TENANT_ID) {
+    $env:VITE_ENTRA_TENANT_ID = (az account show --query tenantId -o tsv)
+}
+Write-Host "Entra Client ID: $($env:VITE_ENTRA_CLIENT_ID)"
+Write-Host "Entra Tenant ID: $($env:VITE_ENTRA_TENANT_ID)"
+
+Write-Host "Building web SPA..."
 Push-Location web
 try {
     npm run build
-    $SwaToken = az staticwebapp secrets list --name $SwaName --resource-group $SwaResourceGroup --query 'properties.apiKey' -o tsv
-    npx swa deploy dist --deployment-token $SwaToken --app-name $SwaName --env production
 }
 finally {
     Pop-Location
 }
+
+Write-Host "Logging in to ACR..."
+az acr login --name $AcrName
+
+Write-Host "Building ${Image}..."
+docker build --platform linux/amd64 -t $Image -f web/Dockerfile web
+
+Write-Host "Pushing ${Image}..."
+docker push $Image
+
+Write-Host "Updating Container App..."
+az containerapp update --name $ContainerAppName --resource-group $ResourceGroup --image $Image --output none
+
+Write-Host "Web deployed: ${Image}"

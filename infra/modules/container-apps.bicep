@@ -44,6 +44,15 @@ param ingestionMinReplicas int = 0
 @description('Maximum replicas for surf-ingestion')
 param ingestionMaxReplicas int = 1
 
+@description('Container image tag for surf-web (e.g. git SHA). Leave empty to use a placeholder image on first bootstrap.')
+param webImageTag string = ''
+
+@description('Minimum replicas for surf-web')
+param webMinReplicas int = 0
+
+@description('Maximum replicas for surf-web')
+param webMaxReplicas int = 1
+
 // Downstream resource details for environment variables
 @description('Azure OpenAI endpoint')
 param openAiEndpoint string = ''
@@ -91,11 +100,17 @@ param apiImageTag string = ''
 @description('Container image tag for surf-ingestion (e.g. git SHA). Leave empty to use a placeholder image on first bootstrap.')
 param ingestionImageTag string = ''
 
-@description('Whether the anthropic-api-key secret exists in Key Vault. Set false on first bootstrap if the key has not been stored yet.')
-param anthropicApiKeyExists bool = false
+@description('Whether the anthropic-api-key secret exists in Key Vault. Defaults to true — set false only on first bootstrap before the key is stored.')
+param anthropicApiKeyExists bool = true
 
-@description('Whether the entra-client-secret secret exists in Key Vault.')
-param entraClientSecretExists bool = false
+@description('Whether the anthropic-foundry-api-key secret exists in Key Vault.')
+param anthropicFoundryApiKeyExists bool = false
+
+@description('Anthropic Foundry base URL (empty to use direct Anthropic API)')
+param anthropicFoundryBaseUrl string = ''
+
+@description('Whether the entra-client-secret secret exists in Key Vault. Defaults to true — set false only on first bootstrap.')
+param entraClientSecretExists bool = true
 
 @description('Entra ID tenant ID')
 param entraTenantId string = ''
@@ -108,9 +123,6 @@ param authEnabled bool = false
 
 @description('Whether the Container Apps Environment is internal (VNet-only, no public ingress)')
 param environmentInternal bool = false
-
-@description('Whether the surf-api ingress is external to the environment (set true when environmentInternal is false)')
-param apiIngressExternal bool = true
 
 @description('CORS allowed origins for surf-api (JSON array string, e.g. \'["http://localhost:3000"]\')')
 param apiCorsOrigins string = '["http://localhost:3000"]'
@@ -133,6 +145,7 @@ var acrName = replace('acr${baseName}', '-', '')
 var bootstrapImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 var apiImage = !empty(apiImageTag) ? '${acr.properties.loginServer}/surf-api:${apiImageTag}' : bootstrapImage
 var ingestionImage = !empty(ingestionImageTag) ? '${acr.properties.loginServer}/surf-ingestion:${ingestionImageTag}' : bootstrapImage
+var webImage = !empty(webImageTag) ? '${acr.properties.loginServer}/surf-web:${webImageTag}' : bootstrapImage
 
 // ---------------------------------------------------------------------------
 // Azure Container Registry
@@ -321,16 +334,23 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
-        external: apiIngressExternal
+        external: false
         targetPort: 8000
         transport: 'auto'
-        allowInsecure: false
+        allowInsecure: true
       }
       secrets: concat(
         (!empty(keyVaultName) && anthropicApiKeyExists) ? [
           {
             name: 'anthropic-api-key'
             keyVaultUrl: '${keyVaultUri}secrets/anthropic-api-key'
+            identity: managedIdentity.id
+          }
+        ] : [],
+        (!empty(keyVaultName) && anthropicFoundryApiKeyExists) ? [
+          {
+            name: 'anthropic-foundry-api-key'
+            keyVaultUrl: '${keyVaultUri}secrets/anthropic-foundry-api-key'
             identity: managedIdentity.id
           }
         ] : [],
@@ -373,6 +393,8 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'ENTRA_CLIENT_ID', value: entraClientId }
           ], concat(
             anthropicApiKeyExists ? [{ name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }] : [],
+            !empty(anthropicFoundryBaseUrl) ? [{ name: 'ANTHROPIC_FOUNDRY_BASE_URL', value: anthropicFoundryBaseUrl }] : [],
+            anthropicFoundryApiKeyExists ? [{ name: 'ANTHROPIC_FOUNDRY_API_KEY', secretRef: 'anthropic-foundry-api-key' }] : [],
             entraClientSecretExists ? [{ name: 'ENTRA_CLIENT_SECRET', secretRef: 'entra-client-secret' }] : []
           ))
           probes: [
@@ -474,6 +496,92 @@ resource surfIngestion 'Microsoft.App/containerApps@2024-03-01' = {
 }
 
 // ---------------------------------------------------------------------------
+// Container App: surf-web (nginx reverse proxy + SPA)
+// ---------------------------------------------------------------------------
+
+resource surfWeb 'Microsoft.App/containerApps@2024-03-01' = {
+  name: 'ca-web-${baseName}'
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${managedIdentity.id}': {}
+    }
+  }
+  properties: {
+    managedEnvironmentId: containerAppsEnv.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: true
+        targetPort: 8080
+        transport: 'auto'
+        allowInsecure: false
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: managedIdentity.id
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'surf-web'
+          image: webImage
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+          env: [
+            { name: 'API_INTERNAL_FQDN', value: surfApi.properties.configuration.ingress.fqdn }
+          ]
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/healthz'
+                port: 8080
+              }
+              periodSeconds: 30
+              failureThreshold: 3
+            }
+            {
+              type: 'Startup'
+              httpGet: {
+                path: '/healthz'
+                port: 8080
+              }
+              periodSeconds: 10
+              failureThreshold: 10
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: webMinReplicas
+        maxReplicas: webMaxReplicas
+        rules: [
+          {
+            name: 'http-scaling'
+            http: {
+              metadata: {
+                concurrentRequests: '100'
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+  dependsOn: [
+    roleAcrPull
+  ]
+}
+
+// ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
 
@@ -485,6 +593,9 @@ output containerAppsEnvName string = containerAppsEnv.name
 
 @description('FQDN of the surf-api container app')
 output surfApiFqdn string = surfApi.properties.configuration.ingress.fqdn
+
+@description('FQDN of the surf-web container app')
+output surfWebFqdn string = surfWeb.properties.configuration.ingress.fqdn
 
 @description('Resource ID of the ACR')
 output acrId string = acr.id
@@ -500,6 +611,3 @@ output managedIdentityClientId string = managedIdentity.properties.clientId
 
 @description('Resource ID of the user-assigned managed identity')
 output managedIdentityId string = managedIdentity.id
-
-@description('Resource ID of the surf-api Container App')
-output surfApiResourceId string = surfApi.id

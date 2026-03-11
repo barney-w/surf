@@ -39,6 +39,10 @@ param publicNetworkAccess string = 'Enabled'
 param anthropicApiKey string = ''
 
 @secure()
+@description('Anthropic Foundry API key (stored as a secret when provided)')
+param anthropicFoundryApiKey string = ''
+
+@secure()
 @description('Entra ID client secret for OBO flow (stored as a secret when provided)')
 param entraClientSecret string = ''
 
@@ -77,6 +81,14 @@ resource anthropicApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = 
   name: 'anthropic-api-key'
   properties: {
     value: anthropicApiKey
+  }
+}
+
+resource anthropicFoundryApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(anthropicFoundryApiKey)) {
+  parent: keyVault
+  name: 'anthropic-foundry-api-key'
+  properties: {
+    value: anthropicFoundryApiKey
   }
 }
 

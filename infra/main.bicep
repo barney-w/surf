@@ -89,15 +89,28 @@ param ingestionMaxReplicas int = 1
 param embeddingCapacity int = 10
 
 @secure()
-@description('Anthropic API key (stored in Key Vault, passed to surf-api container)')
+@description('Anthropic API key for direct API access (stored in Key Vault, passed to surf-api container)')
 param anthropicApiKey string = ''
 
 @description('Anthropic model ID for chat agents')
 param anthropicModelId string = 'claude-sonnet-4-6'
 
+@description('Anthropic Foundry base URL (empty to use direct Anthropic API)')
+param anthropicFoundryBaseUrl string = ''
+
+@secure()
+@description('Anthropic Foundry API key (stored in Key Vault, used when anthropicFoundryBaseUrl is set)')
+param anthropicFoundryApiKey string = ''
+
 @secure()
 @description('Entra ID client secret for OBO flow (stored in Key Vault)')
 param entraClientSecret string = ''
+
+@description('Set true after initial deployment once anthropic-api-key exists in Key Vault')
+param anthropicApiKeyInKv bool = true
+
+@description('Set true after initial deployment once entra-client-secret exists in Key Vault')
+param entraClientSecretInKv bool = true
 
 @description('Entra ID tenant ID')
 param entraTenantId string = ''
@@ -108,21 +121,17 @@ param entraClientId string = ''
 @description('Enable authentication (true for staging/prod)')
 param authEnabled bool = false
 
-@description('Static Web App SKU')
-@allowed(['Free', 'Standard'])
-param staticWebAppSku string = 'Free'
-
-@description('Azure region for Static Web App (limited availability — may differ from main location)')
-param staticWebAppLocation string = 'eastasia'
-
 @description('Whether the Container Apps Environment is internal (VNet-only)')
 param containerAppsInternal bool = false
 
-@description('Whether the surf-api ingress is external to the environment')
-param apiIngressExternal bool = true
-
 @description('CORS allowed origins for surf-api (JSON array string)')
 param apiCorsOrigins string = '["http://localhost:3000"]'
+
+@description('Web minimum replicas')
+param webMinReplicas int = 0
+
+@description('Web maximum replicas')
+param webMaxReplicas int = 1
 
 // ---------------------------------------------------------------------------
 // Variables
@@ -197,6 +206,7 @@ module keyVault 'modules/key-vault.bicep' = {
     enablePurgeProtection: keyVaultEnablePurgeProtection
     publicNetworkAccess: keyVaultPublicNetworkAccess
     anthropicApiKey: anthropicApiKey
+    anthropicFoundryApiKey: anthropicFoundryApiKey
     entraClientSecret: entraClientSecret
     tags: tags
   }
@@ -277,35 +287,22 @@ module containerApps 'modules/container-apps.bicep' = {
     keyVaultUri: keyVault.outputs.keyVaultUri
     keyVaultName: keyVault.outputs.keyVaultName
     anthropicModelId: anthropicModelId
-    anthropicApiKeyExists: !empty(anthropicApiKey)
-    entraClientSecretExists: !empty(entraClientSecret)
+    anthropicApiKeyExists: !empty(anthropicApiKey) || anthropicApiKeyInKv
+    anthropicFoundryBaseUrl: anthropicFoundryBaseUrl
+    anthropicFoundryApiKeyExists: !empty(anthropicFoundryApiKey)
+    entraClientSecretExists: !empty(entraClientSecret) || entraClientSecretInKv
     entraTenantId: entraTenantId
     entraClientId: entraClientId
     authEnabled: authEnabled
     environmentInternal: containerAppsInternal
-    apiIngressExternal: apiIngressExternal
     apiCorsOrigins: apiCorsOrigins
+    webMinReplicas: webMinReplicas
+    webMaxReplicas: webMaxReplicas
     openAiId: openAi.outputs.openAiId
     aiSearchId: aiSearch.outputs.searchId
     cosmosAccountId: cosmosDb.outputs.cosmosAccountId
     storageAccountId: storage.outputs.storageAccountId
     keyVaultId: keyVault.outputs.keyVaultId
-    tags: tags
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Module: Static Web App (Frontend SPA + linked backend proxy)
-// ---------------------------------------------------------------------------
-
-module staticWebApp 'modules/static-web-app.bicep' = {
-  name: 'deploy-static-web-app'
-  params: {
-    staticWebAppName: 'swa-${baseName}'
-    location: staticWebAppLocation
-    skuName: staticWebAppSku
-    containerAppResourceId: staticWebAppSku == 'Standard' ? containerApps.outputs.surfApiResourceId : ''
-    backendRegion: location
     tags: tags
   }
 }
@@ -338,5 +335,5 @@ output storageBlobEndpoint string = storage.outputs.blobEndpoint
 @description('VNet name')
 output vnetName string = networking.outputs.vnetName
 
-@description('Static Web App default hostname')
-output staticWebAppHostname string = staticWebApp.outputs.defaultHostname
+@description('FQDN of the surf-web container app')
+output surfWebFqdn string = containerApps.outputs.surfWebFqdn

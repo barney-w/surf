@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Web CI/CD: lint, typecheck, build, deploy to Azure Static Web Apps
+# Web CI/CD: lint, typecheck, build Docker image, deploy to Container Apps
 # Project: Surf -- Multi-Agent Orchestration Platform
 # ---------------------------------------------------------------------------
 
@@ -17,6 +17,10 @@ on:
 concurrency:
   group: web-ci-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  SERVICE_NAME: web
+  IMAGE_NAME: surf-web
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -47,18 +51,18 @@ jobs:
         run: npm run typecheck
 
   # ---------------------------------------------------------------------------
-  # Build & Deploy
+  # Build & Push Docker image to ACR
   # ---------------------------------------------------------------------------
-  build-deploy:
-    name: Build & Deploy
+  build-push:
+    name: Build & Push
     needs: lint
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     environment: dev
-    defaults:
-      run:
-        working-directory: web
+    outputs:
+      image-tag: ${{ steps.meta.outputs.image-tag }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -71,18 +75,93 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        working-directory: web
 
-      - name: Build
+      - name: Build SPA
         run: npm run build
+        working-directory: web
         env:
-          VITE_SURF_API_URL: ${{ vars.VITE_SURF_API_URL }}
+          VITE_ENTRA_CLIENT_ID: ${{ vars.VITE_ENTRA_CLIENT_ID }}
+          VITE_ENTRA_TENANT_ID: ${{ vars.VITE_ENTRA_TENANT_ID }}
 
-      - name: Deploy to Azure Static Web Apps
-        uses: Azure/static-web-apps-deploy@v1
+      - name: Mask sensitive identifiers
+        run: |
+          echo "::add-mask::${{ vars.AZURE_SUBSCRIPTION_ID }}"
+          echo "::add-mask::${{ vars.AZURE_TENANT_ID }}"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@1384c340ab2dda50fed2bee3041d1d87018aa5e8 # v2
         with:
-          azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: upload
-          app_location: web
-          output_location: dist
-          skip_app_build: true
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name ${{ vars.ACR_NAME }}
+
+      - name: Generate image tag
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE_TAG="${{ vars.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}"
+          echo "image-tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image
+        run: |
+          docker build \
+            -t "${{ steps.meta.outputs.image-tag }}" \
+            -f web/Dockerfile \
+            web
+          docker push "${{ steps.meta.outputs.image-tag }}"
+
+      - name: Scan container image with Trivy
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: ${{ steps.meta.outputs.image-tag }}
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@17ae1740179002c89186b61233e0f892c3118b11 # v0
+        with:
+          image: ${{ steps.meta.outputs.image-tag }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom-${{ env.IMAGE_NAME }}-${{ github.sha }}
+          path: sbom.spdx.json
+
+  # ---------------------------------------------------------------------------
+  # Deploy to Azure Container Apps
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy
+    needs: build-push
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment: dev
+    steps:
+      - name: Mask sensitive identifiers
+        run: |
+          echo "::add-mask::${{ vars.AZURE_SUBSCRIPTION_ID }}"
+          echo "::add-mask::${{ vars.AZURE_TENANT_ID }}"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@1384c340ab2dda50fed2bee3041d1d87018aa5e8 # v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Container Apps
+        uses: azure/container-apps-deploy-action@29ee19866ec987ededd70b8412d9ee241a9102d1 # v1
+        with:
+          containerAppName: ca-${{ env.SERVICE_NAME }}-surf-dev
+          resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}
+          imageToDeploy: ${{ needs.build-push.outputs.image-tag }}

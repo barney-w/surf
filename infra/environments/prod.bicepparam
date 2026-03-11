@@ -44,6 +44,6 @@ param embeddingCapacity = 50
 // Auth — enabled (SSO via Entra ID)
 param authEnabled = true
 
-// Static Web App — Standard required for linked backend
-param staticWebAppSku = 'Standard'
-param staticWebAppLocation = 'eastasia'
+// Web container — always-on with high availability
+param webMinReplicas = 2
+param webMaxReplicas = 10
