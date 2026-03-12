@@ -1,6 +1,7 @@
 import json
 import logging
 from collections.abc import Sequence
+from contextvars import ContextVar
 from typing import Any, cast
 
 from agent_framework import Agent, BaseContextProvider, ChatOptions, Message, Workflow
@@ -11,8 +12,15 @@ from src.agents._discovery import discover_agents
 from src.agents._registry import AgentRegistry
 from src.agents.coordinator.prompts import build_coordinator_prompt
 from src.config.settings import Settings
+from src.orchestrator.pdf import MAX_DIRECT_PAGES, count_pages, extract_text
 from src.orchestrator.stateless import StatelessContextProvider
 from src.rag.tools import create_rag_tool
+
+# Context variable set by chat routes before running the workflow.
+# Contains a list of dicts with keys: content_type, data (base64).
+current_attachments: ContextVar[list[dict[str, str]] | None] = ContextVar(
+    "current_attachments", default=None
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +51,11 @@ The UI renders BOTH message and structured_data — repeating content looks brok
 
 Your first character MUST be { — any other output format is a critical failure.
 
+## Image & Document Attachments
+If the user has uploaded images or PDF documents, you can see them. Analyse the
+content and incorporate relevant information into your response. Reference what
+you observe in the attachment when answering the user's question.
+
 """
 
 
@@ -69,6 +82,55 @@ def _domain_agent_responded(messages: list[Message]) -> bool:
             except (json.JSONDecodeError, ValueError):
                 pass
     return False
+
+
+def _prepare_pdf_block(data_b64: str) -> dict[str, Any]:
+    """Build the appropriate content block for a PDF attachment.
+
+    Tier 1 — PDFs with <= MAX_DIRECT_PAGES pages are sent as native document
+    blocks so Claude can see the visual layout (tables, charts, formatting).
+
+    Tier 2 — Larger PDFs have their text extracted server-side and are sent as
+    a text block, staying within the context token budget.
+    """
+    try:
+        pages = count_pages(data_b64)
+    except Exception:
+        logger.warning("Failed to count PDF pages — falling back to text extraction", exc_info=True)
+        pages = MAX_DIRECT_PAGES + 1  # force tier 2
+
+    if pages <= MAX_DIRECT_PAGES:
+        logger.info("PDF tier 1 (direct vision): %d pages", pages)
+        return {
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": data_b64,
+            },
+        }
+
+    # Tier 2: extract text
+    try:
+        text = extract_text(data_b64)
+    except Exception:
+        logger.error("PDF text extraction failed", exc_info=True)
+        return {
+            "type": "text",
+            "text": (
+                "[PDF document attached but could not be processed. "
+                "Please ask the user to try a different file or a smaller document.]"
+            ),
+        }
+
+    logger.info("PDF tier 2 (text extraction): %d pages, %d chars extracted", pages, len(text))
+    return {
+        "type": "text",
+        "text": (
+            f"[Extracted text from uploaded PDF ({pages} pages) — "
+            f"visual layout not preserved]\n\n{text}"
+        ),
+    }
 
 
 class _SafeHandoffAnthropicClient(AnthropicClient):
@@ -98,6 +160,33 @@ class _SafeHandoffAnthropicClient(AnthropicClient):
 
     def _prepare_messages_for_anthropic(self, messages: Sequence[Message]) -> list[dict[str, Any]]:
         prepared = super()._prepare_messages_for_anthropic(messages)
+
+        # Inject multimodal content (images/PDFs) into the last user message.
+        attachments = current_attachments.get(None)
+        if attachments:
+            # Find the last user message and prepend attachment content blocks.
+            for msg in reversed(prepared):
+                if msg.get("role") != "user":
+                    continue
+                content: list[dict[str, Any]] = msg.get("content", [])
+                if isinstance(content, str):
+                    content = [{"type": "text", "text": content}]
+                    msg["content"] = content
+                for att in attachments:
+                    ct = att["content_type"]
+                    if ct.startswith("image/"):
+                        content.insert(0, {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": ct,
+                                "data": att["data"],
+                            },
+                        })
+                    elif ct == "application/pdf":
+                        content.insert(0, _prepare_pdf_block(att["data"]))
+                break  # only inject into the last user message
+
         if prepared and prepared[-1].get("role") == "assistant":
             logger.debug(
                 "Appending synthetic user message to fix assistant-terminated conversation",

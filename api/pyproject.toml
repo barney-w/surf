@@ -28,6 +28,7 @@ dependencies = [
     "cryptography>=41.0",
     "slowapi>=0.1.9",
     "msal>=1.28",
+    "pymupdf>=1.25",
 ]
 
 [tool.uv]

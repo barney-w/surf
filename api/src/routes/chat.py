@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 if TYPE_CHECKING:
     from agent_framework import Workflow, WorkflowEvent
+from anthropic import BadRequestError as AnthropicBadRequestError
 from fastapi.responses import JSONResponse, StreamingResponse
 from openai import RateLimitError as OpenAIRateLimitError
 
@@ -30,7 +31,8 @@ from src.models.agent import (
     enrich_agent_response,
 )
 from src.models.chat import ChatRequest, ChatResponse
-from src.models.conversation import FeedbackRecord, MessageRecord
+from src.models.conversation import AttachmentRecord, FeedbackRecord, MessageRecord
+from src.orchestrator.builder import current_attachments
 from src.orchestrator.history import current_conversation_id, current_user_id, reset_history_cache
 from src.rag.tools import rag_results_collector
 
@@ -38,6 +40,20 @@ logger = logging.getLogger(__name__)
 
 # Number of heartbeat ticks (5s each) before emitting phase(waiting).
 _HEARTBEAT_WAIT_TICKS = 2  # 10 seconds
+
+_PROMPT_TOO_LONG_MESSAGE = (
+    "The uploaded document is too large to process. "
+    "Please try a shorter document or ask about specific pages."
+)
+
+
+def _is_prompt_too_long(exc: Exception) -> bool:
+    """Check if an exception is an Anthropic prompt-too-long error."""
+    if isinstance(exc, AnthropicBadRequestError):
+        msg = str(exc).lower()
+        return "prompt is too long" in msg or "too many tokens" in msg
+    return False
+
 
 router = APIRouter(prefix="/api/v1", tags=["chat"])
 
@@ -82,6 +98,34 @@ async def _persist_message(
             exc_info=True,
         )
         return False
+
+
+def _build_attachment_records(body: ChatRequest) -> list[AttachmentRecord]:
+    """Convert request attachments to persistence-safe records (no base64 data)."""
+    import base64
+
+    records: list[AttachmentRecord] = []
+    for att in body.attachments:
+        decoded = base64.b64decode(att.data, validate=True)
+        records.append(
+            AttachmentRecord(
+                filename=att.filename,
+                content_type=att.content_type,
+                size=len(decoded),
+            )
+        )
+    return records
+
+
+def _set_attachments_context(body: ChatRequest) -> None:
+    """Set the current_attachments context variable from request attachments."""
+    if body.attachments:
+        current_attachments.set([
+            {"content_type": att.content_type, "data": att.data}
+            for att in body.attachments
+        ])
+    else:
+        current_attachments.set(None)
 
 
 async def _run_workflow(
@@ -178,6 +222,9 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
         )
         cosmos_available = False
 
+    # Set attachment context for multimodal LLM calls
+    _set_attachments_context(body)
+
     # Run the workflow (with timeout)
     rag_available = True
     try:
@@ -189,7 +236,12 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
         )
     except LLMTimeoutError:
         raise
-    except Exception:
+    except Exception as exc:
+        if _is_prompt_too_long(exc):
+            raise HTTPException(
+                status_code=413,
+                detail=_PROMPT_TOO_LONG_MESSAGE,
+            ) from exc
         # RAG or other non-timeout workflow error — degrade gracefully
         logger.warning(
             "Workflow error (possible RAG failure) — returning low-confidence response",
@@ -238,6 +290,7 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
         id=str(uuid.uuid4()),
         role="user",
         content=sanitised_message,
+        attachments=_build_attachment_records(body),
         timestamp=datetime.now(UTC),
     )
     assistant_message = MessageRecord(
@@ -466,6 +519,10 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         logger.warning("Cosmos DB unavailable — continuing without persistence", exc_info=True)
         cosmos_available = False
 
+    # Set attachment context for multimodal LLM calls (must be set before generate())
+    _set_attachments_context(body)
+    attachment_records = _build_attachment_records(body)
+
     async def generate() -> AsyncGenerator[str, None]:
         nonlocal cosmos_available
 
@@ -474,6 +531,9 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         reset_history_cache()
         rag_collector: list[str] = []
         rag_results_collector.set(rag_collector)
+        # Re-set attachments in the generator's context (async generators run in
+        # their own context copy).
+        _set_attachments_context(body)
 
         yield _sse({"type": "phase", "phase": "thinking"})
 
@@ -520,7 +580,18 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
                 if kind == "error":
                     exc = cast("Exception", item[1])
-                    if isinstance(exc, TimeoutError):
+                    if _is_prompt_too_long(exc):
+                        yield _sse(
+                            {
+                                "type": "error",
+                                "error": {
+                                    "code": "PROMPT_TOO_LONG",
+                                    "message": _PROMPT_TOO_LONG_MESSAGE,
+                                    "retryable": False,
+                                },
+                            }
+                        )
+                    elif isinstance(exc, TimeoutError):
                         yield _sse(
                             {
                                 "type": "error",
@@ -732,6 +803,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             id=str(uuid.uuid4()),
             role="user",
             content=sanitised_message,
+            attachments=attachment_records,
             timestamp=datetime.now(UTC),
         )
         assistant_message = MessageRecord(
