@@ -133,6 +133,59 @@ class TestCreateRagTool:
 
 
 # ---------------------------------------------------------------------------
+# RAG tool filter wiring — metadata_filters vs domain
+# ---------------------------------------------------------------------------
+
+
+class TestRagToolFilterWiring:
+    """Verify create_rag_tool passes the correct filters to search_index."""
+
+    @pytest.mark.asyncio
+    async def test_metadata_filters_passed_without_domain(self):
+        """A scope with metadata_filters and empty domain should include
+        content_source but NOT domain in the search filters."""
+
+        async def _empty():
+            return
+            yield  # noqa: RET504
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=_empty())
+        set_search_client(mock_client)
+
+        scope = RAGScope(domain="", metadata_filters={"content_source": "website"})
+        rag_tool = create_rag_tool(scope=scope)
+        await rag_tool.invoke(arguments={"query": "recycling bins", "document_type": None})
+
+        _, kwargs = mock_client.search.call_args
+        odata = kwargs.get("filter", "")
+        assert "content_source" in odata
+        assert "domain eq" not in odata
+
+    @pytest.mark.asyncio
+    async def test_domain_filter_passed_without_metadata_filters(self):
+        """A scope with domain set and no metadata_filters should include
+        domain but NOT content_source in the search filters."""
+
+        async def _empty():
+            return
+            yield  # noqa: RET504
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=_empty())
+        set_search_client(mock_client)
+
+        scope = RAGScope(domain="hr")
+        rag_tool = create_rag_tool(scope=scope)
+        await rag_tool.invoke(arguments={"query": "leave policy", "document_type": None})
+
+        _, kwargs = mock_client.search.call_args
+        odata = kwargs.get("filter", "")
+        assert "domain eq 'hr'" in odata
+        assert "content_source" not in odata
+
+
+# ---------------------------------------------------------------------------
 # Result formatting
 # ---------------------------------------------------------------------------
 

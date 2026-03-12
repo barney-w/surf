@@ -124,9 +124,11 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
         """Search the knowledge base for policies, procedures, and documents."""
         filters: dict[str, str | list[str]] = {}
         if scope:
-            filters["domain"] = scope.domain
+            if scope.domain:
+                filters["domain"] = scope.domain
             if scope.document_types:
                 filters["document_type_in"] = scope.document_types
+            filters.update(scope.metadata_filters)
         if document_type:
             filters["document_type"] = document_type
 

@@ -24,6 +24,15 @@ def _register_hr_agent():
     return HRAgent
 
 
+def _register_website_agent():
+    """Import WebsiteAgent and ensure it is registered (re-register if needed after clear)."""
+    from src.agents.website.agent import WebsiteAgent
+
+    if AgentRegistry.get("website_agent") is None:
+        AgentRegistry.register(WebsiteAgent)
+    return WebsiteAgent
+
+
 class TestAgentAutoRegistration:
     def test_hr_agent_registers_on_import(self):
         hr_agent_cls = _register_hr_agent()
@@ -65,6 +74,102 @@ class TestCoordinatorPrompt:
         assert "hr_agent" in prompt
         assert "Handles HR queries." in prompt
         assert "Surf" in prompt
+
+
+class TestWebsiteAgentProperties:
+    """Verify WebsiteAgent has the expected configuration values."""
+
+    def test_name(self):
+        WebsiteAgent = _register_website_agent()
+        agent = WebsiteAgent()
+        assert agent.name == "website_agent"
+
+    def test_description_contains_key_terms(self):
+        WebsiteAgent = _register_website_agent()
+        agent = WebsiteAgent()
+        desc_lower = agent.description.lower()
+        assert "public" in desc_lower
+        assert "website" in desc_lower
+
+    def test_rag_scope_domain_is_empty(self):
+        WebsiteAgent = _register_website_agent()
+        agent = WebsiteAgent()
+        assert agent.rag_scope.domain == ""
+
+    def test_rag_scope_metadata_filters(self):
+        WebsiteAgent = _register_website_agent()
+        agent = WebsiteAgent()
+        assert agent.rag_scope.metadata_filters == {"content_source": "website"}
+
+    def test_rag_scope_document_types_empty(self):
+        WebsiteAgent = _register_website_agent()
+        agent = WebsiteAgent()
+        assert agent.rag_scope.document_types == []
+
+    def test_skill_path_resolves_to_website_dir(self):
+        WebsiteAgent = _register_website_agent()
+        agent = WebsiteAgent()
+        skill_path = agent.skill_path
+        assert skill_path is not None
+        assert skill_path.name == "website"
+        assert skill_path.is_dir()
+        assert (skill_path / "SKILL.md").exists()
+
+
+class TestWebsiteAgentAutoRegistration:
+    """Verify WebsiteAgent is discoverable via discover_agents."""
+
+    def test_discover_agents_finds_website(self):
+        from src.agents._discovery import discover_agents
+
+        discover_agents()
+        assert AgentRegistry.get("website_agent") is not None
+
+    def test_registry_includes_website_in_descriptions(self):
+        _register_website_agent()
+        descriptions = AgentRegistry.agent_descriptions()
+        names = [d["name"] for d in descriptions]
+        assert "website_agent" in names
+
+
+class TestCoordinatorPromptIncludesWebsite:
+    """Verify the coordinator prompt renders website agent info."""
+
+    def test_website_agent_appears_in_coordinator_prompt(self):
+        from src.agents.coordinator.prompts import build_coordinator_prompt
+
+        descriptions = [
+            {"name": "website_agent", "description": "Handles public website queries."},
+        ]
+        prompt = build_coordinator_prompt(descriptions)
+        assert "website_agent" in prompt
+        assert "Handles public website queries." in prompt
+
+
+class TestWebsitePromptContent:
+    """Verify website prompt includes shared instructions and domain content."""
+
+    def test_website_prompt_includes_shared_instructions(self):
+        from src.agents.website.prompts import WEBSITE_SYSTEM_PROMPT
+
+        assert "=== SOURCE N ===" in WEBSITE_SYSTEM_PROMPT
+        assert "search_knowledge_base" in WEBSITE_SYSTEM_PROMPT
+
+    def test_website_prompt_includes_domain_content(self):
+        from src.agents.website.prompts import WEBSITE_SYSTEM_PROMPT
+
+        assert "public website information specialist" in WEBSITE_SYSTEM_PROMPT
+
+
+class TestWebsiteSkillMd:
+    """Verify the website SKILL.md file exists and has frontmatter."""
+
+    def test_website_skill_md_has_frontmatter(self):
+        skill_path = (
+            Path(__file__).resolve().parent.parent.parent / "skills" / "website" / "SKILL.md"
+        )
+        content = skill_path.read_text()
+        assert content.startswith("---")
 
 
 class TestDuplicateRegistration:
