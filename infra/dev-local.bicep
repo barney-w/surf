@@ -1,29 +1,13 @@
-// ---------------------------------------------------------------------------
-// Dev-Local Infrastructure: dev-local.bicep
-// Project: Surf — Multi-Agent Orchestration Platform
-// Description: Minimal, publicly-accessible Azure resources for local dev.
-//              Deploy with: just setup-dev
-//              Destroy with: just teardown-dev
-// ---------------------------------------------------------------------------
-
 targetScope = 'resourceGroup'
-
-// ---------------------------------------------------------------------------
-// Parameters
-// ---------------------------------------------------------------------------
 
 @description('Azure region for all resources (OpenAI is deployed separately to eastus)')
 param location string = 'australiaeast'
 
-@description('Object ID of the signed-in user (for RBAC). Get with: az ad signed-in-user show --query id -o tsv')
+@description('Object ID of the signed-in user (for RBAC)')
 param userObjectId string
 
 @description('Project name used as a naming prefix')
 param projectName string = 'surf'
-
-// ---------------------------------------------------------------------------
-// Variables
-// ---------------------------------------------------------------------------
 
 var uniqueSuffix = uniqueString(resourceGroup().id, projectName)
 var tags = {
@@ -31,44 +15,44 @@ var tags = {
   environment: 'dev-local'
 }
 
-
-// ---------------------------------------------------------------------------
-// Azure AI Search (Basic)
-// ---------------------------------------------------------------------------
-
-resource search 'Microsoft.Search/searchServices@2024-06-01-preview' = {
-  name: 'search-${projectName}-dev-${uniqueSuffix}'
-  location: location
-  tags: tags
-  sku: {
-    name: 'basic'
-  }
-  properties: {
+module search 'br/public:avm/res/search/search-service:0.12.0' = {
+  name: 'deploy-search'
+  params: {
+    name: 'search-${projectName}-dev-${uniqueSuffix}'
+    location: location
+    tags: tags
+    sku: 'basic'
     replicaCount: 1
     partitionCount: 1
-    hostingMode: 'default'
-    publicNetworkAccess: 'enabled'
+    publicNetworkAccess: 'Enabled'
     authOptions: {
       aadOrApiKey: {
         aadAuthFailureMode: 'http401WithBearerChallenge'
       }
     }
+    roleAssignments: [
+      {
+        principalId: userObjectId
+        roleDefinitionIdOrName: 'Search Index Data Contributor'
+        principalType: 'User'
+      }
+      {
+        principalId: userObjectId
+        roleDefinitionIdOrName: 'Search Service Contributor'
+        principalType: 'User'
+      }
+    ]
   }
 }
 
-// ---------------------------------------------------------------------------
-// Azure Storage Account
-// ---------------------------------------------------------------------------
-
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: 'st${projectName}dev${uniqueSuffix}'
-  location: location
-  tags: tags
-  kind: 'StorageV2'
-  sku: {
-    name: 'Standard_LRS'
-  }
-  properties: {
+module storageAccount 'br/public:avm/res/storage/storage-account:0.14.3' = {
+  name: 'deploy-storage'
+  params: {
+    name: 'st${projectName}dev${uniqueSuffix}'
+    location: location
+    tags: tags
+    skuName: 'Standard_LRS'
+    kind: 'StorageV2'
     accessTier: 'Hot'
     allowBlobPublicAccess: false
     allowSharedKeyAccess: false
@@ -79,73 +63,24 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
       defaultAction: 'Allow'
       bypass: 'AzureServices'
     }
+    blobServices: {
+      containers: [
+        { name: 'documents', publicAccess: 'None' }
+        { name: 'ingested', publicAccess: 'None' }
+      ]
+    }
+    roleAssignments: [
+      {
+        principalId: userObjectId
+        roleDefinitionIdOrName: 'Storage Blob Data Contributor'
+        principalType: 'User'
+      }
+    ]
   }
 }
-
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
-  parent: storageAccount
-  name: 'default'
-}
-
-resource documentsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  parent: blobService
-  name: 'documents'
-  properties: {
-    publicAccess: 'None'
-  }
-}
-
-resource ingestedContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  parent: blobService
-  name: 'ingested'
-  properties: {
-    publicAccess: 'None'
-  }
-}
-
-// ---------------------------------------------------------------------------
-// RBAC Role Assignments
-// ---------------------------------------------------------------------------
-
-// Search Index Data Contributor → AI Search
-resource searchRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(search.id, userObjectId, 'search-index-data-contributor')
-  scope: search
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
-    principalId: userObjectId
-    principalType: 'User'
-  }
-}
-
-// Search Service Contributor → AI Search (needed to create/manage indexes)
-resource searchServiceRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(search.id, userObjectId, 'search-service-contributor')
-  scope: search
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7ca78c08-252a-4471-8644-bb5ff32d4ba0')
-    principalId: userObjectId
-    principalType: 'User'
-  }
-}
-
-// Storage Blob Data Contributor → Storage account
-resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, userObjectId, 'storage-blob-data-contributor')
-  scope: storageAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-    principalId: userObjectId
-    principalType: 'User'
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Outputs (used by setup-dev to generate .env)
-// ---------------------------------------------------------------------------
 
 @description('Azure AI Search endpoint')
-output searchEndpoint string = 'https://${search.name}.search.windows.net'
+output searchEndpoint string = search.outputs.endpoint
 
 @description('Storage blob endpoint')
-output storageBlobEndpoint string = storageAccount.properties.primaryEndpoints.blob
+output storageBlobEndpoint string = storageAccount.outputs.primaryBlobEndpoint
