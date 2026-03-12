@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentChat } from "@surf-kit/agent/hooks";
 import type { Attachment } from "@surf-kit/agent/types";
-import { MessageThread, MessageComposer, WelcomeScreen } from "@surf-kit/agent/chat";
+import {
+  MessageThread,
+  MessageComposer,
+  WelcomeScreen,
+} from "@surf-kit/agent/chat";
 import { StreamingMessage } from "@surf-kit/agent/streaming";
 import { ErrorResponse } from "@surf-kit/agent/response";
 import { WaveLoader } from "@surf-kit/core";
@@ -46,7 +50,8 @@ function SignInGate() {
             Sign in to start chatting
           </p>
           <p className="text-text-secondary text-sm mt-1 max-w-xs">
-            Authenticate with your organisation account to ask questions and get personalised answers.
+            Authenticate with your organisation account to ask questions and get
+            personalised answers.
           </p>
         </div>
 
@@ -158,7 +163,11 @@ function useChatConfig() {
 /*  ChatPage                                                           */
 /* ------------------------------------------------------------------ */
 
-export function ChatPage({ onHasMessages }: { onHasMessages?: (has: boolean) => void }) {
+export function ChatPage({
+  onHasMessages,
+}: {
+  onHasMessages?: (has: boolean) => void;
+}) {
   const { profile, isLoading: authLoading, isAuthenticated } = useAuth();
   const authRequired = !!import.meta.env.VITE_ENTRA_CLIENT_ID;
   const gated = authRequired && !isAuthenticated;
@@ -184,14 +193,19 @@ export function ChatPage({ onHasMessages }: { onHasMessages?: (has: boolean) => 
     });
   }, [state.messages.length]);
 
-  const handleSend = useCallback((content: string, attachments?: Attachment[]) => {
-    shouldScrollRef.current = true;
-    void actions.sendMessage(content, attachments);
-  }, [actions]);
+  const handleSend = useCallback(
+    (content: string, attachments?: Attachment[]) => {
+      shouldScrollRef.current = true;
+      void actions.sendMessage(content, attachments);
+    },
+    [actions],
+  );
 
   // Personalised greeting
   const givenName = profile?.givenName ?? profile?.displayName;
-  const welcomeTitle = givenName ? `Hi ${givenName}, I'm Surf.` : "Hi, I'm Surf.";
+  const welcomeTitle = givenName
+    ? `Hi ${givenName}, I'm Surf.`
+    : "Hi, I'm Surf.";
 
   if (authLoading) {
     return (
@@ -232,7 +246,10 @@ export function ChatPage({ onHasMessages }: { onHasMessages?: (has: boolean) => 
           />
 
           {state.error && (
-            <ErrorResponse error={state.error} onRetry={() => actions.retry()} />
+            <ErrorResponse
+              error={state.error}
+              onRetry={() => actions.retry()}
+            />
           )}
 
           <div className="shrink-0 py-3">
@@ -249,12 +266,17 @@ export function ChatPage({ onHasMessages }: { onHasMessages?: (has: boolean) => 
           <div className="flex-[3]" />
           <WelcomeScreen
             title={gated ? "Hi, I'm Surf." : welcomeTitle}
-            message={gated
-              ? "I can coordinate specialist agents to answer your questions — sign in to get started."
-              : "Ask me anything — I'll coordinate with my specialist agents to find you the best answer."
+            message={
+              gated
+                ? "I can coordinate specialist agents to answer your questions — sign in to get started."
+                : "I can coordinate specialist agents to answer your questions."
             }
             icon={
-              <img src="/surf.png" alt="Surf" className="w-32 h-30 rounded-md" />
+              <img
+                src="/surf.png"
+                alt="Surf"
+                className="w-32 h-32 rounded-md"
+              />
             }
             suggestedQuestions={gated ? [] : SUGGESTED_QUESTIONS}
             onQuestionSelect={handleSend}

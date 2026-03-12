@@ -23,9 +23,12 @@ class TestSettingsDefaults:
         assert settings.anthropic_foundry_api_key == ""
         assert settings.azure_search_endpoint == ""
         assert settings.azure_search_index_name == "surf-index"
-        assert settings.cosmos_endpoint == ""
-        assert settings.cosmos_database_name == "surf"
-        assert settings.cosmos_container_name == "conversations"
+        assert settings.postgres_host == "localhost"
+        assert settings.postgres_port == 5432
+        assert settings.postgres_database == "surf"
+        assert settings.postgres_user == "surf"
+        assert settings.postgres_password == "localdev"
+        assert settings.postgres_ssl is True
         assert settings.azure_storage_account_url == ""
         assert settings.azure_keyvault_url == ""
         assert settings.auth_enabled is False
@@ -44,6 +47,56 @@ class TestSettingsDefaults:
         assert isinstance(settings, Settings)
 
 
+class TestProductionKeyValidator:
+    """Test the model validator that requires Anthropic keys in non-dev environments."""
+
+    def test_dev_allows_no_keys(self):
+        """Dev environment should not require any Anthropic keys."""
+        settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+        assert settings.environment == "dev"
+        assert settings.anthropic_api_key == ""
+        assert settings.anthropic_foundry_api_key == ""
+
+    def test_non_dev_requires_anthropic_key(self):
+        """Non-dev environment with no Anthropic keys must raise ValueError."""
+        with pytest.raises(ValueError, match="ANTHROPIC_API_KEY or ANTHROPIC_FOUNDRY_API_KEY"):
+            Settings(
+                _env_file=None,  # pyright: ignore[reportCallIssue]
+                environment="production",
+            )
+
+    def test_non_dev_accepts_api_key(self):
+        """Non-dev environment with anthropic_api_key set should pass."""
+        settings = Settings(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            environment="production",
+            anthropic_api_key="sk-test-key",
+        )
+        assert settings.environment == "production"
+
+    def test_non_dev_accepts_foundry_key(self):
+        """Non-dev environment with anthropic_foundry_api_key set should pass."""
+        settings = Settings(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            environment="staging",
+            anthropic_foundry_api_key="sk-foundry-key",
+        )
+        assert settings.environment == "staging"
+
+
+class TestDomainModelId:
+    """Test the anthropic_domain_model_id setting."""
+
+    def test_domain_model_id_defaults_empty(self):
+        settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+        assert settings.anthropic_domain_model_id == ""
+
+    def test_domain_model_id_from_env(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("ANTHROPIC_DOMAIN_MODEL_ID", "claude-haiku-4-5")
+        settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+        assert settings.anthropic_domain_model_id == "claude-haiku-4-5"
+
+
 class TestSettingsEnvOverrides:
     """Test that environment variables override default values."""
 
@@ -53,10 +106,11 @@ class TestSettingsEnvOverrides:
         monkeypatch.setenv("DEBUG", "true")
         monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://my-oai.openai.azure.com")
         monkeypatch.setenv("AZURE_SEARCH_INDEX_NAME", "custom-index")
-        monkeypatch.setenv("COSMOS_DATABASE_NAME", "my-db")
+        monkeypatch.setenv("POSTGRES_DATABASE", "my-db")
         monkeypatch.setenv("MAX_HISTORY_MESSAGES", "50")
         monkeypatch.setenv("AUTH_ENABLED", "true")
         monkeypatch.setenv("API_CORS_ORIGINS", '["http://localhost:5173"]')
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
 
         settings = Settings()
 
@@ -65,7 +119,7 @@ class TestSettingsEnvOverrides:
         assert settings.debug is True
         assert settings.azure_openai_endpoint == "https://my-oai.openai.azure.com"
         assert settings.azure_search_index_name == "custom-index"
-        assert settings.cosmos_database_name == "my-db"
+        assert settings.postgres_database == "my-db"
         assert settings.max_history_messages == 50
         assert settings.auth_enabled is True
         assert settings.api_cors_origins == ["http://localhost:5173"]
@@ -86,6 +140,7 @@ class TestLifespanProductionGuards:
             _env_file=None,  # pyright: ignore[reportCallIssue]
             environment="staging",
             auth_enabled=False,
+            anthropic_api_key="sk-test-key",
         )
 
         with patch("src.main.settings", unsafe_settings), pytest.raises(SystemExit):
@@ -105,6 +160,7 @@ class TestLifespanProductionGuards:
             environment="prod",
             auth_enabled=True,
             debug=True,
+            anthropic_api_key="sk-test-key",
         )
 
         with patch("src.main.settings", unsafe_settings), pytest.raises(SystemExit):
@@ -125,6 +181,7 @@ class TestLifespanProductionGuards:
             auth_enabled=True,
             debug=False,
             api_cors_origins=["*"],
+            anthropic_api_key="sk-test-key",
         )
 
         with patch("src.main.settings", unsafe_settings), pytest.raises(SystemExit):
@@ -171,6 +228,7 @@ class TestLifespanProductionGuards:
             auth_enabled=True,
             debug=False,
             api_cors_origins=["https://surf.example.com"],
+            anthropic_api_key="sk-test-key",
         )
 
         with patch("src.main.settings", valid_settings):

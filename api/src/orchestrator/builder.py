@@ -183,14 +183,17 @@ class _SafeHandoffAnthropicClient(AnthropicClient):
                 for att in attachments:
                     ct = att["content_type"]
                     if ct.startswith("image/"):
-                        content.insert(0, {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": ct,
-                                "data": att["data"],
+                        content.insert(
+                            0,
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": ct,
+                                    "data": att["data"],
+                                },
                             },
-                        })
+                        )
                     elif ct == "application/pdf":
                         content.insert(0, _prepare_pdf_block(att["data"]))
                 break  # only inject into the last user message
@@ -234,6 +237,25 @@ def create_model_client(settings: Settings) -> _SafeHandoffAnthropicClient:
     )
 
 
+def create_model_client_for_model(settings: Settings, model_id: str) -> _SafeHandoffAnthropicClient:
+    """Create a client targeting a specific model, reusing the same auth config."""
+    if settings.anthropic_foundry_base_url:
+        from anthropic import AsyncAnthropicFoundry
+
+        foundry_client = AsyncAnthropicFoundry(
+            base_url=settings.anthropic_foundry_base_url,
+            api_key=settings.anthropic_foundry_api_key,
+        )
+        return _SafeHandoffAnthropicClient(
+            anthropic_client=foundry_client,
+            model_id=model_id,
+        )
+    return _SafeHandoffAnthropicClient(
+        api_key=settings.anthropic_api_key or None,
+        model_id=model_id,
+    )
+
+
 class _CachedAgentGraph:
     """Pre-built agents and configuration, reused across requests.
 
@@ -263,6 +285,7 @@ class _CachedAgentGraph:
 
 def build_agent_graph(
     client: AnthropicClient,
+    settings: Settings,
     context_providers: Sequence[BaseContextProvider] | None = None,
 ) -> _CachedAgentGraph:
     """Build the agent graph once at startup.
@@ -272,6 +295,18 @@ def build_agent_graph(
     """
     discover_agents()
     registry = AgentRegistry.get_all()
+
+    # Resolve domain model — priority: per-agent > settings.domain > settings.global
+    domain_model_id = settings.anthropic_domain_model_id or settings.anthropic_model_id
+    if domain_model_id != settings.anthropic_model_id:
+        domain_client: AnthropicClient = create_model_client_for_model(settings, domain_model_id)
+        logger.info(
+            "Domain agents using model %s (coordinator: %s)",
+            domain_model_id,
+            settings.anthropic_model_id,
+        )
+    else:
+        domain_client = client
 
     domain_agents: list[Agent[ChatOptions[None]]] = []
 
@@ -297,7 +332,14 @@ def build_agent_graph(
             )
             logger.info("Skills loaded for %s from %s", agent_def.name, skill_path)
 
-        agent = client.as_agent(
+        # Per-agent model override (highest priority)
+        agent_model = agent_def.model_id
+        if agent_model and agent_model != domain_model_id:
+            agent_client: AnthropicClient = create_model_client_for_model(settings, agent_model)
+        else:
+            agent_client = domain_client
+
+        agent = agent_client.as_agent(
             name=agent_def.name,
             description=agent_def.description,
             instructions=combined_prompt,

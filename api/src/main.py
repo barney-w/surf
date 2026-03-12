@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -95,6 +96,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 settings.api_cors_origins,
             )
             raise SystemExit(1)
+        if not settings.postgres_ssl:
+            logger.critical(
+                "POSTGRES_SSL must be true in '%s' environment — refusing to start",
+                settings.environment,
+            )
+            raise SystemExit(1)
     logger.info("CORS origins: %s", settings.api_cors_origins)
 
     # --- Azure AI Search ---
@@ -152,12 +159,38 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
 
     # --- Conversation service ---
-    conversation_service = ConversationService(settings)
-    if settings.cosmos_endpoint:
+    conversation_service: ConversationService | None = None
+    if settings.postgres_enabled:
+        conversation_service = ConversationService(settings)
         await conversation_service.initialize()
+
+        # Run Alembic migrations
+        import subprocess
+        from pathlib import Path
+
+        api_dir = Path(__file__).resolve().parent.parent  # api/src -> api/
+        ssl_param = "?ssl=require" if settings.postgres_ssl else ""
+        db_url = (
+            f"postgresql+asyncpg://{settings.postgres_user}:{settings.postgres_password}"
+            f"@{settings.postgres_host}:{settings.postgres_port}"
+            f"/{settings.postgres_database}{ssl_param}"
+        )
+        migration_env = {**os.environ, "DATABASE_URL": db_url}
+        result = subprocess.run(
+            ["alembic", "upgrade", "head"],
+            cwd=str(api_dir),
+            capture_output=True,
+            text=True,
+            env=migration_env,
+        )
+        if result.returncode != 0:
+            logger.error("Alembic migration failed: %s", result.stderr)
+            raise SystemExit(1)
+        logger.info("Database migrations applied")
         logger.info("ConversationService initialised")
     else:
-        logger.warning("COSMOS_ENDPOINT not set — ConversationService not connected")
+        logger.warning("PostgreSQL disabled — conversation history will not persist")
+
     app.state.conversation_service = conversation_service
 
     # --- Graph API service (OBO for user profile / photo) ---
@@ -165,7 +198,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.graph_service = graph_service
 
     # --- History context provider ---
-    history_provider = ConversationHistoryProvider(conversation_service)
+    history_provider = (
+        ConversationHistoryProvider(conversation_service) if conversation_service else None
+    )
     app.state.history_provider = history_provider
 
     # --- AI workflow ---
@@ -184,7 +219,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         # Build agents once; only the Workflow is recreated per request
         # (agent_framework Workflow is stateful and does not allow concurrent runs).
-        agent_graph = build_agent_graph(client, context_providers=[history_provider])
+        context_providers = [history_provider] if history_provider else []
+        agent_graph = build_agent_graph(client, settings, context_providers=context_providers)
         app.state.workflow = agent_graph.build_workflow
         logger.info("AI workflow factory initialised")
     else:
@@ -196,8 +232,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Shutdown
     clear_search_clients()
     logger.info("Search clients cleared")
-    await conversation_service.close()
-    logger.info("ConversationService closed")
+    await graph_service.close()
+    logger.info("GraphService closed")
+    if conversation_service:
+        await conversation_service.close()
+        logger.info("ConversationService closed")
 
 
 app = FastAPI(
@@ -227,6 +266,12 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # py
 add_error_handlers(app)
 app.include_router(chat_router)
 app.include_router(user_router)
+
+if settings.environment == "dev" and settings.postgres_enabled:
+    from src.routes.admin import router as admin_router
+
+    app.include_router(admin_router)
+    logger.warning("Admin dashboard enabled (dev environment)")
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +315,7 @@ async def request_logging_middleware(
 async def health_check(request: Request, deep: bool = False) -> dict[str, object]:
     """Health check endpoint.
 
-    Pass ?deep=true to verify connectivity to Cosmos DB and Azure AI Search.
+    Pass ?deep=true to verify connectivity to the database and Azure AI Search.
     Deep checks require authentication.
     """
     result: dict[str, object] = {"status": "healthy"}
@@ -282,21 +327,17 @@ async def health_check(request: Request, deep: bool = False) -> dict[str, object
 
     checks: dict[str, str] = {}
     conversation_service = getattr(app.state, "conversation_service", None)
-    if (
-        conversation_service
-        and hasattr(conversation_service, "_container")
-        and conversation_service._container
-    ):
+    if conversation_service:
         try:
-            await conversation_service._container.read_all_items(max_item_count=1).__anext__()
-            checks["cosmos"] = "ok"
-        except StopAsyncIteration:
-            checks["cosmos"] = "ok"  # empty but reachable
+            healthy = await conversation_service.health_check()
+            checks["database"] = "ok" if healthy else "error"
+            if not healthy:
+                result["status"] = "degraded"
         except Exception:
-            checks["cosmos"] = "error"
+            checks["database"] = "error"
             result["status"] = "degraded"
     else:
-        checks["cosmos"] = "not_configured"
+        checks["database"] = "not_configured"
 
     # TODO: expose _search_client from tools.py for a live ping
     checks["search"] = "not_configured"

@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -17,6 +18,7 @@ class Settings(BaseSettings):
     # Anthropic (direct API or via Azure AI Foundry)
     anthropic_api_key: str = ""
     anthropic_model_id: str = "claude-sonnet-4-6"
+    anthropic_domain_model_id: str = ""
     anthropic_foundry_base_url: str = ""
     anthropic_foundry_api_key: str = ""
 
@@ -25,10 +27,14 @@ class Settings(BaseSettings):
     azure_search_index_name: str = "surf-index"
     azure_search_sharepoint_index: str = ""
 
-    # Cosmos DB
-    cosmos_endpoint: str = ""
-    cosmos_database_name: str = "surf"
-    cosmos_container_name: str = "conversations"
+    # PostgreSQL
+    postgres_enabled: bool = True
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_database: str = "surf"
+    postgres_user: str = "surf"
+    postgres_password: str = "localdev"
+    postgres_ssl: bool = True
 
     # Azure Storage
     azure_storage_account_url: str = ""
@@ -53,6 +59,18 @@ class Settings(BaseSettings):
     max_history_messages: int = 20
 
     model_config = {"env_prefix": "", "env_file": ("../.env", ".env"), "extra": "ignore"}
+
+    @model_validator(mode="after")
+    def _validate_production_keys(self) -> "Settings":
+        if (
+            self.environment != "dev"
+            and not self.anthropic_api_key
+            and not self.anthropic_foundry_api_key
+        ):
+            raise ValueError(
+                "ANTHROPIC_API_KEY or ANTHROPIC_FOUNDRY_API_KEY required in non-dev environments"
+            )
+        return self
 
 
 @lru_cache

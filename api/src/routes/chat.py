@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 if TYPE_CHECKING:
     from agent_framework import Workflow, WorkflowEvent
+import asyncpg
 from anthropic import BadRequestError as AnthropicBadRequestError
 from fastapi.responses import JSONResponse, StreamingResponse
 from openai import RateLimitError as OpenAIRateLimitError
@@ -34,6 +35,7 @@ from src.models.chat import ChatRequest, ChatResponse
 from src.models.conversation import AttachmentRecord, FeedbackRecord, MessageRecord
 from src.orchestrator.builder import current_attachments
 from src.orchestrator.history import current_conversation_id, current_user_id, reset_history_cache
+from src.rag.quality_gate import run_quality_gate
 from src.rag.tools import rag_results_collector
 
 logger = logging.getLogger(__name__)
@@ -59,18 +61,20 @@ router = APIRouter(prefix="/api/v1", tags=["chat"])
 
 
 async def _update_last_active_agent(
-    conversation_service: object,
+    conversation_service: object | None,
     conversation_id: str,
     user_id: str,
     agent_name: str,
 ) -> None:
     """Update metadata.last_active_agent on the conversation document."""
+    if conversation_service is None:
+        return
     try:
         await conversation_service.update_last_active_agent(  # type: ignore[union-attr]
             conversation_id, user_id, agent_name
         )
-    except Exception:
-        # Cosmos can raise various exceptions (CosmosHttpResponseError, network errors, etc.)
+    except (asyncpg.PostgresError, ConnectionError, TimeoutError, OSError, ValueError):
+        # Database can raise various exceptions (connection errors, etc.)
         # — never let a metadata update failure break the request.
         logger.warning(
             "Could not update last_active_agent for conversation %s",
@@ -80,19 +84,21 @@ async def _update_last_active_agent(
 
 
 async def _persist_message(
-    conversation_service: object,
+    conversation_service: object | None,
     conversation_id: str,
     user_id: str,
     message: MessageRecord,
 ) -> bool:
-    """Attempt to persist a message, returning False on Cosmos failure."""
+    """Attempt to persist a message, returning False on database failure."""
+    if conversation_service is None:
+        return False
     try:
         await conversation_service.add_message(conversation_id, user_id, message)  # type: ignore[union-attr]
         return True
-    except Exception:
-        # Cosmos can raise various exceptions — never let persistence failure break the request.
+    except (asyncpg.PostgresError, ConnectionError, TimeoutError, OSError, ValueError):
+        # Database can raise various exceptions — never let persistence failure break the request.
         logger.error(
-            "Cosmos DB unavailable — could not persist message %s for conversation %s",
+            "Database unavailable — could not persist message %s for conversation %s",
             message.id,
             conversation_id,
             exc_info=True,
@@ -120,10 +126,9 @@ def _build_attachment_records(body: ChatRequest) -> list[AttachmentRecord]:
 def _set_attachments_context(body: ChatRequest) -> None:
     """Set the current_attachments context variable from request attachments."""
     if body.attachments:
-        current_attachments.set([
-            {"content_type": att.content_type, "data": att.data}
-            for att in body.attachments
-        ])
+        current_attachments.set(
+            [{"content_type": att.content_type, "data": att.data} for att in body.attachments]
+        )
     else:
         current_attachments.set(None)
 
@@ -197,30 +202,31 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
     # Validate & sanitise input
     sanitised_message = validate_message(body.message)
 
-    # Create or load conversation — handle Cosmos unavailability
-    cosmos_available = True
+    # Create or load conversation — handle database unavailability
+    db_available = conversation_service is not None
     conversation_id = body.conversation_id or str(uuid.uuid4())
 
-    try:
-        if body.conversation_id:
-            conversation = await conversation_service.get_conversation(
-                body.conversation_id, user_id
+    if db_available:
+        try:
+            if body.conversation_id:
+                conversation = await conversation_service.get_conversation(
+                    body.conversation_id, user_id
+                )
+                if conversation is None:
+                    raise HTTPException(status_code=404, detail="Conversation not found")
+                conversation_id = body.conversation_id
+            else:
+                conversation = await conversation_service.create_conversation(user_id)
+                conversation_id = conversation.id
+        except HTTPException:
+            raise
+        except Exception:
+            # Database can raise various exceptions — degrade gracefully.
+            logger.warning(
+                "Database unavailable — continuing without persistence",
+                exc_info=True,
             )
-            if conversation is None:
-                raise HTTPException(status_code=404, detail="Conversation not found")
-            conversation_id = body.conversation_id
-        else:
-            conversation = await conversation_service.create_conversation(user_id)
-            conversation_id = conversation.id
-    except HTTPException:
-        raise
-    except Exception:
-        # Cosmos can raise various exceptions — degrade gracefully.
-        logger.warning(
-            "Cosmos DB unavailable — continuing without persistence",
-            exc_info=True,
-        )
-        cosmos_available = False
+            db_available = False
 
     # Set attachment context for multimodal LLM calls
     _set_attachments_context(body)
@@ -273,6 +279,19 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
         fallback_text = response_text or "I'm sorry, I couldn't generate a response."
         agent_response = parse_agent_output(fallback_text, routed_agent)
 
+    # Quality gate — catch search-skipped or results-ignored failures
+    gate_result = run_quality_gate(agent_response, rag_outputs, routed_agent)
+    agent_response = gate_result.remediated
+    if gate_result.check != "passed":
+        logger.warning(
+            "quality_gate_triggered check=%s agent=%s rag_count=%d source_count=%d confidence=%s",
+            gate_result.check,
+            routed_agent,
+            len(rag_outputs),
+            len(agent_response.sources),
+            agent_response.confidence,
+        )
+
     # Inject sources recovered from the RAG tool output if the agent didn't populate them.
     if not agent_response.sources and rag_outputs:
         rag_text = "\n\n".join(rag_outputs)
@@ -301,7 +320,7 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
         response=agent_response,
         timestamp=datetime.now(UTC),
     )
-    if cosmos_available:
+    if db_available:
         ok = await _persist_message(conversation_service, conversation_id, user_id, user_message)
         if ok:
             ok = await _persist_message(
@@ -312,7 +331,7 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
                 conversation_service, conversation_id, user_id, routed_agent
             )
         else:
-            cosmos_available = False
+            db_available = False
 
     chat_response = ChatResponse(
         conversation_id=conversation_id,
@@ -326,8 +345,8 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
     response = JSONResponse(
         content=chat_response.model_dump(mode="json"),
     )
-    if not cosmos_available:
-        response.headers["X-Surf-Warning"] = "cosmos-unavailable"
+    if not db_available:
+        response.headers["X-Surf-Warning"] = "db-unavailable"
     return response
 
 
@@ -488,43 +507,44 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         return StreamingResponse(_no_workflow(), media_type="text/event-stream")
 
     sanitised_message = validate_message(body.message)
-    cosmos_available = True
+    db_available = conversation_service is not None
     conversation_id = body.conversation_id or str(uuid.uuid4())
 
-    try:
-        if body.conversation_id:
-            conversation = await conversation_service.get_conversation(
-                body.conversation_id, user_id
-            )
-            if conversation is None:
+    if db_available:
+        try:
+            if body.conversation_id:
+                conversation = await conversation_service.get_conversation(
+                    body.conversation_id, user_id
+                )
+                if conversation is None:
 
-                async def _not_found() -> AsyncGenerator[str, None]:
-                    yield _sse(
-                        {
-                            "type": "error",
-                            "error": {
-                                "code": "API_ERROR",
-                                "message": "Conversation not found",
-                                "retryable": False,
-                            },
-                        }
-                    )
+                    async def _not_found() -> AsyncGenerator[str, None]:
+                        yield _sse(
+                            {
+                                "type": "error",
+                                "error": {
+                                    "code": "API_ERROR",
+                                    "message": "Conversation not found",
+                                    "retryable": False,
+                                },
+                            }
+                        )
 
-                return StreamingResponse(_not_found(), media_type="text/event-stream")
-            conversation_id = body.conversation_id
-        else:
-            conversation = await conversation_service.create_conversation(user_id)
-            conversation_id = conversation.id
-    except (ConnectionError, TimeoutError, OSError):
-        logger.warning("Cosmos DB unavailable — continuing without persistence", exc_info=True)
-        cosmos_available = False
+                    return StreamingResponse(_not_found(), media_type="text/event-stream")
+                conversation_id = body.conversation_id
+            else:
+                conversation = await conversation_service.create_conversation(user_id)
+                conversation_id = conversation.id
+        except (ConnectionError, TimeoutError, OSError):
+            logger.warning("Database unavailable — continuing without persistence", exc_info=True)
+            db_available = False
 
     # Set attachment context for multimodal LLM calls (must be set before generate())
     _set_attachments_context(body)
     attachment_records = _build_attachment_records(body)
 
     async def generate() -> AsyncGenerator[str, None]:
-        nonlocal cosmos_available
+        nonlocal db_available
 
         current_conversation_id.set(conversation_id)
         current_user_id.set(user_id)
@@ -783,6 +803,20 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                 ],
             )
 
+        # Quality gate — catch search-skipped or results-ignored failures
+        gate_result = run_quality_gate(agent_response, rag_collector, routed_agent)
+        agent_response = gate_result.remediated
+        if gate_result.check != "passed":
+            logger.warning(
+                "quality_gate_triggered check=%s agent=%s "
+                "rag_count=%d source_count=%d confidence=%s",
+                gate_result.check,
+                routed_agent,
+                len(rag_collector),
+                len(agent_response.sources),
+                agent_response.confidence,
+            )
+
         # Inject recovered sources if the agent didn't populate them.
         if not agent_response.sources and rag_collector:
             rag_text = "\n\n".join(rag_collector)
@@ -797,7 +831,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         # client disconnects after receiving [DONE] (which would stop the
         # generator and skip any code after the last yield).
         # Messages are saved sequentially (user then assistant) to guarantee
-        # correct ordering in the Cosmos array — parallel patches could
+        # correct ordering — parallel inserts could
         # interleave and produce assistant-before-user order.
         user_message = MessageRecord(
             id=str(uuid.uuid4()),
@@ -814,7 +848,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             response=agent_response,
             timestamp=datetime.now(UTC),
         )
-        if cosmos_available:
+        if db_available:
             ok = await _persist_message(
                 conversation_service, conversation_id, user_id, user_message
             )
@@ -827,17 +861,17 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                     conversation_service, conversation_id, user_id, routed_agent
                 )
             else:
-                cosmos_available = False
+                db_available = False
 
         yield _sse({"type": "phase", "phase": "verifying"})
         yield _sse({"type": "confidence", "breakdown": enriched.confidence.model_dump()})
         yield _sse({"type": "verification", "result": enriched.verification.model_dump()})
 
-        if not cosmos_available:
+        if not db_available:
             yield _sse(
                 {
                     "type": "warning",
-                    "code": "cosmos-unavailable",
+                    "code": "db-unavailable",
                     "message": (
                         "Your message may not have been saved."
                         " Conversation history could be incomplete."
@@ -866,6 +900,8 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 async def get_conversation(conversation_id: str, request: Request) -> dict[str, object]:
     """Load a conversation by ID."""
     conversation_service = request.app.state.conversation_service
+    if conversation_service is None:
+        raise HTTPException(status_code=503, detail="Conversation history not available")
     user = await get_current_user(request)
     user_id = user.user_id
 
@@ -881,6 +917,8 @@ async def get_conversation(conversation_id: str, request: Request) -> dict[str, 
 async def delete_conversation(conversation_id: str, request: Request) -> dict[str, object]:
     """Delete a conversation."""
     conversation_service = request.app.state.conversation_service
+    if conversation_service is None:
+        raise HTTPException(status_code=503, detail="Conversation history not available")
     user = await get_current_user(request)
     user_id = user.user_id
 
@@ -900,6 +938,8 @@ async def submit_feedback(
 ) -> dict[str, object]:
     """Submit feedback for a message in a conversation."""
     conversation_service = request.app.state.conversation_service
+    if conversation_service is None:
+        raise HTTPException(status_code=503, detail="Conversation history not available")
     user = await get_current_user(request)
     user_id = user.user_id
 

@@ -200,8 +200,15 @@ def _resolve_index_name(explicit: str | None = None) -> str:
     )
 
 
-async def _embed_and_index(chunks: list[Chunk], embed_batch_size: int = 16) -> int:
+async def _embed_and_index(
+    chunks: list[Chunk],
+    embed_batch_size: int = 16,
+    group_size: int = 500,
+) -> int:
     """Generate embeddings and upload chunks to the search index.
+
+    Processes chunks in groups to cap peak memory usage.  Each group is
+    embedded, uploaded, then freed before the next group starts.
 
     Returns:
         Number of successfully uploaded documents.
@@ -224,15 +231,6 @@ async def _embed_and_index(chunks: list[Chunk], embed_batch_size: int = 16) -> i
         api_version="2024-02-01",
     )
 
-    texts = [c.content for c in chunks]
-
-    def _report(batch_num: int, total_batches: int) -> None:
-        click.echo(f"  Embedding batch {batch_num}/{total_batches}...")
-
-    embeddings = await generate_embeddings(
-        texts, openai_client, batch_size=embed_batch_size, progress_callback=_report
-    )
-
     search_endpoint = os.environ.get("AZURE_SEARCH_ENDPOINT")
     if not search_endpoint:
         raise click.ClickException("AZURE_SEARCH_ENDPOINT environment variable is not set")
@@ -243,8 +241,43 @@ async def _embed_and_index(chunks: list[Chunk], embed_batch_size: int = 16) -> i
         credential=credential,
     )
 
-    chunk_dicts = _chunks_to_dicts(chunks, embeddings)
-    return await upload_chunks(search_client, chunk_dicts)
+    total_chunks = len(chunks)
+    total_groups = (total_chunks + group_size - 1) // group_size
+    total_uploaded = 0
+    embed_offset = 0
+
+    for group_num, group_start in enumerate(
+        range(0, total_chunks, group_size), start=1
+    ):
+        group = chunks[group_start : group_start + group_size]
+        texts = [c.content for c in group]
+
+        click.echo(
+            f"  Group {group_num}/{total_groups} "
+            f"({len(group)} chunks, {group_start}–{group_start + len(group) - 1})..."
+        )
+
+        def _report(batch_num: int, total_batches: int) -> None:
+            click.echo(
+                f"    Embedding batch {embed_offset + batch_num}/"
+                f"{(total_chunks + embed_batch_size - 1) // embed_batch_size}..."
+            )
+
+        embeddings = await generate_embeddings(
+            texts, openai_client, batch_size=embed_batch_size, progress_callback=_report
+        )
+        embed_offset += (len(group) + embed_batch_size - 1) // embed_batch_size
+
+        chunk_dicts = _chunks_to_dicts(group, embeddings)
+        uploaded = await upload_chunks(search_client, chunk_dicts)
+        total_uploaded += uploaded
+
+        click.echo(f"    Uploaded {uploaded}/{len(group)} chunks.")
+
+        # Free memory before next group
+        del embeddings, chunk_dicts, texts
+
+    return total_uploaded
 
 
 # ---------------------------------------------------------------------------
@@ -562,25 +595,17 @@ def index_website(
     chunking_config = ChunkingConfig(max_chunk_tokens=chunk_size, overlap_tokens=overlap)
     crawler = WebsiteCrawler(config)
 
-    async def _crawl_and_collect() -> (
-        tuple[list[CrawledPage], list[CrawledPDF], CrawlResult, dict[str, bytes]]
+    async def _crawl_pages() -> (
+        tuple[list[CrawledPage], list[CrawledPDF], CrawlResult]
     ):
         try:
             pages, pdfs, result = await crawler.crawl(pages_only=pages_only)
-
-            # Download PDF content for conversion
-            pdf_bytes: dict[str, bytes] = {}
-            if not pages_only:
-                for pdf in pdfs:
-                    dl = await crawler.download_pdf(pdf.url)
-                    if dl is not None:
-                        pdf_bytes[pdf.url] = dl[0]
-
-            return pages, pdfs, result, pdf_bytes
+            return pages, pdfs, result
         finally:
+            # Close HTTP client so it can be lazily recreated in the next event loop
             await crawler.close()
 
-    all_pages, all_pdfs, result, pdf_bytes = asyncio.run(_crawl_and_collect())
+    all_pages, all_pdfs, result = asyncio.run(_crawl_pages())
 
     click.echo(
         f"Crawled {result.pages_crawled} page(s), "
@@ -668,31 +693,50 @@ def index_website(
             errors.append(f"Page {page.url}: {exc}")
             click.echo(f"  ERROR Page {page.url}: {exc}", err=True)
 
-    # Convert PDFs to documents and chunk
+    # Download, convert, and chunk PDFs one at a time to cap memory usage
     if not pages_only:
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            for pdf in pdfs_to_process:
-                if pdf.url not in pdf_bytes:
-                    errors.append(f"PDF {pdf.url}: no content downloaded")
-                    continue
-                try:
-                    doc = crawled_pdf_to_document(pdf, pdf_bytes[pdf.url], tmp_path)
-                    documents.append(doc)
-                    chunks = chunk_document(doc, chunking_config)
-                    _validate_chunks(chunks, pdf.filename)
-                    all_chunks.extend(chunks)
-                    click.echo(f"  PDF {pdf.filename}: {len(chunks)} chunk(s)")
-                except Exception as exc:  # noqa: BLE001
-                    errors.append(f"PDF {pdf.filename}: {exc}")
-                    click.echo(f"  ERROR PDF {pdf.filename}: {exc}", err=True)
+        async def _download_and_chunk_pdfs() -> None:
+            try:
+                with tempfile.TemporaryDirectory() as tmp:
+                    tmp_path = Path(tmp)
+                    for i, pdf in enumerate(pdfs_to_process, 1):
+                        try:
+                            dl = await crawler.download_pdf(pdf.url)
+                            if dl is None:
+                                errors.append(f"PDF {pdf.url}: no content downloaded")
+                                continue
+                            pdf_data = dl[0]
+                            doc = crawled_pdf_to_document(pdf, pdf_data, tmp_path)
+                            del pdf_data  # Free PDF bytes immediately
+                            documents.append(doc)
+                            chunks = chunk_document(doc, chunking_config)
+                            _validate_chunks(chunks, pdf.filename)
+                            all_chunks.extend(chunks)
+                            click.echo(
+                                f"  PDF [{i}/{len(pdfs_to_process)}] "
+                                f"{pdf.filename}: {len(chunks)} chunk(s)"
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            errors.append(f"PDF {pdf.filename}: {exc}")
+                            click.echo(f"  ERROR PDF {pdf.filename}: {exc}", err=True)
+            finally:
+                await crawler.close()
+
+        asyncio.run(_download_and_chunk_pdfs())
+    else:
+        asyncio.run(crawler.close())
+
+    # Free large objects no longer needed before embedding
+    del documents
+    all_pages.clear()
+    all_pdfs.clear()
 
     # Embed and index (unless dry-run)
     if not dry_run and all_chunks:
         try:
             click.echo(
                 f"Generating embeddings ({embed_batch_size} chunks/batch) "
-                f"and uploading to index..."
+                f"and uploading to index in groups of 500..."
             )
             uploaded = asyncio.run(
                 _embed_and_index(all_chunks, embed_batch_size=embed_batch_size)

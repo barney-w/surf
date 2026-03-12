@@ -33,77 +33,6 @@ var tags = {
 
 
 // ---------------------------------------------------------------------------
-// Azure Cosmos DB (Serverless)
-// ---------------------------------------------------------------------------
-
-resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
-  name: 'cosmos-${projectName}-dev-${uniqueSuffix}'
-  location: location
-  tags: tags
-  kind: 'GlobalDocumentDB'
-  properties: {
-    databaseAccountOfferType: 'Standard'
-    consistencyPolicy: {
-      defaultConsistencyLevel: 'Session'
-    }
-    locations: [
-      {
-        locationName: location
-        failoverPriority: 0
-        isZoneRedundant: false
-      }
-    ]
-    capabilities: [
-      {
-        name: 'EnableServerless'
-      }
-    ]
-    publicNetworkAccess: 'Enabled'
-    disableLocalAuth: true
-  }
-}
-
-resource database 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-05-15' = {
-  parent: cosmosAccount
-  name: 'surf'
-  properties: {
-    resource: {
-      id: 'surf'
-    }
-  }
-}
-
-resource container 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
-  parent: database
-  name: 'conversations'
-  properties: {
-    resource: {
-      id: 'conversations'
-      partitionKey: {
-        paths: [
-          '/user_id'
-        ]
-        kind: 'Hash'
-      }
-      indexingPolicy: {
-        indexingMode: 'consistent'
-        automatic: true
-        includedPaths: [
-          {
-            path: '/*'
-          }
-        ]
-        excludedPaths: [
-          {
-            path: '/_etag/?'
-          }
-        ]
-      }
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Azure AI Search (Basic)
 // ---------------------------------------------------------------------------
 
@@ -178,18 +107,6 @@ resource ingestedContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
 // RBAC Role Assignments
 // ---------------------------------------------------------------------------
 
-// Cosmos DB Built-in Data Contributor → Cosmos account
-// Note: This uses the Cosmos DB data-plane RBAC (SQL role), not ARM RBAC.
-resource cosmosRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-05-15' = {
-  parent: cosmosAccount
-  name: guid(cosmosAccount.id, userObjectId, 'cosmos-data-contributor')
-  properties: {
-    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
-    principalId: userObjectId
-    scope: cosmosAccount.id
-  }
-}
-
 // Search Index Data Contributor → AI Search
 resource searchRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(search.id, userObjectId, 'search-index-data-contributor')
@@ -229,9 +146,6 @@ resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
 
 @description('Azure AI Search endpoint')
 output searchEndpoint string = 'https://${search.name}.search.windows.net'
-
-@description('Cosmos DB endpoint')
-output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
 
 @description('Storage blob endpoint')
 output storageBlobEndpoint string = storageAccount.properties.primaryEndpoints.blob

@@ -25,9 +25,6 @@ param privateEndpointsSubnetPrefix string = '10.0.2.0/24'
 @description('Resource ID of the AI Search service (empty to skip private endpoint)')
 param aiSearchId string = ''
 
-@description('Resource ID of the Cosmos DB account (empty to skip private endpoint)')
-param cosmosDbId string = ''
-
 @description('Resource ID of the Storage account (empty to skip private endpoint)')
 param storageAccountId string = ''
 
@@ -163,12 +160,6 @@ resource dnsZoneSearch 'Microsoft.Network/privateDnsZones@2024-06-01' = if (!emp
   tags: tags
 }
 
-resource dnsZoneCosmos 'Microsoft.Network/privateDnsZones@2024-06-01' = if (!empty(cosmosDbId)) {
-  name: 'privatelink.documents.azure.com'
-  location: 'global'
-  tags: tags
-}
-
 resource dnsZoneStorage 'Microsoft.Network/privateDnsZones@2024-06-01' = if (!empty(storageAccountId)) {
   name: 'privatelink.blob.${environment().suffixes.storage}'
   location: 'global'
@@ -182,19 +173,6 @@ resource dnsZoneStorage 'Microsoft.Network/privateDnsZones@2024-06-01' = if (!em
 resource dnsZoneSearchLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = if (!empty(aiSearchId)) {
   parent: dnsZoneSearch
   name: '${vnetName}-search-link'
-  location: 'global'
-  tags: tags
-  properties: {
-    virtualNetwork: {
-      id: vnet.id
-    }
-    registrationEnabled: false
-  }
-}
-
-resource dnsZoneCosmosLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = if (!empty(cosmosDbId)) {
-  parent: dnsZoneCosmos
-  name: '${vnetName}-cosmos-link'
   location: 'global'
   tags: tags
   properties: {
@@ -253,43 +231,6 @@ resource peSearchDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGrou
         name: 'config-search'
         properties: {
           privateDnsZoneId: dnsZoneSearch.id
-        }
-      }
-    ]
-  }
-}
-
-resource peCosmos 'Microsoft.Network/privateEndpoints@2024-01-01' = if (!empty(cosmosDbId)) {
-  name: 'pe-${vnetName}-cosmos'
-  location: location
-  tags: tags
-  properties: {
-    subnet: {
-      id: vnet.properties.subnets[1].id
-    }
-    privateLinkServiceConnections: [
-      {
-        name: 'plsc-cosmos'
-        properties: {
-          privateLinkServiceId: cosmosDbId
-          groupIds: [
-            'Sql'
-          ]
-        }
-      }
-    ]
-  }
-}
-
-resource peCosmosDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-01-01' = if (!empty(cosmosDbId)) {
-  parent: peCosmos
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'config-cosmos'
-        properties: {
-          privateDnsZoneId: dnsZoneCosmos.id
         }
       }
     ]

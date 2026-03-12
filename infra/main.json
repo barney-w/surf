@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "7046719247306983997"
+      "templateHash": "9114531284768626428"
     }
   },
   "parameters": {
@@ -60,24 +60,6 @@
       "defaultValue": "",
       "metadata": {
         "description": "Azure AI Search SharePoint index name (empty to disable)"
-      }
-    },
-    "cosmosCapacityMode": {
-      "type": "string",
-      "defaultValue": "Serverless",
-      "allowedValues": [
-        "Serverless",
-        "Provisioned"
-      ],
-      "metadata": {
-        "description": "Cosmos DB capacity mode"
-      }
-    },
-    "cosmosThroughput": {
-      "type": "int",
-      "defaultValue": 400,
-      "metadata": {
-        "description": "Cosmos DB provisioned throughput (RU/s)"
       }
     },
     "storageSku": {
@@ -1211,243 +1193,6 @@
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
-      "name": "deploy-cosmos-db",
-      "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "cosmosAccountName": {
-            "value": "[format('cosmos-{0}', variables('baseName'))]"
-          },
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "capacityMode": {
-            "value": "[parameters('cosmosCapacityMode')]"
-          },
-          "throughput": {
-            "value": "[parameters('cosmosThroughput')]"
-          },
-          "databaseName": {
-            "value": "surf"
-          },
-          "containerName": {
-            "value": "conversations"
-          },
-          "partitionKeyPath": {
-            "value": "/user_id"
-          },
-          "tags": {
-            "value": "[variables('tags')]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "10853738579220881007"
-            }
-          },
-          "parameters": {
-            "cosmosAccountName": {
-              "type": "string",
-              "metadata": {
-                "description": "Name of the Cosmos DB account"
-              }
-            },
-            "location": {
-              "type": "string",
-              "metadata": {
-                "description": "Azure region for deployment"
-              }
-            },
-            "tags": {
-              "type": "object",
-              "metadata": {
-                "description": "Tags to apply to all resources"
-              }
-            },
-            "capacityMode": {
-              "type": "string",
-              "defaultValue": "Serverless",
-              "allowedValues": [
-                "Serverless",
-                "Provisioned"
-              ],
-              "metadata": {
-                "description": "Capacity mode: Serverless or Provisioned"
-              }
-            },
-            "throughput": {
-              "type": "int",
-              "defaultValue": 400,
-              "metadata": {
-                "description": "Provisioned throughput (RU/s) — only used when capacityMode is Provisioned"
-              }
-            },
-            "enableMultipleWriteLocations": {
-              "type": "bool",
-              "defaultValue": false,
-              "metadata": {
-                "description": "Enable multi-region writes"
-              }
-            },
-            "databaseName": {
-              "type": "string",
-              "defaultValue": "surf",
-              "metadata": {
-                "description": "Database name"
-              }
-            },
-            "containerName": {
-              "type": "string",
-              "defaultValue": "conversations",
-              "metadata": {
-                "description": "Container name"
-              }
-            },
-            "partitionKeyPath": {
-              "type": "string",
-              "defaultValue": "/user_id",
-              "metadata": {
-                "description": "Partition key path"
-              }
-            }
-          },
-          "resources": [
-            {
-              "type": "Microsoft.DocumentDB/databaseAccounts",
-              "apiVersion": "2024-05-15",
-              "name": "[parameters('cosmosAccountName')]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "kind": "GlobalDocumentDB",
-              "identity": {
-                "type": "SystemAssigned"
-              },
-              "properties": {
-                "databaseAccountOfferType": "Standard",
-                "consistencyPolicy": {
-                  "defaultConsistencyLevel": "Session"
-                },
-                "locations": [
-                  {
-                    "locationName": "[parameters('location')]",
-                    "failoverPriority": 0,
-                    "isZoneRedundant": false
-                  }
-                ],
-                "capabilities": "[if(equals(parameters('capacityMode'), 'Serverless'), createArray(createObject('name', 'EnableServerless')), createArray())]",
-                "enableMultipleWriteLocations": "[parameters('enableMultipleWriteLocations')]",
-                "publicNetworkAccess": "Disabled",
-                "disableLocalAuth": true
-              }
-            },
-            {
-              "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
-              "apiVersion": "2024-05-15",
-              "name": "[format('{0}/{1}', parameters('cosmosAccountName'), parameters('databaseName'))]",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "resource": {
-                  "id": "[parameters('databaseName')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName'))]"
-              ]
-            },
-            {
-              "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
-              "apiVersion": "2024-05-15",
-              "name": "[format('{0}/{1}/{2}', parameters('cosmosAccountName'), parameters('databaseName'), parameters('containerName'))]",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "resource": {
-                  "id": "[parameters('containerName')]",
-                  "partitionKey": {
-                    "paths": [
-                      "[parameters('partitionKeyPath')]"
-                    ],
-                    "kind": "Hash"
-                  },
-                  "indexingPolicy": {
-                    "indexingMode": "consistent",
-                    "automatic": true,
-                    "includedPaths": [
-                      {
-                        "path": "/*"
-                      }
-                    ],
-                    "excludedPaths": [
-                      {
-                        "path": "/_etag/?"
-                      }
-                    ]
-                  }
-                },
-                "options": "[if(equals(parameters('capacityMode'), 'Provisioned'), createObject('throughput', parameters('throughput')), createObject())]"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', parameters('cosmosAccountName'), parameters('databaseName'))]"
-              ]
-            }
-          ],
-          "outputs": {
-            "cosmosAccountId": {
-              "type": "string",
-              "metadata": {
-                "description": "Resource ID of the Cosmos DB account"
-              },
-              "value": "[resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName'))]"
-            },
-            "cosmosAccountName": {
-              "type": "string",
-              "metadata": {
-                "description": "Name of the Cosmos DB account"
-              },
-              "value": "[parameters('cosmosAccountName')]"
-            },
-            "cosmosEndpoint": {
-              "type": "string",
-              "metadata": {
-                "description": "Endpoint of the Cosmos DB account"
-              },
-              "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')), '2024-05-15').documentEndpoint]"
-            },
-            "cosmosPrincipalId": {
-              "type": "string",
-              "metadata": {
-                "description": "Principal ID of the managed identity"
-              },
-              "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')), '2024-05-15', 'full').identity.principalId]"
-            },
-            "cosmosDatabaseName": {
-              "type": "string",
-              "metadata": {
-                "description": "Database name"
-              },
-              "value": "[parameters('databaseName')]"
-            },
-            "cosmosContainerName": {
-              "type": "string",
-              "metadata": {
-                "description": "Container name"
-              },
-              "value": "[parameters('containerName')]"
-            }
-          }
-        }
-      }
-    },
-    {
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
       "name": "deploy-networking",
       "properties": {
         "expressionEvaluationOptions": {
@@ -1464,9 +1209,6 @@
           "aiSearchId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-ai-search'), '2025-04-01').outputs.searchId.value]"
           },
-          "cosmosDbId": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-cosmos-db'), '2025-04-01').outputs.cosmosAccountId.value]"
-          },
           "storageAccountId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-storage'), '2025-04-01').outputs.storageAccountId.value]"
           },
@@ -1481,7 +1223,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "8909380724809377559"
+              "templateHash": "15418161424643424925"
             }
           },
           "parameters": {
@@ -1529,13 +1271,6 @@
               "defaultValue": "",
               "metadata": {
                 "description": "Resource ID of the AI Search service (empty to skip private endpoint)"
-              }
-            },
-            "cosmosDbId": {
-              "type": "string",
-              "defaultValue": "",
-              "metadata": {
-                "description": "Resource ID of the Cosmos DB account (empty to skip private endpoint)"
               }
             },
             "storageAccountId": {
@@ -1677,14 +1412,6 @@
               "tags": "[parameters('tags')]"
             },
             {
-              "condition": "[not(empty(parameters('cosmosDbId')))]",
-              "type": "Microsoft.Network/privateDnsZones",
-              "apiVersion": "2024-06-01",
-              "name": "privatelink.documents.azure.com",
-              "location": "global",
-              "tags": "[parameters('tags')]"
-            },
-            {
               "condition": "[not(empty(parameters('storageAccountId')))]",
               "type": "Microsoft.Network/privateDnsZones",
               "apiVersion": "2024-06-01",
@@ -1707,24 +1434,6 @@
               },
               "dependsOn": [
                 "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.search.windows.net')]",
-                "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
-              ]
-            },
-            {
-              "condition": "[not(empty(parameters('cosmosDbId')))]",
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2024-06-01",
-              "name": "[format('{0}/{1}', 'privatelink.documents.azure.com', format('{0}-cosmos-link', parameters('vnetName')))]",
-              "location": "global",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "virtualNetwork": {
-                  "id": "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
-                },
-                "registrationEnabled": false
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.documents.azure.com')]",
                 "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
               ]
             },
@@ -1791,53 +1500,6 @@
               "dependsOn": [
                 "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.search.windows.net')]",
                 "[resourceId('Microsoft.Network/privateEndpoints', format('pe-{0}-search', parameters('vnetName')))]"
-              ]
-            },
-            {
-              "condition": "[not(empty(parameters('cosmosDbId')))]",
-              "type": "Microsoft.Network/privateEndpoints",
-              "apiVersion": "2024-01-01",
-              "name": "[format('pe-{0}-cosmos', parameters('vnetName'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "subnet": {
-                  "id": "[reference(resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName')), '2024-01-01').subnets[1].id]"
-                },
-                "privateLinkServiceConnections": [
-                  {
-                    "name": "plsc-cosmos",
-                    "properties": {
-                      "privateLinkServiceId": "[parameters('cosmosDbId')]",
-                      "groupIds": [
-                        "Sql"
-                      ]
-                    }
-                  }
-                ]
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
-              ]
-            },
-            {
-              "condition": "[not(empty(parameters('cosmosDbId')))]",
-              "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
-              "apiVersion": "2024-01-01",
-              "name": "[format('{0}/{1}', format('pe-{0}-cosmos', parameters('vnetName')), 'default')]",
-              "properties": {
-                "privateDnsZoneConfigs": [
-                  {
-                    "name": "config-cosmos",
-                    "properties": {
-                      "privateDnsZoneId": "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.documents.azure.com')]"
-                    }
-                  }
-                ]
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.documents.azure.com')]",
-                "[resourceId('Microsoft.Network/privateEndpoints', format('pe-{0}-cosmos', parameters('vnetName')))]"
               ]
             },
             {
@@ -1922,7 +1584,6 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Resources/deployments', 'deploy-ai-search')]",
-        "[resourceId('Microsoft.Resources/deployments', 'deploy-cosmos-db')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-storage')]"
       ]
     },
@@ -1981,9 +1642,6 @@
           "aiSearchSharepointIndex": {
             "value": "[parameters('aiSearchSharepointIndex')]"
           },
-          "cosmosEndpoint": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-cosmos-db'), '2025-04-01').outputs.cosmosEndpoint.value]"
-          },
           "storageBlobEndpoint": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-storage'), '2025-04-01').outputs.blobEndpoint.value]"
           },
@@ -2035,9 +1693,6 @@
           "aiSearchId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-ai-search'), '2025-04-01').outputs.searchId.value]"
           },
-          "cosmosAccountId": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-cosmos-db'), '2025-04-01').outputs.cosmosAccountId.value]"
-          },
           "storageAccountId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-storage'), '2025-04-01').outputs.storageAccountId.value]"
           },
@@ -2055,7 +1710,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "15455191700120711613"
+              "templateHash": "10032824961377136554"
             }
           },
           "parameters": {
@@ -2196,13 +1851,6 @@
                 "description": "Azure AI Search SharePoint index name (empty to disable)"
               }
             },
-            "cosmosEndpoint": {
-              "type": "string",
-              "defaultValue": "",
-              "metadata": {
-                "description": "Cosmos DB endpoint"
-              }
-            },
             "storageBlobEndpoint": {
               "type": "string",
               "defaultValue": "",
@@ -2243,13 +1891,6 @@
               "defaultValue": "",
               "metadata": {
                 "description": "Azure AI Search resource ID"
-              }
-            },
-            "cosmosAccountId": {
-              "type": "string",
-              "defaultValue": "",
-              "metadata": {
-                "description": "Cosmos DB account ID"
               }
             },
             "storageAccountId": {
@@ -2430,20 +2071,6 @@
               ]
             },
             {
-              "condition": "[not(empty(parameters('cosmosAccountId')))]",
-              "type": "Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments",
-              "apiVersion": "2024-11-15",
-              "name": "[format('{0}/{1}', last(split(parameters('cosmosAccountId'), '/')), guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('baseName'))), parameters('cosmosAccountId'), 'cosmos-db-data-contributor'))]",
-              "properties": {
-                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('baseName'))), '2023-01-31').principalId]",
-                "roleDefinitionId": "[format('{0}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002', resourceId('Microsoft.DocumentDB/databaseAccounts', last(split(parameters('cosmosAccountId'), '/'))))]",
-                "scope": "[resourceId('Microsoft.DocumentDB/databaseAccounts', last(split(parameters('cosmosAccountId'), '/')))]"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('baseName')))]"
-              ]
-            },
-            {
               "condition": "[not(empty(parameters('storageAccountId')))]",
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
@@ -2527,7 +2154,7 @@
                         "cpu": "[json(parameters('cpuCores'))]",
                         "memory": "[parameters('memorySize')]"
                       },
-                      "env": "[concat(createArray(createObject('name', 'AZURE_OPENAI_ENDPOINT', 'value', parameters('openAiEndpoint')), createObject('name', 'AZURE_SEARCH_ENDPOINT', 'value', parameters('aiSearchEndpoint')), createObject('name', 'AZURE_SEARCH_SHAREPOINT_INDEX', 'value', parameters('aiSearchSharepointIndex')), createObject('name', 'COSMOS_ENDPOINT', 'value', parameters('cosmosEndpoint')), createObject('name', 'AZURE_STORAGE_ACCOUNT_URL', 'value', parameters('storageBlobEndpoint')), createObject('name', 'AZURE_KEYVAULT_URL', 'value', parameters('keyVaultUri')), createObject('name', 'AZURE_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('baseName'))), '2023-01-31').clientId), createObject('name', 'ANTHROPIC_MODEL_ID', 'value', parameters('anthropicModelId')), createObject('name', 'API_CORS_ORIGINS', 'value', parameters('apiCorsOrigins')), createObject('name', 'AUTH_ENABLED', 'value', string(parameters('authEnabled'))), createObject('name', 'ENTRA_TENANT_ID', 'value', parameters('entraTenantId')), createObject('name', 'ENTRA_CLIENT_ID', 'value', parameters('entraClientId'))), concat(if(parameters('anthropicApiKeyExists'), createArray(createObject('name', 'ANTHROPIC_API_KEY', 'secretRef', 'anthropic-api-key')), createArray()), if(not(empty(parameters('anthropicFoundryBaseUrl'))), createArray(createObject('name', 'ANTHROPIC_FOUNDRY_BASE_URL', 'value', parameters('anthropicFoundryBaseUrl'))), createArray()), if(parameters('anthropicFoundryApiKeyExists'), createArray(createObject('name', 'ANTHROPIC_FOUNDRY_API_KEY', 'secretRef', 'anthropic-foundry-api-key')), createArray()), if(parameters('entraClientSecretExists'), createArray(createObject('name', 'ENTRA_CLIENT_SECRET', 'secretRef', 'entra-client-secret')), createArray())))]",
+                      "env": "[concat(createArray(createObject('name', 'AZURE_OPENAI_ENDPOINT', 'value', parameters('openAiEndpoint')), createObject('name', 'AZURE_SEARCH_ENDPOINT', 'value', parameters('aiSearchEndpoint')), createObject('name', 'AZURE_SEARCH_SHAREPOINT_INDEX', 'value', parameters('aiSearchSharepointIndex')), createObject('name', 'AZURE_STORAGE_ACCOUNT_URL', 'value', parameters('storageBlobEndpoint')), createObject('name', 'AZURE_KEYVAULT_URL', 'value', parameters('keyVaultUri')), createObject('name', 'AZURE_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('baseName'))), '2023-01-31').clientId), createObject('name', 'ANTHROPIC_MODEL_ID', 'value', parameters('anthropicModelId')), createObject('name', 'API_CORS_ORIGINS', 'value', parameters('apiCorsOrigins')), createObject('name', 'AUTH_ENABLED', 'value', string(parameters('authEnabled'))), createObject('name', 'ENTRA_TENANT_ID', 'value', parameters('entraTenantId')), createObject('name', 'ENTRA_CLIENT_ID', 'value', parameters('entraClientId'))), concat(if(parameters('anthropicApiKeyExists'), createArray(createObject('name', 'ANTHROPIC_API_KEY', 'secretRef', 'anthropic-api-key')), createArray()), if(not(empty(parameters('anthropicFoundryBaseUrl'))), createArray(createObject('name', 'ANTHROPIC_FOUNDRY_BASE_URL', 'value', parameters('anthropicFoundryBaseUrl'))), createArray()), if(parameters('anthropicFoundryApiKeyExists'), createArray(createObject('name', 'ANTHROPIC_FOUNDRY_API_KEY', 'secretRef', 'anthropic-foundry-api-key')), createArray()), if(parameters('entraClientSecretExists'), createArray(createObject('name', 'ENTRA_CLIENT_SECRET', 'secretRef', 'entra-client-secret')), createArray())))]",
                       "probes": [
                         {
                           "type": "Liveness",
@@ -2615,10 +2242,6 @@
                           "value": "[parameters('aiSearchEndpoint')]"
                         },
                         {
-                          "name": "COSMOS_ENDPOINT",
-                          "value": "[parameters('cosmosEndpoint')]"
-                        },
-                        {
                           "name": "AZURE_STORAGE_ACCOUNT_URL",
                           "value": "[parameters('storageBlobEndpoint')]"
                         },
@@ -2687,7 +2310,7 @@
                       "env": [
                         {
                           "name": "API_INTERNAL_FQDN",
-                          "value": "[format('ca-api-{0}', parameters('baseName'))]"
+                          "value": "[reference(resourceId('Microsoft.App/containerApps', format('ca-api-{0}', parameters('baseName'))), '2024-03-01').configuration.ingress.fqdn]"
                         }
                       ],
                       "probes": [
@@ -2800,18 +2423,192 @@
                 "description": "Resource ID of the user-assigned managed identity"
               },
               "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('baseName')))]"
+            },
+            "surfApiId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the surf-api container app"
+              },
+              "value": "[resourceId('Microsoft.App/containerApps', format('ca-api-{0}', parameters('baseName')))]"
             }
           }
         }
       },
       "dependsOn": [
         "[resourceId('Microsoft.Resources/deployments', 'deploy-ai-search')]",
-        "[resourceId('Microsoft.Resources/deployments', 'deploy-cosmos-db')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-key-vault')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-log-analytics')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-networking')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-openai')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-storage')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-alerts",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "containerAppResourceId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-container-apps'), '2025-04-01').outputs.surfApiId.value]"
+          },
+          "logAnalyticsWorkspaceId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-log-analytics'), '2025-04-01').outputs.workspaceId.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "16525057693956928275"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for alert rule resources (reserved for future scheduled query rules)"
+              }
+            },
+            "containerAppResourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the container app to monitor"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics workspace (reserved for future log-based alert rules)"
+              }
+            },
+            "actionGroupId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Resource ID of the action group for alert notifications (empty to skip notifications)"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "alert-container-restarts",
+              "location": "global",
+              "properties": {
+                "description": "Fires when the container app restarts within a 5-minute window.",
+                "severity": 2,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('containerAppResourceId')]"
+                ],
+                "evaluationFrequency": "PT1M",
+                "windowSize": "PT5M",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "name": "RestartCount",
+                      "metricName": "RestartCount",
+                      "metricNamespace": "Microsoft.App/containerApps",
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "timeAggregation": "Total",
+                      "criterionType": "StaticThresholdCriterion"
+                    }
+                  ]
+                },
+                "actions": "[if(empty(parameters('actionGroupId')), createArray(), createArray(createObject('actionGroupId', parameters('actionGroupId'))))]"
+              }
+            },
+            {
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "alert-5xx-response-rate",
+              "location": "global",
+              "properties": {
+                "description": "Fires when the 5xx response rate exceeds 5% over a 5-minute window.",
+                "severity": 2,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('containerAppResourceId')]"
+                ],
+                "evaluationFrequency": "PT1M",
+                "windowSize": "PT5M",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "name": "Requests5xx",
+                      "metricName": "Requests",
+                      "metricNamespace": "Microsoft.App/containerApps",
+                      "operator": "GreaterThan",
+                      "threshold": 5,
+                      "timeAggregation": "Total",
+                      "criterionType": "StaticThresholdCriterion",
+                      "dimensions": [
+                        {
+                          "name": "statusCodeCategory",
+                          "operator": "Include",
+                          "values": [
+                            "5xx"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "actions": "[if(empty(parameters('actionGroupId')), createArray(), createArray(createObject('actionGroupId', parameters('actionGroupId'))))]"
+              }
+            },
+            {
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "alert-cpu-high",
+              "location": "global",
+              "properties": {
+                "description": "Fires when container app CPU usage exceeds 80% for 5 minutes.",
+                "severity": 2,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('containerAppResourceId')]"
+                ],
+                "evaluationFrequency": "PT1M",
+                "windowSize": "PT5M",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "name": "CpuUsage",
+                      "metricName": "UsageNanoCores",
+                      "metricNamespace": "Microsoft.App/containerApps",
+                      "operator": "GreaterThan",
+                      "threshold": 800000000,
+                      "timeAggregation": "Average",
+                      "criterionType": "StaticThresholdCriterion"
+                    }
+                  ]
+                },
+                "actions": "[if(empty(parameters('actionGroupId')), createArray(), createArray(createObject('actionGroupId', parameters('actionGroupId'))))]"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'deploy-container-apps')]",
+        "[resourceId('Microsoft.Resources/deployments', 'deploy-log-analytics')]"
       ]
     }
   ],
@@ -2843,13 +2640,6 @@
         "description": "Azure AI Search endpoint"
       },
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-ai-search'), '2025-04-01').outputs.searchEndpoint.value]"
-    },
-    "cosmosEndpoint": {
-      "type": "string",
-      "metadata": {
-        "description": "Cosmos DB endpoint"
-      },
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-cosmos-db'), '2025-04-01').outputs.cosmosEndpoint.value]"
     },
     "keyVaultUri": {
       "type": "string",

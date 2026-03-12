@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -72,12 +73,22 @@ function getMsalInstance(): Promise<PublicClientApplication | null> {
   return msalReady;
 }
 
+let tokenPromise: Promise<string | null> | null = null;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(!!clientId);
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const photoUrlRef = useRef<string | null>(null);
+
+  // Revoke blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
+    };
+  }, []);
 
   // Fetch user profile from our backend
   const fetchProfile = useCallback(async (token: string) => {
@@ -97,7 +108,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         if (photoResp.ok) {
           const blob = await photoResp.blob();
-          setPhotoUrl(URL.createObjectURL(blob));
+          if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
+          const url = URL.createObjectURL(blob);
+          photoUrlRef.current = url;
+          setPhotoUrl(url);
         }
       } catch {
         // No photo — fine
@@ -191,7 +205,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // No silent auth possible
         setIsLoading(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Authentication failed");
+        console.error('Auth error:', err);
+        setError('Login failed. Please try again.');
         setIsLoading(false);
       }
     };
@@ -215,7 +230,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           void fetchProfile(tokenResult.accessToken);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Login failed');
+        console.error('Auth error:', err);
+        setError('Login failed. Please try again.');
       }
     } else {
       void msalInstance.loginRedirect({ scopes: loginScopes });
@@ -238,38 +254,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const getApiToken = useCallback(async (): Promise<string | null> => {
     if (!msalInstance || !account) return null;
-    try {
-      const result = await msalInstance.acquireTokenSilent({
-        scopes: [apiScope],
-        account,
-      });
-      void persistMsalCache();
-      return result.accessToken;
-    } catch (err) {
-      // In Tauri, any token failure should attempt popup re-auth before
-      // giving up — silent renewal often fails due to WebView limitations.
-      if (err instanceof InteractionRequiredAuthError || needsPopupAuth()) {
-        if (needsPopupAuth()) {
-          try {
-            const result = await msalInstance.acquireTokenPopup({ scopes: [apiScope] });
-            void persistMsalCache();
-            return result.accessToken;
-          } catch {
-            // Popup was closed or failed — clear auth state so UI shows login
-            setAccount(null);
-            setProfile(null);
-            void clearMsalCache();
-            return null;
+    if (tokenPromise) return tokenPromise;
+    tokenPromise = (async () => {
+      try {
+        const result = await msalInstance.acquireTokenSilent({
+          scopes: [apiScope],
+          account,
+        });
+        void persistMsalCache();
+        return result.accessToken;
+      } catch (err) {
+        // In Tauri, any token failure should attempt popup re-auth before
+        // giving up — silent renewal often fails due to WebView limitations.
+        if (err instanceof InteractionRequiredAuthError || needsPopupAuth()) {
+          if (needsPopupAuth()) {
+            try {
+              const result = await msalInstance.acquireTokenPopup({ scopes: [apiScope] });
+              void persistMsalCache();
+              return result.accessToken;
+            } catch {
+              // Popup was closed or failed — clear auth state so UI shows login
+              setAccount(null);
+              setProfile(null);
+              void clearMsalCache();
+              return null;
+            }
           }
+          void msalInstance.acquireTokenRedirect({ scopes: [apiScope] });
+          return null;
         }
-        void msalInstance.acquireTokenRedirect({ scopes: [apiScope] });
+        // Non-interaction error (e.g. network failure, cache cleared) —
+        // clear auth state so the user can re-login
+        setAccount(null);
+        setProfile(null);
         return null;
       }
-      // Non-interaction error (e.g. network failure, cache cleared) —
-      // clear auth state so the user can re-login
-      setAccount(null);
-      setProfile(null);
-      return null;
+    })();
+    try {
+      return await tokenPromise;
+    } finally {
+      tokenPromise = null;
     }
   }, [account]);
 

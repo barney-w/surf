@@ -63,9 +63,6 @@ param aiSearchEndpoint string = ''
 @description('Azure AI Search SharePoint index name (empty to disable)')
 param aiSearchSharepointIndex string = ''
 
-@description('Cosmos DB endpoint')
-param cosmosEndpoint string = ''
-
 @description('Storage blob endpoint')
 param storageBlobEndpoint string = ''
 
@@ -84,9 +81,6 @@ param openAiId string = ''
 
 @description('Azure AI Search resource ID')
 param aiSearchId string = ''
-
-@description('Cosmos DB account ID')
-param cosmosAccountId string = ''
 
 @description('Storage account ID')
 param storageAccountId string = ''
@@ -218,10 +212,6 @@ resource existingAiSearch 'Microsoft.Search/searchServices@2023-11-01' existing 
   name: last(split(aiSearchId, '/'))
 }
 
-resource existingCosmos 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' existing = if (!empty(cosmosAccountId)) {
-  name: last(split(cosmosAccountId, '/'))
-}
-
 resource existingStorage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = if (!empty(storageAccountId)) {
   name: last(split(storageAccountId, '/'))
 }
@@ -259,17 +249,6 @@ resource roleSearchContributor 'Microsoft.Authorization/roleAssignments@2022-04-
       'Microsoft.Authorization/roleDefinitions',
       '8ebe5a00-799e-43f5-93ac-243d3dce84a7' // Search Index Data Contributor
     )
-  }
-}
-
-// Cosmos DB Built-in Data Contributor (data plane role — must use sqlRoleAssignments, not ARM roleAssignments)
-resource roleCosmosContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (!empty(cosmosAccountId)) {
-  name: guid(managedIdentity.id, cosmosAccountId, 'cosmos-db-data-contributor')
-  parent: existingCosmos
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    roleDefinitionId: '${existingCosmos.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
-    scope: existingCosmos.id
   }
 }
 
@@ -382,7 +361,6 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_OPENAI_ENDPOINT', value: openAiEndpoint }
             { name: 'AZURE_SEARCH_ENDPOINT', value: aiSearchEndpoint }
             { name: 'AZURE_SEARCH_SHAREPOINT_INDEX', value: aiSearchSharepointIndex }
-            { name: 'COSMOS_ENDPOINT', value: cosmosEndpoint }
             { name: 'AZURE_STORAGE_ACCOUNT_URL', value: storageBlobEndpoint }
             { name: 'AZURE_KEYVAULT_URL', value: keyVaultUri }
             { name: 'AZURE_CLIENT_ID', value: managedIdentity.properties.clientId }
@@ -391,6 +369,7 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AUTH_ENABLED', value: string(authEnabled) }
             { name: 'ENTRA_TENANT_ID', value: entraTenantId }
             { name: 'ENTRA_CLIENT_ID', value: entraClientId }
+            { name: 'POSTGRES_ENABLED', value: 'False' }
           ], concat(
             anthropicApiKeyExists ? [{ name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }] : [],
             !empty(anthropicFoundryBaseUrl) ? [{ name: 'ANTHROPIC_FOUNDRY_BASE_URL', value: anthropicFoundryBaseUrl }] : [],
@@ -477,7 +456,6 @@ resource surfIngestion 'Microsoft.App/containerApps@2024-03-01' = {
           env: [
             { name: 'AZURE_OPENAI_ENDPOINT', value: openAiEndpoint }
             { name: 'AZURE_SEARCH_ENDPOINT', value: aiSearchEndpoint }
-            { name: 'COSMOS_ENDPOINT', value: cosmosEndpoint }
             { name: 'AZURE_STORAGE_ACCOUNT_URL', value: storageBlobEndpoint }
             { name: 'AZURE_KEYVAULT_URL', value: keyVaultUri }
             { name: 'AZURE_CLIENT_ID', value: managedIdentity.properties.clientId }
@@ -611,3 +589,6 @@ output managedIdentityClientId string = managedIdentity.properties.clientId
 
 @description('Resource ID of the user-assigned managed identity')
 output managedIdentityId string = managedIdentity.id
+
+@description('Resource ID of the surf-api container app')
+output surfApiId string = surfApi.id

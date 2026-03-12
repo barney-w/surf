@@ -15,10 +15,6 @@ param aiSearchSku = 'standard'
 param aiSearchReplicaCount = 3
 param aiSearchPartitionCount = 1
 
-// Cosmos DB — provisioned with production throughput
-param cosmosCapacityMode = 'Provisioned'
-param cosmosThroughput = 1000
-
 // Storage — geo-redundant with read access
 param storageSku = 'Standard_RAGRS'
 

@@ -33,13 +33,6 @@ param aiSearchPartitionCount int = 1
 @description('Azure AI Search SharePoint index name (empty to disable)')
 param aiSearchSharepointIndex string = ''
 
-@description('Cosmos DB capacity mode')
-@allowed(['Serverless', 'Provisioned'])
-param cosmosCapacityMode string = 'Serverless'
-
-@description('Cosmos DB provisioned throughput (RU/s)')
-param cosmosThroughput int = 400
-
 @description('Storage account SKU')
 param storageSku string = 'Standard_LRS'
 
@@ -227,24 +220,6 @@ module storage 'modules/storage.bicep' = {
 }
 
 // ---------------------------------------------------------------------------
-// Module: Cosmos DB
-// ---------------------------------------------------------------------------
-
-module cosmosDb 'modules/cosmos-db.bicep' = {
-  name: 'deploy-cosmos-db'
-  params: {
-    cosmosAccountName: 'cosmos-${baseName}'
-    location: location
-    capacityMode: cosmosCapacityMode
-    throughput: cosmosThroughput
-    databaseName: 'surf'
-    containerName: 'conversations'
-    partitionKeyPath: '/user_id'
-    tags: tags
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Module: Networking (VNet + Subnets + Private Endpoints)
 // ---------------------------------------------------------------------------
 
@@ -254,7 +229,6 @@ module networking 'modules/networking.bicep' = {
     vnetName: 'vnet-${baseName}'
     location: location
     aiSearchId: aiSearch.outputs.searchId
-    cosmosDbId: cosmosDb.outputs.cosmosAccountId
     storageAccountId: storage.outputs.storageAccountId
     tags: tags
   }
@@ -282,7 +256,6 @@ module containerApps 'modules/container-apps.bicep' = {
     openAiEndpoint: openAi.outputs.openAiEndpoint
     aiSearchEndpoint: aiSearch.outputs.searchEndpoint
     aiSearchSharepointIndex: aiSearchSharepointIndex
-    cosmosEndpoint: cosmosDb.outputs.cosmosEndpoint
     storageBlobEndpoint: storage.outputs.blobEndpoint
     keyVaultUri: keyVault.outputs.keyVaultUri
     keyVaultName: keyVault.outputs.keyVaultName
@@ -300,10 +273,22 @@ module containerApps 'modules/container-apps.bicep' = {
     webMaxReplicas: webMaxReplicas
     openAiId: openAi.outputs.openAiId
     aiSearchId: aiSearch.outputs.searchId
-    cosmosAccountId: cosmosDb.outputs.cosmosAccountId
     storageAccountId: storage.outputs.storageAccountId
     keyVaultId: keyVault.outputs.keyVaultId
     tags: tags
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Module: Alerting Rules
+// ---------------------------------------------------------------------------
+
+module alerts 'modules/alerts.bicep' = {
+  name: 'deploy-alerts'
+  params: {
+    location: location
+    containerAppResourceId: containerApps.outputs.surfApiId
+    logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
   }
 }
 
@@ -322,9 +307,6 @@ output openAiEndpoint string = openAi.outputs.openAiEndpoint
 
 @description('Azure AI Search endpoint')
 output aiSearchEndpoint string = aiSearch.outputs.searchEndpoint
-
-@description('Cosmos DB endpoint')
-output cosmosEndpoint string = cosmosDb.outputs.cosmosEndpoint
 
 @description('Key Vault URI')
 output keyVaultUri string = keyVault.outputs.keyVaultUri

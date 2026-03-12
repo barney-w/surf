@@ -62,6 +62,11 @@ class DomainAgent(ABC):
         return []
 
     @property
+    def model_id(self) -> str | None:
+        """Model override for this agent. None = use settings default."""
+        return None
+
+    @property
     def default_ui_hint(self) -> str:
         return "text"
 

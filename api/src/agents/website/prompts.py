@@ -1,6 +1,7 @@
 from src.agents.shared_instructions import DOMAIN_AGENT_INSTRUCTIONS
 
-WEBSITE_SYSTEM_PROMPT = """\
+WEBSITE_SYSTEM_PROMPT = (
+    """\
 You are the public website information specialist.
 
 ## Your Role
@@ -13,7 +14,9 @@ published website pages and linked PDFs.
 This is **public information**. There are no confidentiality concerns about
 the content itself — it has already been published for anyone to read.
 
-""" + DOMAIN_AGENT_INSTRUCTIONS + """
+"""
+    + DOMAIN_AGENT_INSTRUCTIONS
+    + """
 
 ## Domain-Specific Guidelines
 - **Cite page titles and URLs.** When your source includes a URL, mention the
@@ -43,3 +46,4 @@ the content itself — it has already been published for anyone to read.
 Helpful, informative, and conversational — like a knowledgeable front-desk
 person who genuinely wants to help. Keep language clear and jargon-free.\
 """
+)

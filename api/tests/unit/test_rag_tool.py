@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from azure.core.exceptions import ResourceNotFoundError
@@ -15,6 +15,8 @@ from src.rag.search import (
     search_index,
 )
 from src.rag.tools import (
+    _extract_keywords,  # pyright: ignore[reportPrivateUsage]
+    _merge_and_deduplicate,  # pyright: ignore[reportPrivateUsage]
     clear_search_clients,
     create_rag_tool,
     set_search_client,
@@ -157,7 +159,8 @@ class TestRagToolFilterWiring:
         rag_tool = create_rag_tool(scope=scope)
         await rag_tool.invoke(arguments={"query": "recycling bins", "document_type": None})
 
-        _, kwargs = mock_client.search.call_args
+        # Strategy 1 (first call) should include content_source filter
+        _, kwargs = mock_client.search.call_args_list[0]
         odata = kwargs.get("filter", "")
         assert "content_source" in odata
         assert "domain eq" not in odata
@@ -179,7 +182,8 @@ class TestRagToolFilterWiring:
         rag_tool = create_rag_tool(scope=scope)
         await rag_tool.invoke(arguments={"query": "leave policy", "document_type": None})
 
-        _, kwargs = mock_client.search.call_args
+        # Strategy 1 (first call) should include domain filter
+        _, kwargs = mock_client.search.call_args_list[0]
         odata = kwargs.get("filter", "")
         assert "domain eq 'hr'" in odata
         assert "content_source" not in odata
@@ -230,7 +234,7 @@ class TestResultFormatting:
         assert 'title: "Travel Policy"' in result
         assert 'section: "Domestic Travel"' in result
         assert 'document_id: "doc-42"' in result
-        assert "relevance: 1.0" in result  # single result normalises to 1.0
+        assert "relevance: 1.0 (STRONG MATCH)" in result  # single result normalises to 1.0
         assert "CONTENT:" in result
         assert "pre-approval" in result
         assert "=== END SOURCE 1 ===" in result
@@ -497,3 +501,436 @@ class TestSearchClientRegistry:
 
         with pytest.raises(RuntimeError, match="Search client not initialised"):
             _get_search_clients()
+
+
+# ---------------------------------------------------------------------------
+# Tier labels and summary header
+# ---------------------------------------------------------------------------
+
+
+def _make_search_results_with_scores(*scores: float) -> list[dict]:
+    """Create mock search result dicts with the given scores."""
+    return [
+        {
+            "document_id": f"doc-{i}",
+            "title": f"Document {i}",
+            "section_heading": None,
+            "content": f"Content for document {i}.",
+            "@search.score": score,
+            "source_url": None,
+            "domain": "hr",
+            "document_type": "policy",
+        }
+        for i, score in enumerate(scores, 1)
+    ]
+
+
+class TestTierLabels:
+    """Verify tier labels (STRONG/PARTIAL/WEAK MATCH) and summary header."""
+
+    @pytest.mark.asyncio
+    async def test_strong_match_label(self):
+        """A result with the highest score (normalised to 1.0) gets STRONG MATCH."""
+        docs = _make_search_results_with_scores(1.0)
+
+        async def _results():
+            for d in docs:
+                yield d
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=_results())
+        set_search_client(mock_client)
+
+        rag_tool = create_rag_tool(scope=None)
+        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        assert "relevance: 1.0 (STRONG MATCH)" in result
+
+    @pytest.mark.asyncio
+    async def test_partial_match_label(self):
+        """A result with normalised score 0.5 gets PARTIAL MATCH."""
+        docs = _make_search_results_with_scores(1.0, 0.5)
+
+        async def _results():
+            for d in docs:
+                yield d
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=_results())
+        set_search_client(mock_client)
+
+        rag_tool = create_rag_tool(scope=None)
+        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        assert "relevance: 0.5 (PARTIAL MATCH)" in result
+
+    @pytest.mark.asyncio
+    async def test_weak_match_label(self):
+        """A result with normalised score 0.2 gets WEAK MATCH."""
+        docs = _make_search_results_with_scores(1.0, 0.2)
+
+        async def _results():
+            for d in docs:
+                yield d
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=_results())
+        set_search_client(mock_client)
+
+        rag_tool = create_rag_tool(scope=None)
+        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        assert "relevance: 0.2 (WEAK MATCH)" in result
+
+    @pytest.mark.asyncio
+    async def test_tier_boundary_0_7(self):
+        """Score exactly 0.7 (normalised) should be STRONG MATCH."""
+        docs = _make_search_results_with_scores(1.0, 0.7)
+
+        async def _results():
+            for d in docs:
+                yield d
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=_results())
+        set_search_client(mock_client)
+
+        rag_tool = create_rag_tool(scope=None)
+        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        assert "relevance: 0.7 (STRONG MATCH)" in result
+
+    @pytest.mark.asyncio
+    async def test_tier_boundary_0_4(self):
+        """Score exactly 0.4 (normalised) should be PARTIAL MATCH."""
+        docs = _make_search_results_with_scores(1.0, 0.4)
+
+        async def _results():
+            for d in docs:
+                yield d
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=_results())
+        set_search_client(mock_client)
+
+        rag_tool = create_rag_tool(scope=None)
+        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        assert "relevance: 0.4 (PARTIAL MATCH)" in result
+
+    @pytest.mark.asyncio
+    async def test_summary_header_present(self):
+        """Output should start with 'Found N results' summary line."""
+        docs = _make_search_results_with_scores(0.9)
+
+        async def _results():
+            for d in docs:
+                yield d
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=_results())
+        set_search_client(mock_client)
+
+        rag_tool = create_rag_tool(scope=None)
+        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        assert result.startswith("Found 1 results")
+
+    @pytest.mark.asyncio
+    async def test_summary_header_counts(self):
+        """Verify strong/partial/weak counts in summary are correct."""
+        # Scores: 1.0 -> 1.0 (strong), 0.7 -> 0.7 (strong),
+        #         0.5 -> 0.5 (partial), 0.3 -> 0.3 (weak)
+        docs = _make_search_results_with_scores(1.0, 0.7, 0.5, 0.3)
+
+        async def _results():
+            for d in docs:
+                yield d
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=_results())
+        set_search_client(mock_client)
+
+        rag_tool = create_rag_tool(scope=None)
+        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        assert "Found 4 results (2 strong, 1 partial, 1 weak)" in result
+        assert "Base your answer on the strong and partial matches." in result
+
+
+# ---------------------------------------------------------------------------
+# _extract_keywords
+# ---------------------------------------------------------------------------
+
+
+class TestExtractKeywords:
+    def test_strips_conversational_phrasing(self):
+        result = _extract_keywords(
+            "tell me about the code of conduct in relation to my role as developer"
+        )
+        assert result == "code conduct developer"
+
+    def test_strips_stop_words(self):
+        result = _extract_keywords("what is the leave policy for annual leave")
+        assert result == "leave policy annual leave"
+
+    def test_preserves_keywords_only_query(self):
+        result = _extract_keywords("code of conduct")
+        assert result == "code conduct"
+
+    def test_returns_original_if_empty_after_strip(self):
+        result = _extract_keywords("tell me about the")
+        assert result == "tell me about the"
+
+    def test_handles_empty_string(self):
+        assert _extract_keywords("") == ""
+
+    def test_case_insensitive(self):
+        result = _extract_keywords("Tell Me About The CODE OF CONDUCT")
+        assert result == "code conduct"
+
+
+# ---------------------------------------------------------------------------
+# _merge_and_deduplicate
+# ---------------------------------------------------------------------------
+
+
+def _make_search_result(
+    doc_id: str, chunk_index: int, score: float, content: str = "Test content"
+) -> SearchResult:
+    return SearchResult(
+        document_id=doc_id,
+        title="Test",
+        section_heading=None,
+        content=content,
+        score=score,
+        source_url=None,
+        domain="hr",
+        document_type="policy",
+        chunk_index=chunk_index,
+    )
+
+
+class TestMergeAndDeduplicate:
+    def test_deduplicates_by_doc_and_chunk(self):
+        primary = [_make_search_result("doc1", 0, 0.8)]
+        secondary = [_make_search_result("doc1", 0, 0.9)]
+        result = _merge_and_deduplicate(primary, secondary, top_k=10)
+        assert len(result) == 1
+        assert result[0].score == 0.9  # keeps higher score
+
+    def test_preserves_unique_results(self):
+        primary = [_make_search_result("doc1", 0, 0.8)]
+        secondary = [_make_search_result("doc2", 0, 0.9)]
+        result = _merge_and_deduplicate(primary, secondary, top_k=10)
+        assert len(result) == 2
+        assert result[0].document_id == "doc2"  # higher score first
+        assert result[1].document_id == "doc1"
+
+    def test_trims_to_top_k(self):
+        primary = [_make_search_result(f"doc-p{i}", 0, 0.5 + i * 0.01) for i in range(10)]
+        secondary = [_make_search_result(f"doc-s{i}", 0, 0.6 + i * 0.01) for i in range(10)]
+        result = _merge_and_deduplicate(primary, secondary, top_k=15)
+        assert len(result) == 15
+
+    def test_empty_secondary(self):
+        primary = [_make_search_result("doc1", 0, 0.8), _make_search_result("doc2", 0, 0.6)]
+        result = _merge_and_deduplicate(primary, [], top_k=10)
+        assert len(result) == 2
+        assert result[0].score >= result[1].score
+
+    def test_empty_primary(self):
+        secondary = [_make_search_result("doc1", 0, 0.7), _make_search_result("doc2", 0, 0.9)]
+        result = _merge_and_deduplicate([], secondary, top_k=10)
+        assert len(result) == 2
+        assert result[0].score >= result[1].score
+
+    def test_sorted_by_score_descending(self):
+        primary = [
+            _make_search_result("doc1", 0, 0.3),
+            _make_search_result("doc2", 0, 0.9),
+            _make_search_result("doc3", 0, 0.6),
+        ]
+        secondary = [
+            _make_search_result("doc4", 0, 0.1),
+            _make_search_result("doc5", 0, 0.7),
+        ]
+        result = _merge_and_deduplicate(primary, secondary, top_k=10)
+        scores = [r.score for r in result]
+        assert scores == sorted(scores, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# Multi-strategy search cascade
+# ---------------------------------------------------------------------------
+
+
+def _sr(
+    doc_id: str = "doc1",
+    chunk_index: int = 0,
+    score: float = 0.8,
+    content: str = "Test content",
+    domain: str = "hr",
+    document_type: str = "policy",
+) -> SearchResult:
+    """Shorthand factory for SearchResult used by multi-strategy tests."""
+    return SearchResult(
+        document_id=doc_id,
+        title="Test",
+        section_heading=None,
+        content=content,
+        score=score,
+        source_url=None,
+        domain=domain,
+        document_type=document_type,
+        chunk_index=chunk_index,
+    )
+
+
+class TestMultiStrategySearch:
+    """Verify the three-strategy search cascade in create_rag_tool."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_search(self, monkeypatch):
+        self.mock_search = AsyncMock()
+        monkeypatch.setattr("src.rag.tools.search_index", self.mock_search)
+        monkeypatch.setattr("src.rag.tools._search_clients", [MagicMock()])
+
+    @pytest.mark.asyncio
+    async def test_strategy1_sufficient_no_broadening(self):
+        """When strategy 1 returns >= 3 results, no further strategies fire."""
+        self.mock_search.return_value = [_sr(f"doc{i}", score=0.9 - i * 0.01) for i in range(5)]
+
+        rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
+        await rag_tool.invoke(arguments={"query": "leave policy", "document_type": "policy"})
+
+        assert self.mock_search.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_strategy2_fires_on_sparse_results(self):
+        """When strategy 1 returns < 3 results, strategy 2 broadens filters."""
+        self.mock_search.side_effect = [
+            # Strategy 1: sparse
+            [_sr("doc1", score=0.9)],
+            # Strategy 2: broadened
+            [_sr(f"doc{i}", score=0.8 - i * 0.01) for i in range(2, 6)],
+        ]
+
+        rag_tool = create_rag_tool(scope=RAGScope(domain="hr", document_types=["policy"]))
+        await rag_tool.invoke(arguments={"query": "leave policy", "document_type": "policy"})
+
+        assert self.mock_search.call_count == 2
+        # Strategy 2 should keep identity filters (domain) but drop document_type
+        _, s2_kwargs = self.mock_search.call_args_list[1]
+        s2_filters = s2_kwargs.get("filters") or {}
+        assert s2_filters == {"domain": "hr"}
+        assert "document_type" not in s2_filters
+        assert "document_type_in" not in s2_filters
+
+    @pytest.mark.asyncio
+    async def test_strategy3_fires_on_very_sparse_results(self):
+        """When strategies 1+2 combined return < 3 results, strategy 3 fires with keywords."""
+        self.mock_search.side_effect = [
+            # Strategy 1: nothing
+            [],
+            # Strategy 2: nothing
+            [],
+            # Strategy 3: keyword extraction yields results
+            [_sr(f"doc{i}", score=0.7 - i * 0.01) for i in range(3)],
+        ]
+
+        rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
+        await rag_tool.invoke(
+            arguments={
+                "query": "tell me about the code of conduct",
+                "document_type": None,
+            }
+        )
+
+        assert self.mock_search.call_count == 3
+        # Strategy 3 call should use extracted keywords, not the original query
+        _, s3_kwargs = self.mock_search.call_args_list[2]
+        assert s3_kwargs["query"] != "tell me about the code of conduct"
+
+    @pytest.mark.asyncio
+    async def test_strategy3_skipped_when_keywords_match_query(self):
+        """Strategy 3 is skipped when extracted keywords equal the lowered query."""
+        self.mock_search.side_effect = [
+            # Strategy 1: nothing
+            [],
+            # Strategy 2: nothing
+            [],
+        ]
+
+        rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
+        # "code conduct" after keyword extraction stays "code conduct"
+        await rag_tool.invoke(arguments={"query": "code conduct", "document_type": None})
+
+        assert self.mock_search.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_deduplication_across_strategies(self):
+        """Overlapping results from strategies 1 and 2 should be deduplicated."""
+        shared = _sr("shared-doc", chunk_index=0, score=0.85, content="Shared content")
+        unique_s2 = _sr("unique-doc", chunk_index=0, score=0.75, content="Unique content")
+        self.mock_search.side_effect = [
+            # Strategy 1: one result
+            [shared],
+            # Strategy 2: overlapping + unique
+            [
+                _sr("shared-doc", chunk_index=0, score=0.80, content="Shared content"),
+                unique_s2,
+            ],
+        ]
+
+        rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
+        result = await rag_tool.invoke(arguments={"query": "some query", "document_type": "policy"})
+
+        # Should have exactly 2 SOURCE blocks (one for shared-doc, one for unique-doc)
+        source_blocks = result.count("=== SOURCE")
+        end_blocks = result.count("=== END SOURCE")
+        assert source_blocks == 2
+        assert end_blocks == 2
+        # shared-doc should appear only once
+        assert result.count('document_id: "shared-doc"') == 1
+
+    @pytest.mark.asyncio
+    async def test_strategy2_keeps_content_source_for_website_agent(self):
+        """Strategy 2 keeps content_source as an identity filter."""
+        self.mock_search.side_effect = [
+            # Strategy 1 with content_source="website": sparse
+            [_sr("doc1", score=0.9)],
+            # Strategy 2 still filtered by content_source: finds more website results
+            [_sr(f"doc{i}", score=0.8 - i * 0.01) for i in range(2, 6)],
+        ]
+
+        # Website agent has no domain, but has content_source metadata filter
+        rag_tool = create_rag_tool(
+            scope=RAGScope(
+                domain="",
+                document_types=[],
+                metadata_filters={"content_source": "website"},
+            )
+        )
+        await rag_tool.invoke(arguments={"query": "red bin waste", "document_type": None})
+
+        assert self.mock_search.call_count == 2
+        # Strategy 2 should keep content_source filter (identity filter)
+        _, s2_kwargs = self.mock_search.call_args_list[1]
+        s2_filters = s2_kwargs.get("filters") or {}
+        assert s2_filters == {"content_source": "website"}
+
+    @pytest.mark.asyncio
+    async def test_no_results_all_strategies(self):
+        """When all strategies return empty, the tool returns the no-results message."""
+        self.mock_search.side_effect = [
+            # Strategy 1
+            [],
+            # Strategy 2
+            [],
+            # Strategy 3
+            [],
+        ]
+
+        rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
+        result = await rag_tool.invoke(
+            arguments={
+                "query": "tell me about something obscure",
+                "document_type": None,
+            }
+        )
+
+        assert result == "No relevant documents found for this query."

@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -80,35 +81,35 @@ class TestWebsiteAgentProperties:
     """Verify WebsiteAgent has the expected configuration values."""
 
     def test_name(self):
-        WebsiteAgent = _register_website_agent()
-        agent = WebsiteAgent()
+        website_agent_cls = _register_website_agent()
+        agent = website_agent_cls()
         assert agent.name == "website_agent"
 
     def test_description_contains_key_terms(self):
-        WebsiteAgent = _register_website_agent()
-        agent = WebsiteAgent()
+        website_agent_cls = _register_website_agent()
+        agent = website_agent_cls()
         desc_lower = agent.description.lower()
         assert "public" in desc_lower
         assert "website" in desc_lower
 
     def test_rag_scope_domain_is_empty(self):
-        WebsiteAgent = _register_website_agent()
-        agent = WebsiteAgent()
+        website_agent_cls = _register_website_agent()
+        agent = website_agent_cls()
         assert agent.rag_scope.domain == ""
 
     def test_rag_scope_metadata_filters(self):
-        WebsiteAgent = _register_website_agent()
-        agent = WebsiteAgent()
+        website_agent_cls = _register_website_agent()
+        agent = website_agent_cls()
         assert agent.rag_scope.metadata_filters == {"content_source": "website"}
 
     def test_rag_scope_document_types_empty(self):
-        WebsiteAgent = _register_website_agent()
-        agent = WebsiteAgent()
+        website_agent_cls = _register_website_agent()
+        agent = website_agent_cls()
         assert agent.rag_scope.document_types == []
 
     def test_skill_path_resolves_to_website_dir(self):
-        WebsiteAgent = _register_website_agent()
-        agent = WebsiteAgent()
+        website_agent_cls = _register_website_agent()
+        agent = website_agent_cls()
         skill_path = agent.skill_path
         assert skill_path is not None
         assert skill_path.name == "website"
@@ -280,7 +281,8 @@ class TestSharedInstructions:
     def test_shared_instructions_contain_key_sections(self):
         from src.agents.shared_instructions import DOMAIN_AGENT_INSTRUCTIONS
 
-        assert "Using Search Results" in DOMAIN_AGENT_INSTRUCTIONS
+        assert "Processing Search Results" in DOMAIN_AGENT_INSTRUCTIONS
+        assert "MANDATORY: Search Before Answering" in DOMAIN_AGENT_INSTRUCTIONS
         assert "Always Respond" in DOMAIN_AGENT_INSTRUCTIONS
         assert "Structured Output Fields" in DOMAIN_AGENT_INSTRUCTIONS
         assert "follow_up_suggestions" in DOMAIN_AGENT_INSTRUCTIONS
@@ -290,18 +292,14 @@ class TestSkillMdFiles:
     """Verify SKILL.md files have correct frontmatter and content."""
 
     def test_hr_skill_md_has_frontmatter(self):
-        skill_path = (
-            Path(__file__).resolve().parent.parent.parent / "skills" / "hr" / "SKILL.md"
-        )
+        skill_path = Path(__file__).resolve().parent.parent.parent / "skills" / "hr" / "SKILL.md"
         content = skill_path.read_text()
         assert content.startswith("---")
         assert "name: hr-domain-expertise" in content
         assert "HR & Organisational Policy Expertise" in content
 
     def test_it_skill_md_has_frontmatter(self):
-        skill_path = (
-            Path(__file__).resolve().parent.parent.parent / "skills" / "it" / "SKILL.md"
-        )
+        skill_path = Path(__file__).resolve().parent.parent.parent / "skills" / "it" / "SKILL.md"
         content = skill_path.read_text()
         assert content.startswith("---")
         assert "name: it-domain-expertise" in content
@@ -405,3 +403,105 @@ class TestSafeHandoffAnthropicClient:
         # System message is stripped (handled as separate param by Anthropic)
         assert prepared[0]["role"] == "user"
         assert prepared[-1]["role"] == "user"
+
+
+class TestPerAgentModel:
+    """Verify per-agent model resolution in build_agent_graph."""
+
+    def _make_settings(self, **overrides):
+        from src.config.settings import Settings
+
+        defaults = {
+            "anthropic_api_key": "sk-ant-test",
+            "anthropic_model_id": "claude-sonnet-4-6",
+            "anthropic_domain_model_id": "",
+        }
+        defaults.update(overrides)
+        return Settings(_env_file=None, **defaults)  # pyright: ignore[reportCallIssue]
+
+    @patch("src.orchestrator.builder.create_rag_tool")
+    def test_domain_model_creates_separate_client(self, mock_rag):
+        """When domain model differs from global, a separate client is created."""
+        from src.orchestrator.builder import (
+            _SafeHandoffAnthropicClient,  # pyright: ignore[reportPrivateUsage]
+            build_agent_graph,
+            create_model_client,
+        )
+
+        _register_hr_agent()
+        mock_rag.return_value = MagicMock()
+
+        settings = self._make_settings(anthropic_domain_model_id="claude-haiku-4-5")
+        coordinator_client = create_model_client(settings)
+
+        with patch("src.orchestrator.builder.create_model_client_for_model") as mock_create:
+            mock_create.return_value = _SafeHandoffAnthropicClient(
+                api_key="sk-ant-test", model_id="claude-haiku-4-5"
+            )
+            build_agent_graph(coordinator_client, settings)
+
+            # Should be called once for the domain client
+            mock_create.assert_called_with(settings, "claude-haiku-4-5")
+
+    @patch("src.orchestrator.builder.create_rag_tool")
+    def test_same_model_reuses_client(self, mock_rag):
+        """When domain model equals global, no second client is created."""
+        from src.orchestrator.builder import (
+            build_agent_graph,
+            create_model_client,
+        )
+
+        _register_hr_agent()
+        mock_rag.return_value = MagicMock()
+
+        settings = self._make_settings()  # domain model empty => same as global
+        coordinator_client = create_model_client(settings)
+
+        with patch("src.orchestrator.builder.create_model_client_for_model") as mock_create:
+            build_agent_graph(coordinator_client, settings)
+            mock_create.assert_not_called()
+
+    @patch("src.orchestrator.builder.create_rag_tool")
+    def test_agent_model_override(self, mock_rag):
+        """An agent with model_id set gets its own client."""
+        from src.orchestrator.builder import (
+            _SafeHandoffAnthropicClient,  # pyright: ignore[reportPrivateUsage]
+            build_agent_graph,
+            create_model_client,
+        )
+
+        # Create a test agent with a specific model override
+        class SpecialistAgent(DomainAgent):
+            @property
+            def name(self) -> str:
+                return "specialist_agent"
+
+            @property
+            def description(self) -> str:
+                return "A specialist agent"
+
+            @property
+            def system_prompt(self) -> str:
+                return "You are a specialist."
+
+            @property
+            def rag_scope(self) -> RAGScope:
+                return RAGScope(domain="specialist")
+
+            @property
+            def model_id(self) -> str | None:
+                return "claude-opus-4-6"
+
+        mock_rag.return_value = MagicMock()
+
+        settings = self._make_settings()
+        coordinator_client = create_model_client(settings)
+
+        with patch("src.orchestrator.builder.create_model_client_for_model") as mock_create:
+            mock_create.return_value = _SafeHandoffAnthropicClient(
+                api_key="sk-ant-test", model_id="claude-opus-4-6"
+            )
+            build_agent_graph(coordinator_client, settings)
+
+            # Should be called with the agent-specific model
+            mock_create.assert_any_call(settings, "claude-opus-4-6")

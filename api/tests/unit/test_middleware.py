@@ -29,8 +29,7 @@ class TestRAGCollectorMiddleware:
         rag_results_collector.set(collector)
 
         rag_output = (
-            '=== SOURCE 1 ===\ntitle: "Leave Policy"\n'
-            "CONTENT:\nSome content\n=== END SOURCE 1 ==="
+            '=== SOURCE 1 ===\ntitle: "Leave Policy"\nCONTENT:\nSome content\n=== END SOURCE 1 ==='
         )
         ctx = _make_context()
 

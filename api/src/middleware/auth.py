@@ -22,7 +22,7 @@ class UserContext:
 @lru_cache(maxsize=1)
 def _get_jwks_client(jwks_uri: str) -> jwt.PyJWKClient:
     """Create a cached JWKS client for Entra ID token validation."""
-    return jwt.PyJWKClient(jwks_uri, cache_keys=True, lifespan=3600)
+    return jwt.PyJWKClient(jwks_uri, cache_keys=True, lifespan=300)
 
 
 def _get_jwks_uri(tenant_id: str) -> str:
@@ -83,6 +83,9 @@ async def get_current_user(request: Request) -> UserContext:
     except jwt.ExpiredSignatureError as e:
         logger.warning("Token has expired")
         raise HTTPException(status_code=401, detail="Token has expired") from e
+    except jwt.PyJWKClientConnectionError as e:
+        logger.error("Failed to fetch JWKS keys: %s", e)
+        raise HTTPException(status_code=401, detail="Authentication service unavailable") from e
     except jwt.InvalidTokenError as e:
         logger.warning("Invalid token: %s", e)
         raise HTTPException(status_code=401, detail="Invalid token") from e

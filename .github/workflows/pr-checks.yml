@@ -94,7 +94,7 @@ jobs:
         run: uv sync --frozen --prerelease=allow
 
       - name: Run tests
-        run: uv run pytest --tb=short -q
+        run: uv run pytest --tb=short
 
   # ---------------------------------------------------------------------------
   # Ingestion checks

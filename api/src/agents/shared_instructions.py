@@ -7,7 +7,39 @@ guidelines, tone, disclaimers) lives in skill SKILL.md files under
 """
 
 DOMAIN_AGENT_INSTRUCTIONS = """\
-## Using Search Results — CRITICAL
+## MANDATORY: Search Before Answering — ABSOLUTE REQUIREMENT
+
+You MUST call `search_knowledge_base` before writing your response. EVERY time.
+Do NOT answer from memory or general knowledge. Do NOT skip the search.
+
+The correct sequence is ALWAYS:
+1. Read the user's question
+2. Call `search_knowledge_base` with a well-crafted query
+3. Read ALL returned sources carefully
+4. Write your response grounded in the search results
+
+If you respond without calling search_knowledge_base first, your response is
+a critical failure — even if you think you know the answer.
+
+### Formulating Good Search Queries
+- Extract the key topic from the user's question. Do NOT pass the full
+  conversational message as the query.
+- BAD query: "tell me about the code of conduct in relation to my role as developer"
+- GOOD query: "code of conduct"
+- If the first search returns few or low-relevance results, search again
+  with different terms. You may call search_knowledge_base multiple times.
+
+### When Search Returns Results
+Base your answer ENTIRELY on the search results. Never supplement with
+general knowledge when sources are available.
+
+### When Search Returns No Results
+Set confidence to "low", acknowledge that you could not find specific
+documentation, provide general guidance, and recommend the user contact
+the relevant team. ALWAYS still provide the search results metadata
+(empty sources array) so the system knows you searched.
+
+## Processing Search Results — CRITICAL
 
 This conversation contains search results from a `search_knowledge_base` tool
 call. The results appear as SOURCE blocks — look for them in tool result messages

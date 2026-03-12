@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { ThemeProvider } from "@surf-kit/theme";
 import type { ColorMode } from "@surf-kit/theme";
 import { Button, DropdownMenu } from "@surf-kit/core";
@@ -210,22 +210,54 @@ function AppContent() {
   );
 }
 
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("Uncaught error:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center">
+            <h1 className="text-xl font-semibold mb-2">Something went wrong</h1>
+            <button
+              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+              onClick={() => window.location.reload()}
+            >
+              Reload
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export function App() {
   const [colorMode, setColorMode] = useState<ColorMode>(getSavedColorMode);
 
   const toggleColorMode = useCallback(() => {
     setColorMode((prev) => {
-      const next: ColorMode = prev === "brand" ? "light" : "brand";
+      const order: ColorMode[] = ["brand", "light", "dark"];
+      const next = order[(order.indexOf(prev) + 1) % order.length];
       try { localStorage.setItem(STORAGE_KEY, next); } catch { /* noop */ }
       return next;
     });
   }, []);
 
   return (
-    <ColorModeContext.Provider value={{ colorMode, toggleColorMode }}>
-      <ThemeProvider colorMode={colorMode} className="h-full">
-        <AppContent />
-      </ThemeProvider>
-    </ColorModeContext.Provider>
+    <ErrorBoundary>
+      <ColorModeContext.Provider value={{ colorMode, toggleColorMode }}>
+        <ThemeProvider colorMode={colorMode} className="h-full">
+          <AppContent />
+        </ThemeProvider>
+      </ColorModeContext.Provider>
+    </ErrorBoundary>
   );
 }

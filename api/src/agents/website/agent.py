@@ -29,9 +29,7 @@ class WebsiteAgent(DomainAgent):
     @property
     def skill_path(self) -> Path | None:
         """Explicit path since rag_scope.domain is empty."""
-        skills_dir = (
-            Path(__file__).resolve().parent.parent.parent.parent / "skills" / "website"
-        )
+        skills_dir = Path(__file__).resolve().parent.parent.parent.parent / "skills" / "website"
         return skills_dir if skills_dir.is_dir() else None
 
     @property

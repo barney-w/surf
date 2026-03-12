@@ -15,10 +15,6 @@ param aiSearchSku = 'basic'
 param aiSearchReplicaCount = 1
 param aiSearchPartitionCount = 1
 
-// Cosmos DB — serverless for dev (pay-per-request)
-param cosmosCapacityMode = 'Serverless'
-param cosmosThroughput = 400
-
 // Storage — locally redundant
 param storageSku = 'Standard_LRS'
 
@@ -47,6 +43,8 @@ param acrPublicNetworkAccess = 'Enabled'
 
 // Auth — enabled (SSO via Entra ID)
 param authEnabled = true
+param entraTenantId = '799af2de-e455-499c-babe-71a7929442ca'
+param entraClientId = '08ff7e73-6758-4c55-bdb1-cc4f124de8ac'
 
 // CORS — allow localhost origins
 param apiCorsOrigins = '["http://localhost:3000","https://tauri.localhost"]'

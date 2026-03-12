@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "5264514987208791045"
+      "templateHash": "466430138531773035"
     }
   },
   "parameters": {
@@ -38,80 +38,6 @@
     }
   },
   "resources": [
-    {
-      "type": "Microsoft.DocumentDB/databaseAccounts",
-      "apiVersion": "2024-05-15",
-      "name": "[format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))]",
-      "location": "[parameters('location')]",
-      "tags": "[variables('tags')]",
-      "kind": "GlobalDocumentDB",
-      "properties": {
-        "databaseAccountOfferType": "Standard",
-        "consistencyPolicy": {
-          "defaultConsistencyLevel": "Session"
-        },
-        "locations": [
-          {
-            "locationName": "[parameters('location')]",
-            "failoverPriority": 0,
-            "isZoneRedundant": false
-          }
-        ],
-        "capabilities": [
-          {
-            "name": "EnableServerless"
-          }
-        ],
-        "publicNetworkAccess": "Enabled",
-        "disableLocalAuth": true
-      }
-    },
-    {
-      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
-      "apiVersion": "2024-05-15",
-      "name": "[format('{0}/{1}', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')), 'surf')]",
-      "properties": {
-        "resource": {
-          "id": "surf"
-        }
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]"
-      ]
-    },
-    {
-      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
-      "apiVersion": "2024-05-15",
-      "name": "[format('{0}/{1}/{2}', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')), 'surf', 'conversations')]",
-      "properties": {
-        "resource": {
-          "id": "conversations",
-          "partitionKey": {
-            "paths": [
-              "/user_id"
-            ],
-            "kind": "Hash"
-          },
-          "indexingPolicy": {
-            "indexingMode": "consistent",
-            "automatic": true,
-            "includedPaths": [
-              {
-                "path": "/*"
-              }
-            ],
-            "excludedPaths": [
-              {
-                "path": "/_etag/?"
-              }
-            ]
-          }
-        }
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')), 'surf')]"
-      ]
-    },
     {
       "type": "Microsoft.Search/searchServices",
       "apiVersion": "2024-06-01-preview",
@@ -187,19 +113,6 @@
       ]
     },
     {
-      "type": "Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments",
-      "apiVersion": "2024-05-15",
-      "name": "[format('{0}/{1}', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')), guid(resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))), parameters('userObjectId'), 'cosmos-data-contributor'))]",
-      "properties": {
-        "roleDefinitionId": "[format('{0}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002', resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))))]",
-        "principalId": "[parameters('userObjectId')]",
-        "scope": "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]"
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]"
-      ]
-    },
-    {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Search/searchServices', format('search-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]",
@@ -249,13 +162,6 @@
         "description": "Azure AI Search endpoint"
       },
       "value": "[format('https://{0}.search.windows.net', format('search-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]"
-    },
-    "cosmosEndpoint": {
-      "type": "string",
-      "metadata": {
-        "description": "Cosmos DB endpoint"
-      },
-      "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))), '2024-05-15').documentEndpoint]"
     },
     "storageBlobEndpoint": {
       "type": "string",
