@@ -21,6 +21,7 @@ _DOCID_RE = re.compile(r'document_id:\s*"([^"]*)"')
 _RELEVANCE_RE = re.compile(r"relevance:\s*([0-9.]+)")
 _URL_RE = re.compile(r'url:\s*"([^"]*)"')
 _SNIPPET_RE = re.compile(r'snippet:\s*"([^"]*)"')
+_CONTENT_SOURCE_RE = re.compile(r'content_source:\s*"([^"]*)"')
 
 
 def extract_sources(text: str) -> list[Source]:
@@ -40,6 +41,10 @@ def deduplicate_sources(sources: list[Source]) -> list[Source]:
     document), we surface it as a single source card.  The highest-confidence
     entry wins; section headings from other entries are merged into it when the
     winning entry has no section.
+
+    Website sources (``content_source="website"``) are collapsed into a single
+    synthetic "Public Website" entry so the UI shows one card for the website
+    rather than individual page chunks.
     """
     if not sources:
         return sources
@@ -60,6 +65,43 @@ def deduplicate_sources(sources: list[Source]) -> list[Source]:
         if src.document_id not in seen:
             seen.add(src.document_id)
             result.append(best[src.document_id])
+
+    return _collapse_website_sources(result)
+
+
+def _collapse_website_sources(sources: list[Source]) -> list[Source]:
+    """Replace individual website sources with a single "Public Website" entry.
+
+    Non-website sources are preserved as-is.  If any source has
+    ``content_source="website"``, all such sources are removed and a single
+    synthetic entry is inserted at the position of the first website source.
+    """
+    website_sources = [s for s in sources if s.content_source == "website"]
+    if not website_sources:
+        return sources
+
+    # Build a synthetic entry from the best website source.
+    best_website = max(website_sources, key=lambda s: s.confidence)
+    synthetic = Source(
+        title="Public Website",
+        section=None,
+        document_id="website",
+        url=best_website.url,
+        confidence=best_website.confidence,
+        snippet=best_website.snippet,
+        content_source="website",
+    )
+
+    # Insert synthetic at the position of the first website source.
+    result: list[Source] = []
+    inserted = False
+    for src in sources:
+        if src.content_source == "website":
+            if not inserted:
+                result.append(synthetic)
+                inserted = True
+        else:
+            result.append(src)
     return result
 
 
@@ -75,6 +117,7 @@ def _parse_source_block(block_body: str) -> Source | None:
     relevance_m = _RELEVANCE_RE.search(header)
     url_m = _URL_RE.search(header)
     snippet_m = _SNIPPET_RE.search(header)
+    content_source_m = _CONTENT_SOURCE_RE.search(header)
     try:
         return Source(
             title=title_m.group(1) if title_m else "",
@@ -83,6 +126,7 @@ def _parse_source_block(block_body: str) -> Source | None:
             confidence=float(relevance_m.group(1)) if relevance_m else 0.5,
             url=url_m.group(1) if url_m else None,
             snippet=snippet_m.group(1) if snippet_m else None,
+            content_source=content_source_m.group(1) if content_source_m else None,
         )
     except Exception:
         return None

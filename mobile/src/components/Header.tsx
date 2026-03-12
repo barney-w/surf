@@ -4,8 +4,6 @@ import { useAuth } from "../auth/AuthProvider";
 interface HeaderProps {
   hasMessages: boolean;
   onNewChat: () => void;
-  colorMode: "brand" | "light";
-  onToggleColorMode: () => void;
 }
 
 /** Pencil icon — simple Unicode character styled to match */
@@ -13,29 +11,21 @@ function PencilIcon({ color }: { color: string }) {
   return <Text style={{ fontSize: 14, color, lineHeight: 16 }}>✎</Text>;
 }
 
-/** Sun icon — Unicode character */
-function SunIcon({ color }: { color: string }) {
-  return <Text style={{ fontSize: 18, color, lineHeight: 20 }}>☀︎</Text>;
-}
-
-/** Moon icon — Unicode character */
-function MoonIcon({ color }: { color: string }) {
-  return <Text style={{ fontSize: 16, color, lineHeight: 20 }}>☽</Text>;
-}
-
-export function Header({ hasMessages, onNewChat, colorMode, onToggleColorMode }: HeaderProps) {
-  const { isAuthenticated, isLoading, profile, login, logout } = useAuth();
+export function Header({ hasMessages, onNewChat }: HeaderProps) {
+  const { isAuthenticated, isLoading, account, profile, login, logout } = useAuth();
   const authConfigured = !!process.env.EXPO_PUBLIC_ENTRA_CLIENT_ID;
 
-  const initials = (profile?.givenName ?? profile?.displayName ?? "?")
+  const initials = (profile?.givenName ?? profile?.displayName ?? account?.name ?? "?")
     .charAt(0)
     .toUpperCase();
+
+  const displayName = profile?.displayName ?? account?.name ?? "User";
 
   const showUserMenu = () => {
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: [profile?.displayName ?? "User", "Sign out", "Cancel"],
+          options: [displayName, "Sign out", "Cancel"],
           destructiveButtonIndex: 1,
           cancelButtonIndex: 2,
         },
@@ -43,7 +33,7 @@ export function Header({ hasMessages, onNewChat, colorMode, onToggleColorMode }:
       );
     } else {
       Alert.alert(
-        profile?.displayName ?? "User",
+        displayName,
         profile?.department ?? undefined,
         [
           { text: "Sign out", style: "destructive", onPress: () => void logout() },
@@ -53,7 +43,7 @@ export function Header({ hasMessages, onNewChat, colorMode, onToggleColorMode }:
     }
   };
 
-  const iconColor = colorMode === "brand" ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.5)";
+  const iconColor = "rgba(255,255,255,0.6)";
 
   return (
     <View className="flex-row items-center gap-3 px-5 py-3 border-b border-border shrink-0">
@@ -78,28 +68,17 @@ export function Header({ hasMessages, onNewChat, colorMode, onToggleColorMode }:
         </Text>
       </Pressable>
 
-      {/* Theme Toggle */}
-      <Pressable
-        onPress={onToggleColorMode}
-        className="p-1.5 rounded-md"
-        accessibilityLabel={`Switch to ${colorMode === "brand" ? "light" : "brand"} theme`}
-      >
-        {colorMode === "brand" ? (
-          <SunIcon color={iconColor} />
-        ) : (
-          <MoonIcon color={iconColor} />
-        )}
-      </Pressable>
-
       {/* Divider */}
       <View className="w-px h-5 bg-border mx-3" />
 
       {/* User Avatar / Sign In */}
-      {isAuthenticated && profile ? (
+      {isAuthenticated ? (
         <View className="flex-row items-center gap-2">
-          <Text className="text-sm text-text-secondary" numberOfLines={1}>
-            {profile.givenName ?? profile.displayName}
-          </Text>
+          {(profile || account) && (
+            <Text className="text-sm text-text-secondary" numberOfLines={1}>
+              {profile?.givenName ?? profile?.displayName ?? account?.name}
+            </Text>
+          )}
           <Pressable
             onPress={showUserMenu}
             className="w-8 h-8 rounded-full border border-border-strong items-center justify-center bg-surface"

@@ -49,14 +49,14 @@ ensure_venv()
 import iterm2  # noqa: E402
 import asyncio  # noqa: E402
 
-PROJECT_ROOT = "/Volumes/ExternalHDD/GitHub/surf-lab"
+PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 
 # Tab colours
 TEAL = iterm2.Color(0, 180, 180)
 GREEN = iterm2.Color(80, 180, 80)
 ORANGE = iterm2.Color(220, 150, 50)
 
-SURF_KIT_ROOT = "/Volumes/ExternalHDD/GitHub/surf-kit"
+SURF_KIT_ROOT = str(Path(PROJECT_ROOT).parent / "surf-kit")
 
 CCV_CMD = (
     "env"

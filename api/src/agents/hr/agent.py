@@ -12,10 +12,10 @@ class HRAgent(DomainAgent):
         return (
             "Handles all human resources, organisational policy, and governance queries "
             "including leave entitlements, employment agreements, onboarding, performance "
-            "reviews, learning & development, code of conduct, risk management, community "
-            "grants, leasing, procurement, infrastructure charges, revenue, water and "
-            "sewerage, volunteer management, privacy, public interest disclosures, "
-            "entertainment and hospitality, and any other organisational policy or procedure."
+            "reviews, learning & development, code of conduct, risk management, facilities "
+            "management, procurement, workplace safety, employee benefits, volunteer "
+            "management, privacy, public interest disclosures, entertainment and "
+            "hospitality, and any other organisational policy or procedure."
         )
 
     @property

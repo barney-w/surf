@@ -1,0 +1,268 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "5264514987208791045"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "australiaeast",
+      "metadata": {
+        "description": "Azure region for all resources (OpenAI is deployed separately to eastus)"
+      }
+    },
+    "userObjectId": {
+      "type": "string",
+      "metadata": {
+        "description": "Object ID of the signed-in user (for RBAC). Get with: az ad signed-in-user show --query id -o tsv"
+      }
+    },
+    "projectName": {
+      "type": "string",
+      "defaultValue": "surf",
+      "metadata": {
+        "description": "Project name used as a naming prefix"
+      }
+    }
+  },
+  "variables": {
+    "uniqueSuffix": "[uniqueString(resourceGroup().id, parameters('projectName'))]",
+    "tags": {
+      "project": "[parameters('projectName')]",
+      "environment": "dev-local"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts",
+      "apiVersion": "2024-05-15",
+      "name": "[format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "kind": "GlobalDocumentDB",
+      "properties": {
+        "databaseAccountOfferType": "Standard",
+        "consistencyPolicy": {
+          "defaultConsistencyLevel": "Session"
+        },
+        "locations": [
+          {
+            "locationName": "[parameters('location')]",
+            "failoverPriority": 0,
+            "isZoneRedundant": false
+          }
+        ],
+        "capabilities": [
+          {
+            "name": "EnableServerless"
+          }
+        ],
+        "publicNetworkAccess": "Enabled",
+        "disableLocalAuth": true
+      }
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')), 'surf')]",
+      "properties": {
+        "resource": {
+          "id": "surf"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}/{2}', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')), 'surf', 'conversations')]",
+      "properties": {
+        "resource": {
+          "id": "conversations",
+          "partitionKey": {
+            "paths": [
+              "/user_id"
+            ],
+            "kind": "Hash"
+          },
+          "indexingPolicy": {
+            "indexingMode": "consistent",
+            "automatic": true,
+            "includedPaths": [
+              {
+                "path": "/*"
+              }
+            ],
+            "excludedPaths": [
+              {
+                "path": "/_etag/?"
+              }
+            ]
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')), 'surf')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Search/searchServices",
+      "apiVersion": "2024-06-01-preview",
+      "name": "[format('search-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "sku": {
+        "name": "basic"
+      },
+      "properties": {
+        "replicaCount": 1,
+        "partitionCount": 1,
+        "hostingMode": "default",
+        "publicNetworkAccess": "enabled",
+        "authOptions": {
+          "aadOrApiKey": {
+            "aadAuthFailureMode": "http401WithBearerChallenge"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[format('st{0}dev{1}', parameters('projectName'), variables('uniqueSuffix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "kind": "StorageV2",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "properties": {
+        "accessTier": "Hot",
+        "allowBlobPublicAccess": false,
+        "allowSharedKeyAccess": false,
+        "minimumTlsVersion": "TLS1_2",
+        "supportsHttpsTrafficOnly": true,
+        "publicNetworkAccess": "Enabled",
+        "networkAcls": {
+          "defaultAction": "Allow",
+          "bypass": "AzureServices"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}', format('st{0}dev{1}', parameters('projectName'), variables('uniqueSuffix')), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}dev{1}', parameters('projectName'), variables('uniqueSuffix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', format('st{0}dev{1}', parameters('projectName'), variables('uniqueSuffix')), 'default', 'documents')]",
+      "properties": {
+        "publicAccess": "None"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', format('st{0}dev{1}', parameters('projectName'), variables('uniqueSuffix')), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', format('st{0}dev{1}', parameters('projectName'), variables('uniqueSuffix')), 'default', 'ingested')]",
+      "properties": {
+        "publicAccess": "None"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', format('st{0}dev{1}', parameters('projectName'), variables('uniqueSuffix')), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')), guid(resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))), parameters('userObjectId'), 'cosmos-data-contributor'))]",
+      "properties": {
+        "roleDefinitionId": "[format('{0}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002', resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))))]",
+        "principalId": "[parameters('userObjectId')]",
+        "scope": "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Search/searchServices', format('search-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]",
+      "name": "[guid(resourceId('Microsoft.Search/searchServices', format('search-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))), parameters('userObjectId'), 'search-index-data-contributor')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')]",
+        "principalId": "[parameters('userObjectId')]",
+        "principalType": "User"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Search/searchServices', format('search-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Search/searchServices', format('search-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]",
+      "name": "[guid(resourceId('Microsoft.Search/searchServices', format('search-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))), parameters('userObjectId'), 'search-service-contributor')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7ca78c08-252a-4471-8644-bb5ff32d4ba0')]",
+        "principalId": "[parameters('userObjectId')]",
+        "principalType": "User"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Search/searchServices', format('search-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}dev{1}', parameters('projectName'), variables('uniqueSuffix')))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', format('st{0}dev{1}', parameters('projectName'), variables('uniqueSuffix'))), parameters('userObjectId'), 'storage-blob-data-contributor')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+        "principalId": "[parameters('userObjectId')]",
+        "principalType": "User"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}dev{1}', parameters('projectName'), variables('uniqueSuffix')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "searchEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure AI Search endpoint"
+      },
+      "value": "[format('https://{0}.search.windows.net', format('search-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]"
+    },
+    "cosmosEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Cosmos DB endpoint"
+      },
+      "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))), '2024-05-15').documentEndpoint]"
+    },
+    "storageBlobEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Storage blob endpoint"
+      },
+      "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', format('st{0}dev{1}', parameters('projectName'), variables('uniqueSuffix'))), '2023-05-01').primaryEndpoints.blob]"
+    }
+  }
+}

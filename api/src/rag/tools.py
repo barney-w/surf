@@ -1,4 +1,3 @@
-import contextlib
 import logging
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
@@ -17,8 +16,9 @@ _search_clients: list[SearchClient] = []
 
 # Mutable collector for RAG tool output text during a request.
 # The chat endpoint sets this to a fresh list before running the workflow;
-# the tool appends its output.  Using a mutable list (not ContextVar.set())
-# ensures visibility even when the tool runs in a child async task.
+# RAGCollectorMiddleware appends tool output.  Using a mutable list (not
+# ContextVar.set()) ensures visibility even when the tool runs in a child
+# async task.
 rag_results_collector: ContextVar[list[str]] = ContextVar("rag_results")
 
 
@@ -206,8 +206,6 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
                 f"=== END SOURCE {i} ==="
             )
         output = "\n\n".join(formatted)
-        with contextlib.suppress(LookupError):
-            rag_results_collector.get().append(output)
         logger.info(
             "search_knowledge_base returning %d results, first 200 chars: %r",
             len(results),

@@ -337,7 +337,7 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
         external: false
         targetPort: 8000
         transport: 'auto'
-        allowInsecure: true
+        allowInsecure: true  // Accept HTTP from same-environment apps
       }
       secrets: concat(
         (!empty(keyVaultName) && anthropicApiKeyExists) ? [

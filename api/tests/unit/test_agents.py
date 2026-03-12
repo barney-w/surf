@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from pathlib import Path
 
 import pytest
 
@@ -106,6 +107,100 @@ class TestInitSubclassRegistration:
                 return RAGScope(domain="test")
 
         assert AgentRegistry.get("test_agent") is TestAgent
+
+
+class TestSkillPath:
+    """Verify DomainAgent.skill_path resolution."""
+
+    def test_hr_agent_skill_path_exists(self):
+        _register_hr_agent()
+        from src.agents.hr.agent import HRAgent
+
+        agent = HRAgent()
+        skill_path = agent.skill_path
+        assert skill_path is not None
+        assert skill_path.is_dir()
+        assert (skill_path / "SKILL.md").exists()
+
+    def test_it_agent_skill_path_exists(self):
+        from src.agents.it.agent import ITAgent
+
+        agent = ITAgent()
+        skill_path = agent.skill_path
+        assert skill_path is not None
+        assert skill_path.is_dir()
+        assert (skill_path / "SKILL.md").exists()
+
+    def test_skill_path_returns_none_for_missing_domain(self):
+        """An agent whose domain has no skills directory should get None."""
+
+        class NoSkillAgent(DomainAgent):
+            @property
+            def name(self) -> str:
+                return "noskill_agent"
+
+            @property
+            def description(self) -> str:
+                return "No skills"
+
+            @property
+            def system_prompt(self) -> str:
+                return "No skills"
+
+            @property
+            def rag_scope(self) -> RAGScope:
+                return RAGScope(domain="nonexistent_domain_xyz")
+
+        agent = NoSkillAgent()
+        assert agent.skill_path is None
+
+
+class TestSharedInstructions:
+    """Verify shared instructions are included in domain agent prompts."""
+
+    def test_hr_prompt_includes_shared_instructions(self):
+        from src.agents.hr.prompts import HR_SYSTEM_PROMPT
+
+        assert "=== SOURCE N ===" in HR_SYSTEM_PROMPT
+        assert "search_knowledge_base" in HR_SYSTEM_PROMPT
+        assert "HR and organisational policy specialist" in HR_SYSTEM_PROMPT
+
+    def test_it_prompt_includes_shared_instructions(self):
+        from src.agents.it.prompts import IT_SYSTEM_PROMPT
+
+        assert "=== SOURCE N ===" in IT_SYSTEM_PROMPT
+        assert "search_knowledge_base" in IT_SYSTEM_PROMPT
+        assert "IT support specialist" in IT_SYSTEM_PROMPT
+
+    def test_shared_instructions_contain_key_sections(self):
+        from src.agents.shared_instructions import DOMAIN_AGENT_INSTRUCTIONS
+
+        assert "Using Search Results" in DOMAIN_AGENT_INSTRUCTIONS
+        assert "Always Respond" in DOMAIN_AGENT_INSTRUCTIONS
+        assert "Structured Output Fields" in DOMAIN_AGENT_INSTRUCTIONS
+        assert "follow_up_suggestions" in DOMAIN_AGENT_INSTRUCTIONS
+
+
+class TestSkillMdFiles:
+    """Verify SKILL.md files have correct frontmatter and content."""
+
+    def test_hr_skill_md_has_frontmatter(self):
+        skill_path = (
+            Path(__file__).resolve().parent.parent.parent / "skills" / "hr" / "SKILL.md"
+        )
+        content = skill_path.read_text()
+        assert content.startswith("---")
+        assert "name: hr-domain-expertise" in content
+        assert "HR & Organisational Policy Expertise" in content
+
+    def test_it_skill_md_has_frontmatter(self):
+        skill_path = (
+            Path(__file__).resolve().parent.parent.parent / "skills" / "it" / "SKILL.md"
+        )
+        content = skill_path.read_text()
+        assert content.startswith("---")
+        assert "name: it-domain-expertise" in content
+        assert "IT Support Expertise" in content
 
 
 class TestCreateModelClient:

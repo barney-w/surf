@@ -170,7 +170,7 @@ resource dnsZoneCosmos 'Microsoft.Network/privateDnsZones@2024-06-01' = if (!emp
 }
 
 resource dnsZoneStorage 'Microsoft.Network/privateDnsZones@2024-06-01' = if (!empty(storageAccountId)) {
-  name: 'privatelink.blob.core.windows.net'
+  name: 'privatelink.blob.${environment().suffixes.storage}'
   location: 'global'
   tags: tags
 }

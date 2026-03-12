@@ -1,87 +1,70 @@
 import type { AgentChatConfig } from '@surf-kit/agent'
+import { fetch } from 'expo/fetch'
 
 /**
- * Creates an SSE stream adapter for React Native using XMLHttpRequest.
- * React Native's fetch does not support ReadableStream / getReader(), but XHR
- * fires onprogress events which we can use to parse SSE lines progressively.
+ * Creates an SSE stream adapter for React Native using expo/fetch.
  *
- * Handles line buffering correctly — an SSE line may be split across multiple
- * onprogress callbacks so we keep a running buffer of incomplete data.
+ * React Native's built-in fetch and XMLHttpRequest do not support incremental
+ * streaming (ReadableStream / onprogress). Expo's fetch implementation provides
+ * a proper ReadableStream with getReader() support, enabling real-time SSE
+ * event processing as chunks arrive from the server.
  */
 export function createNativeSSEAdapter(): NonNullable<AgentChatConfig['streamAdapter']> {
-  return (url, options, onEvent) => {
-    return new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      xhr.open(options.method, url)
-
-      // Apply request headers
-      for (const [key, value] of Object.entries(options.headers)) {
-        xhr.setRequestHeader(key, value)
-      }
-
-      // Track how far we have consumed the responseText so we only process
-      // new data on each onprogress call.
-      let lastIndex = 0
-      // Buffer for incomplete lines that span across onprogress events.
-      let lineBuffer = ''
-
-      const processChunk = (newText: string) => {
-        // Prepend any leftover data from the previous chunk
-        const text = lineBuffer + newText
-        const lines = text.split('\n')
-        // The last element is either an empty string (if text ended with \n)
-        // or an incomplete line — either way, stash it for next time.
-        lineBuffer = lines.pop() ?? ''
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const data = line.slice(6).trim()
-          if (data === '[DONE]') continue
-
-          try {
-            const event = JSON.parse(data) as { type: string; [key: string]: unknown }
-            onEvent(event)
-          } catch {
-            // Skip malformed events
-          }
-        }
-      }
-
-      xhr.onprogress = () => {
-        const newText = xhr.responseText.substring(lastIndex)
-        lastIndex = xhr.responseText.length
-        processChunk(newText)
-      }
-
-      xhr.onload = () => {
-        // Process any remaining buffered data that did not end with a newline
-        if (lineBuffer.length > 0) {
-          processChunk('\n')
-        }
-
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve()
-        } else {
-          reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`))
-        }
-      }
-
-      xhr.onerror = () => reject(new Error('Network error'))
-
-      xhr.onabort = () => {
-        const abortError = new Error('Aborted')
-        abortError.name = 'AbortError'
-        reject(abortError)
-      }
-
-      // Wire up the AbortSignal so callers can cancel the request
-      if (options.signal.aborted) {
-        xhr.abort()
-        return
-      }
-      options.signal.addEventListener('abort', () => xhr.abort())
-
-      xhr.send(options.body)
+  return async (url, options, onEvent) => {
+    const response = await fetch(url, {
+      method: options.method,
+      headers: options.headers,
+      body: options.body,
+      signal: options.signal,
     })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) {
+      throw new Error('No response body for SSE stream')
+    }
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      // Last element is either empty (text ended with \n) or an incomplete
+      // line — stash it for the next chunk.
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const data = line.slice(6).trim()
+        if (data === '[DONE]') continue
+
+        try {
+          const event = JSON.parse(data) as { type: string; [key: string]: unknown }
+          onEvent(event)
+        } catch {
+          // Skip malformed events
+        }
+      }
+    }
+
+    // Process any remaining buffered data
+    if (buffer.startsWith('data: ')) {
+      const data = buffer.slice(6).trim()
+      if (data && data !== '[DONE]') {
+        try {
+          const event = JSON.parse(data) as { type: string; [key: string]: unknown }
+          onEvent(event)
+        } catch {
+          // Skip malformed events
+        }
+      }
+    }
   }
 }

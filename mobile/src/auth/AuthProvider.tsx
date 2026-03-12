@@ -9,10 +9,12 @@ import {
 import * as AuthSession from "expo-auth-session";
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
+
 import {
   discovery,
   clientId,
-  allScopes,
+  loginScopes,
+  apiScope,
   isAuthConfigured,
   TOKEN_KEYS,
 } from "./authConfig";
@@ -98,13 +100,13 @@ async function clearTokens() {
   );
 }
 
-async function refreshAccessToken(refreshToken: string) {
+async function refreshAccessToken(refreshToken: string, scopes: string[]) {
   try {
     const params = new URLSearchParams({
       grant_type: "refresh_token",
       client_id: clientId,
       refresh_token: refreshToken,
-      scope: allScopes.join(" "),
+      scope: scopes.join(" "),
     });
     const resp = await fetch(discovery.tokenEndpoint, {
       method: "POST",
@@ -159,7 +161,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
     {
       clientId,
-      scopes: allScopes,
+      scopes: loginScopes,
       redirectUri,
       usePKCE: true,
       responseType: AuthSession.ResponseType.Code,
@@ -201,7 +203,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const setAuthenticatedState = useCallback(
-    (tokens: { accessToken: string; idToken?: string }) => {
+    (tokens: { idToken?: string; refreshToken?: string | null }) => {
       setIsAuthenticated(true);
       setError(null);
 
@@ -216,7 +218,23 @@ export function AuthProvider({ children }: PropsWithChildren) {
         }
       }
 
-      void fetchProfile(tokens.accessToken);
+      // Fetch profile using an API-scoped token
+      if (tokens.refreshToken) {
+        void (async () => {
+          const apiTokenResult = await refreshAccessToken(
+            tokens.refreshToken!,
+            [apiScope],
+          );
+          if (apiTokenResult) {
+            await saveTokens(
+              apiTokenResult.accessToken,
+              apiTokenResult.refreshToken,
+              apiTokenResult.expiresIn,
+            );
+            void fetchProfile(apiTokenResult.accessToken);
+          }
+        })();
+      }
     },
     [fetchProfile],
   );
@@ -236,16 +254,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
           return;
         }
 
+        // If we have a valid API-scoped access token, we're good
         if (tokens.expiry > Date.now()) {
-          // Access token still valid
-          setAuthenticatedState({ accessToken: tokens.accessToken });
+          setAuthenticatedState({ refreshToken: tokens.refreshToken });
           setIsLoading(false);
           return;
         }
 
-        // Try refresh
+        // Try refresh to get a new API-scoped token
         if (tokens.refreshToken) {
-          const refreshed = await refreshAccessToken(tokens.refreshToken);
+          const refreshed = await refreshAccessToken(tokens.refreshToken, [apiScope]);
           if (refreshed) {
             await saveTokens(
               refreshed.accessToken,
@@ -254,8 +272,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
               refreshed.idToken,
             );
             setAuthenticatedState({
-              accessToken: refreshed.accessToken,
               idToken: refreshed.idToken,
+              refreshToken: refreshed.refreshToken,
             });
             setIsLoading(false);
             return;
@@ -271,9 +289,22 @@ export function AuthProvider({ children }: PropsWithChildren) {
     })();
   }, [setAuthenticatedState]);
 
-  // Handle auth code response
+  // Handle auth response (success, cancel, error, etc.)
   useEffect(() => {
-    if (response?.type !== "success" || !request?.codeVerifier) return;
+    if (!response) return;
+
+    if (response.type === "cancel" || response.type === "dismiss") {
+      setIsLoading(false);
+      return;
+    }
+
+    if (response.type === "error") {
+      setError(response.error?.message ?? "Authentication error");
+      setIsLoading(false);
+      return;
+    }
+
+    if (response.type !== "success" || !request?.codeVerifier) return;
 
     void (async () => {
       try {
@@ -284,7 +315,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
           client_id: clientId,
           redirect_uri: redirectUri,
           code_verifier: request.codeVerifier!,
-          scope: allScopes.join(" "),
+          scope: loginScopes.join(" "),
         });
 
         const tokenResp = await fetch(discovery.tokenEndpoint, {
@@ -294,24 +325,51 @@ export function AuthProvider({ children }: PropsWithChildren) {
         });
 
         if (!tokenResp.ok) {
+          if (__DEV__) {
+            const errBody = await tokenResp.text().catch(() => "");
+            console.error("[Auth] Token exchange failed:", tokenResp.status, errBody);
+          }
           setError("Token exchange failed");
+          setIsLoading(false);
           return;
         }
 
         const data = await tokenResp.json();
-        await saveTokens(
-          data.access_token,
-          data.refresh_token ?? null,
-          data.expires_in,
-          data.id_token,
-        );
+        const refreshToken = (data.refresh_token as string) ?? null;
+
+        // The login token is identity-scoped (audience: Graph).
+        // Now acquire an API-scoped token using the refresh token.
+        if (refreshToken && apiScope) {
+          const apiTokenResult = await refreshAccessToken(refreshToken, [apiScope]);
+          if (apiTokenResult) {
+            await saveTokens(
+              apiTokenResult.accessToken,
+              apiTokenResult.refreshToken,
+              apiTokenResult.expiresIn,
+            );
+
+          } else {
+            // Fall back to saving the login token if API token acquisition fails
+            await saveTokens(data.access_token, refreshToken, data.expires_in);
+            if (__DEV__) {
+              console.warn("[Auth] Could not acquire API-scoped token. API calls may fail.");
+            }
+          }
+        } else {
+          await saveTokens(data.access_token, refreshToken, data.expires_in, data.id_token);
+        }
 
         setAuthenticatedState({
-          accessToken: data.access_token,
           idToken: data.id_token,
+          refreshToken,
         });
-      } catch {
+      } catch (e) {
+        if (__DEV__) {
+          console.error("[Auth] Authentication failed:", e);
+        }
         setError("Authentication failed");
+      } finally {
+        setIsLoading(false);
       }
     })();
   }, [response, request, redirectUri, setAuthenticatedState]);
@@ -338,13 +396,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
 
     if (tokens.refreshToken) {
-      const refreshed = await refreshAccessToken(tokens.refreshToken);
+      const refreshed = await refreshAccessToken(tokens.refreshToken, [apiScope]);
       if (refreshed) {
         await saveTokens(
           refreshed.accessToken,
           refreshed.refreshToken,
           refreshed.expiresIn,
-          refreshed.idToken,
         );
         return refreshed.accessToken;
       }

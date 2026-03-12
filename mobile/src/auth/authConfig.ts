@@ -10,16 +10,14 @@ export const discovery = {
 
 export { clientId };
 
-// Scopes for initial login (profile + ID token)
-export const loginScopes = ["openid", "profile", "User.Read", "offline_access"];
+// Scopes for initial login — only identity scopes, no resource-specific scopes.
+// Mixing Graph scopes (User.Read) with custom API scopes in one request causes
+// Entra to issue a Graph-audience token, which the API backend rejects.
+export const loginScopes = ["openid", "profile", "offline_access"];
 
-// Scope for calling our backend API (OBO flow)
+// Scope for calling our backend API — acquired via a separate token request
+// using the refresh token so the audience is api://{clientId}.
 export const apiScope = clientId ? `api://${clientId}/access_as_user` : "";
-
-// All scopes requested during authorization (login + API in one request)
-export const allScopes = clientId
-  ? [...loginScopes, apiScope]
-  : loginScopes;
 
 export const isAuthConfigured = !!clientId;
 

@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from src.agents._output import (
+    deduplicate_sources,
     extract_json_object,
     extract_sources,
     normalise_structured_data,
@@ -389,3 +390,112 @@ class TestMessageFieldExtractorGuard:
         raw = json.dumps({"message": "Yes."})
         result = self._feed_all(ex, [raw])
         assert "Yes." in result
+
+
+# ---------------------------------------------------------------------------
+# content_source extraction and website source collapsing
+# ---------------------------------------------------------------------------
+
+
+def _website_source_block(n: int = 1) -> str:
+    return (
+        f"=== SOURCE {n} ===\n"
+        f'title: "Waste Collection Services"\n'
+        f'section: "Residential Bins"\n'
+        f'document_id: "web{n}"\n'
+        f"relevance: 0.85\n"
+        f'url: "https://example.com/services/waste"\n'
+        f'content_source: "website"\n'
+        f'snippet: "Bins are collected weekly on your designated day"\n\n'
+        f"CONTENT:\nFull content about waste collection.\n\n"
+        f"=== END SOURCE {n} ==="
+    )
+
+
+class TestContentSourceExtraction:
+    def test_extracts_content_source_from_block(self):
+        sources = extract_sources(_website_source_block(1))
+        assert len(sources) == 1
+        assert sources[0].content_source == "website"
+
+    def test_content_source_null_when_absent(self):
+        sources = extract_sources(_source_block(1))
+        assert len(sources) == 1
+        assert sources[0].content_source is None
+
+    def test_mixed_sources_preserve_content_source(self):
+        text = _source_block(1) + "\n\n" + _website_source_block(2)
+        sources = extract_sources(text)
+        assert len(sources) == 2
+        assert sources[0].content_source is None
+        assert sources[1].content_source == "website"
+
+
+class TestWebsiteSourceCollapsing:
+    def test_no_website_sources_unchanged(self):
+        sources = [
+            Source(title="Policy A", document_id="d1", confidence=0.9),
+            Source(title="Policy B", document_id="d2", confidence=0.8),
+        ]
+        result = deduplicate_sources(sources)
+        assert len(result) == 2
+        assert result[0].document_id == "d1"
+        assert result[1].document_id == "d2"
+
+    def test_website_sources_collapsed_to_single_entry(self):
+        sources = [
+            Source(title="Page A", document_id="w1", confidence=0.9, content_source="website"),
+            Source(title="Page B", document_id="w2", confidence=0.7, content_source="website"),
+        ]
+        result = deduplicate_sources(sources)
+        assert len(result) == 1
+        assert result[0].title == "Public Website"
+        assert result[0].document_id == "website"
+        assert result[0].content_source == "website"
+
+    def test_collapsed_entry_uses_best_confidence(self):
+        sources = [
+            Source(title="Page A", document_id="w1", confidence=0.6, content_source="website"),
+            Source(title="Page B", document_id="w2", confidence=0.9, content_source="website"),
+        ]
+        result = deduplicate_sources(sources)
+        assert result[0].confidence == pytest.approx(0.9)  # pyright: ignore[reportUnknownMemberType]
+
+    def test_collapsed_entry_uses_best_url(self):
+        sources = [
+            Source(
+                title="Page A",
+                document_id="w1",
+                confidence=0.9,
+                content_source="website",
+                url="https://example.com/best",
+            ),
+            Source(title="Page B", document_id="w2", confidence=0.7, content_source="website"),
+        ]
+        result = deduplicate_sources(sources)
+        assert result[0].url == "https://example.com/best"
+
+    def test_mixed_sources_preserves_non_website(self):
+        sources = [
+            Source(title="Policy A", document_id="d1", confidence=0.9),
+            Source(title="Page A", document_id="w1", confidence=0.85, content_source="website"),
+            Source(title="Page B", document_id="w2", confidence=0.7, content_source="website"),
+            Source(title="Policy B", document_id="d2", confidence=0.8),
+        ]
+        result = deduplicate_sources(sources)
+        assert len(result) == 3
+        assert result[0].document_id == "d1"
+        assert result[1].document_id == "website"  # collapsed, at first website position
+        assert result[2].document_id == "d2"
+
+    def test_collapsed_entry_inserted_at_first_website_position(self):
+        sources = [
+            Source(title="Page A", document_id="w1", confidence=0.85, content_source="website"),
+            Source(title="Policy A", document_id="d1", confidence=0.9),
+        ]
+        result = deduplicate_sources(sources)
+        assert result[0].document_id == "website"
+        assert result[1].document_id == "d1"
+
+    def test_empty_sources_returns_empty(self):
+        assert deduplicate_sources([]) == []

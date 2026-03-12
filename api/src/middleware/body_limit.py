@@ -8,25 +8,34 @@ from starlette.responses import JSONResponse, Response
 
 logger = logging.getLogger(__name__)
 
-MAX_BODY_BYTES = 65_536  # 64 KB
+MAX_BODY_BYTES = 65_536  # 64 KB — default for most endpoints
+MAX_UPLOAD_BODY_BYTES = 20_971_520  # 20 MB — for chat endpoints with file attachments
+
+# Paths that accept file attachments and need the higher limit.
+_UPLOAD_PATHS = frozenset({"/api/v1/chat", "/api/v1/chat/stream"})
 
 
 class BodySizeLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > MAX_BODY_BYTES:
-            logger.warning(
-                "Request body too large: %s bytes (max %d)",
-                content_length,
-                MAX_BODY_BYTES,
+        if content_length:
+            limit = (
+                MAX_UPLOAD_BODY_BYTES if request.url.path in _UPLOAD_PATHS else MAX_BODY_BYTES
             )
-            return JSONResponse(
-                status_code=413,
-                content={
-                    "error": {
-                        "type": "payload_too_large",
-                        "message": f"Request body exceeds {MAX_BODY_BYTES} byte limit",
-                    }
-                },
-            )
+            if int(content_length) > limit:
+                logger.warning(
+                    "Request body too large: %s bytes (max %d) for %s",
+                    content_length,
+                    limit,
+                    request.url.path,
+                )
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "error": {
+                            "type": "payload_too_large",
+                            "message": f"Request body exceeds {limit} byte limit",
+                        }
+                    },
+                )
         return await call_next(request)

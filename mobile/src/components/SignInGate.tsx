@@ -6,7 +6,7 @@ import { useAuth } from "../auth/AuthProvider";
  * but the user has not yet signed in. Matches the web glass-panel design.
  */
 export function SignInGate() {
-  const { login } = useAuth();
+  const { login, error } = useAuth();
 
   return (
     <View className="w-full max-w-[420px] items-center rounded-3xl border border-[rgba(225,185,137,0.15)] bg-[rgba(10,54,66,0.85)] px-8 py-10">
@@ -23,6 +23,12 @@ export function SignInGate() {
         Authentication is required to access this service. Sign in with your
         organisation account to continue.
       </Text>
+
+      {error && (
+        <Text className="mb-4 text-center text-sm text-red-400">
+          {error}
+        </Text>
+      )}
 
       <Pressable
         onPress={login}

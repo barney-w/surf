@@ -4,7 +4,14 @@ from collections.abc import Sequence
 from contextvars import ContextVar
 from typing import Any, cast
 
-from agent_framework import Agent, BaseContextProvider, ChatOptions, Message, Workflow
+from agent_framework import (
+    Agent,
+    BaseContextProvider,
+    ChatOptions,
+    Message,
+    SkillsProvider,
+    Workflow,
+)
 from agent_framework.anthropic import AnthropicClient
 from agent_framework.orchestrations import HandoffBuilder
 
@@ -12,6 +19,7 @@ from src.agents._discovery import discover_agents
 from src.agents._registry import AgentRegistry
 from src.agents.coordinator.prompts import build_coordinator_prompt
 from src.config.settings import Settings
+from src.orchestrator.middleware import RAGCollectorMiddleware
 from src.orchestrator.pdf import MAX_DIRECT_PAGES, count_pages, extract_text
 from src.orchestrator.stateless import StatelessContextProvider
 from src.rag.tools import create_rag_tool
@@ -273,15 +281,30 @@ def build_agent_graph(
 
         combined_prompt = _JSON_OUTPUT_PREAMBLE + agent_def.system_prompt
 
+        # Build context providers: shared ones (e.g. history) + per-agent skills.
+        agent_providers: list[BaseContextProvider] = (
+            list(context_providers)
+            if context_providers
+            else [StatelessContextProvider(source_id=f"stateless_{agent_def.name}")]
+        )
+        skill_path = agent_def.skill_path
+        if skill_path:
+            agent_providers.append(
+                SkillsProvider(
+                    skill_paths=skill_path,
+                    source_id=f"skills_{agent_def.name}",
+                )
+            )
+            logger.info("Skills loaded for %s from %s", agent_def.name, skill_path)
+
         agent = client.as_agent(
             name=agent_def.name,
             description=agent_def.description,
             instructions=combined_prompt,
             tools=[scoped_rag],
             default_options={"max_tokens": 4096},
-            context_providers=list(context_providers)
-            if context_providers
-            else [StatelessContextProvider(source_id=f"stateless_{agent_def.name}")],
+            context_providers=agent_providers,
+            middleware=[RAGCollectorMiddleware()],
         )
         domain_agents.append(cast("Agent[ChatOptions[None]]", agent))
 

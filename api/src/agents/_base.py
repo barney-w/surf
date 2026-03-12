@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -42,6 +43,18 @@ class DomainAgent(ABC):
     @property
     @abstractmethod
     def rag_scope(self) -> RAGScope: ...
+
+    @property
+    def skill_path(self) -> Path | None:
+        """Path to this agent's skill directory (contains SKILL.md).
+
+        Defaults to ``api/skills/<domain>/`` based on the RAG scope domain.
+        Override to customise or return ``None`` to disable skills.
+        """
+        skills_dir = (
+            Path(__file__).resolve().parent.parent.parent / "skills" / self.rag_scope.domain
+        )
+        return skills_dir if skills_dir.is_dir() else None
 
     @property
     def tools(self) -> list[Callable[..., Any]]:

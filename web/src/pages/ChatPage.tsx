@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentChat } from "@surf-kit/agent/hooks";
+import type { Attachment } from "@surf-kit/agent/types";
 import { MessageThread, MessageComposer, WelcomeScreen } from "@surf-kit/agent/chat";
 import { StreamingMessage } from "@surf-kit/agent/streaming";
 import { ErrorResponse } from "@surf-kit/agent/response";
@@ -183,9 +184,9 @@ export function ChatPage({ onHasMessages }: { onHasMessages?: (has: boolean) => 
     });
   }, [state.messages.length]);
 
-  const handleSend = useCallback((content: string) => {
+  const handleSend = useCallback((content: string, attachments?: Attachment[]) => {
     shouldScrollRef.current = true;
-    void actions.sendMessage(content);
+    void actions.sendMessage(content, attachments);
   }, [actions]);
 
   // Personalised greeting

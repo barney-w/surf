@@ -6,12 +6,19 @@ from pydantic import BaseModel
 from .agent import AgentResponseModel
 
 
+class AttachmentRecord(BaseModel):
+    filename: str
+    content_type: str
+    size: int
+
+
 class MessageRecord(BaseModel):
     id: str
     role: Literal["user", "assistant"]
     content: str | None = None
     agent: str | None = None
     response: AgentResponseModel | None = None
+    attachments: list[AttachmentRecord] = []
     timestamp: datetime
 
 

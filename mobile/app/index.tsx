@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
-import { View, Text, Image, KeyboardAvoidingView, Keyboard, Pressable, Platform } from "react-native";
+import { useCallback, useEffect } from "react";
+import { View, Text, Image, KeyboardAvoidingView, Keyboard, Platform } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAgentChat } from "@surf-kit/agent/hooks";
 import { MessageThread, MessageComposer, WelcomeScreen } from "@surf-kit/agent/chat";
-import { StreamingMessage } from "@surf-kit/agent/streaming";
 import { ErrorResponse } from "@surf-kit/agent/response";
 import { WaveLoader } from "@surf-kit/core";
 import { useAuth } from "../src/auth/AuthProvider";
@@ -27,9 +26,7 @@ function ChatContent() {
   const { state, actions } = useAgentChat(chatConfig);
   const { reportHasMessages } = useChatContext();
   const { isConnected } = useNetworkStatus();
-  const [isDraining, setIsDraining] = useState(false);
   const hasMessages = state.messages.length > 0;
-  const showStreaming = state.isLoading || isDraining;
 
   const authRequired = !!process.env.EXPO_PUBLIC_ENTRA_CLIENT_ID;
   const gated = authRequired && !isAuthenticated;
@@ -67,27 +64,35 @@ function ChatContent() {
         keyboardVerticalOffset={0}
       >
         {hasMessages ? (
-          <Pressable className="flex-1 max-w-[860px] self-center w-full px-4" onPress={Keyboard.dismiss}>
+          <View className="flex-1 max-w-[860px] self-center w-full px-4">
             <MessageThread
               messages={state.messages}
               showAgent
               showSources
               showConfidence={false}
               showVerification={false}
-              hideLastAssistant={isDraining}
               streamingSlot={
-                showStreaming ? (
-                  <StreamingMessage
-                    stream={{
-                      active: state.isLoading,
-                      phase: state.streamPhase,
-                      content: state.streamingContent,
-                      sources: [],
-                      agent: state.streamingAgent,
-                      agentLabel: null,
-                    }}
-                    onDraining={setIsDraining}
-                  />
+                state.isLoading ? (
+                  <View className="flex w-full flex-col items-start">
+                    {state.streamingAgent && (
+                      <View className="px-1 mb-1.5">
+                        <Text className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
+                          {state.streamingAgent.replace('_agent', '').replace('_', ' ')}
+                        </Text>
+                      </View>
+                    )}
+                    <View className="px-4 py-3 rounded-[18px] rounded-tl-[4px] bg-surface border border-border">
+                      <View className="flex flex-row items-center gap-2">
+                        <WaveLoader size="sm" color="#38bdf8" />
+                        <Text className="text-sm text-text-secondary">
+                          {state.streamPhase === 'retrieving' ? 'Searching...'
+                            : state.streamPhase === 'generating' ? 'Writing...'
+                            : state.streamPhase === 'verifying' ? 'Verifying...'
+                            : 'Thinking...'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
                 ) : undefined
               }
             />
@@ -99,7 +104,7 @@ function ChatContent() {
             {!isConnected && (
               <View className="mb-2 p-3 rounded-lg bg-status-warning-subtle">
                 <Text className="text-status-warning text-sm text-center">
-                  You're offline. Messages can't be sent right now.
+                  You&apos;re offline. Messages can&apos;t be sent right now.
                 </Text>
               </View>
             )}
@@ -111,7 +116,7 @@ function ChatContent() {
                 placeholder="Ask a question..."
               />
             </View>
-          </Pressable>
+          </View>
         ) : (
           <View className="flex-1 flex-col items-center px-4">
             <View className="flex-[3]" />
@@ -135,7 +140,7 @@ function ChatContent() {
                 {!isConnected && (
                   <View className="w-full max-w-[640px] mb-4 p-3 rounded-lg bg-status-warning-subtle">
                     <Text className="text-status-warning text-sm text-center">
-                      You're offline. Messages can't be sent right now.
+                      You&apos;re offline. Messages can&apos;t be sent right now.
                     </Text>
                   </View>
                 )}

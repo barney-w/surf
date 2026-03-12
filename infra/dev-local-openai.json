@@ -1,0 +1,102 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "14676600600970468064"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "eastus2",
+      "metadata": {
+        "description": "Azure region for OpenAI"
+      }
+    },
+    "userObjectId": {
+      "type": "string",
+      "metadata": {
+        "description": "Object ID of the signed-in user (for RBAC)"
+      }
+    },
+    "projectName": {
+      "type": "string",
+      "defaultValue": "surf",
+      "metadata": {
+        "description": "Project name used as a naming prefix"
+      }
+    }
+  },
+  "variables": {
+    "uniqueSuffix": "[uniqueString(resourceGroup().id, parameters('projectName'))]",
+    "tags": {
+      "project": "[parameters('projectName')]",
+      "environment": "dev-local"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2024-10-01",
+      "name": "[format('oai-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "kind": "OpenAI",
+      "sku": {
+        "name": "S0"
+      },
+      "properties": {
+        "customSubDomainName": "[format('oai-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))]",
+        "publicNetworkAccess": "Enabled",
+        "networkAcls": {
+          "defaultAction": "Allow"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}/{1}', format('oai-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')), 'text-embedding-3-large')]",
+      "sku": {
+        "name": "Standard",
+        "capacity": 50
+      },
+      "properties": {
+        "model": {
+          "format": "OpenAI",
+          "name": "text-embedding-3-large",
+          "version": "1"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', format('oai-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', format('oai-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', format('oai-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))), parameters('userObjectId'), 'cognitive-services-openai-user')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')]",
+        "principalId": "[parameters('userObjectId')]",
+        "principalType": "User"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', format('oai-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "openAiEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure OpenAI endpoint"
+      },
+      "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', format('oai-{0}-dev-{1}', parameters('projectName'), variables('uniqueSuffix'))), '2024-10-01').endpoint]"
+    }
+  }
+}

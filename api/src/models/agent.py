@@ -13,6 +13,7 @@ class Source(BaseModel):
     url: str | None = None
     confidence: float = Field(ge=0.0, le=1.0)
     snippet: str | None = None
+    content_source: str | None = None
 
 
 class AgentResponseModel(BaseModel):

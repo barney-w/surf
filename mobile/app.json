@@ -5,6 +5,7 @@
     "version": "0.1.0",
     "scheme": "surf",
     "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/splash.png",
