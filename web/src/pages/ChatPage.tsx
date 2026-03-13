@@ -141,7 +141,7 @@ export function ChatPage({
   }
 
   return (
-    <div className="flex flex-col h-full max-w-[860px] mx-auto px-4 relative overflow-hidden">
+    <div className="flex flex-col h-full max-w-[860px] mx-auto px-2 sm:px-4 relative overflow-hidden pb-[env(safe-area-inset-bottom)]">
       <BackgroundSlideshow />
 
       {hasMessages ? (
@@ -177,7 +177,7 @@ export function ChatPage({
             />
           )}
 
-          <div className="shrink-0 py-3">
+          <div className="shrink-0 py-2 sm:py-3">
             <MessageComposer
               onSend={handleSend}
               isLoading={state.isLoading}
@@ -187,8 +187,8 @@ export function ChatPage({
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col items-center">
-          <div className="flex-[3]" />
+        <div className="flex-1 flex flex-col items-center min-h-0 overflow-y-auto">
+          <div className="flex-[1] sm:flex-[3]" />
           <WelcomeScreen
             title={welcomeTitle}
             message={
@@ -209,9 +209,9 @@ export function ChatPage({
             }
             suggestedQuestions={suggestedQuestions}
             onQuestionSelect={handleSend}
-            className="flex-none mb-6"
+            className="flex-none mb-4 sm:mb-6"
           />
-          <div className="w-full max-w-[640px]">
+          <div className="w-full max-w-[640px] shrink-0">
             <MessageComposer
               onSend={handleSend}
               isLoading={state.isLoading}
@@ -219,7 +219,7 @@ export function ChatPage({
               className="bg-surface border-border"
             />
           </div>
-          <div className="flex-[2]" />
+          <div className="flex-[1] sm:flex-[2]" />
         </div>
       )}
     </div>

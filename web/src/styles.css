@@ -116,7 +116,10 @@
     --surf-agent-hr-accent: #714151;
   }
 
-  html, body, #root { height: 100%; }
+  html, body, #root {
+    height: 100dvh;
+    overflow: hidden;
+  }
 
   body {
     margin: 0;
@@ -298,6 +301,16 @@
 ::-webkit-scrollbar-thumb {
   background: rgba(225, 185, 137, 0.2);
   border-radius: 2px;
+}
+
+/* Background slideshow opacity — slightly more transparent on mobile */
+.bg-slideshow[data-active] {
+  opacity: 0.06;
+}
+@media (min-width: 640px) {
+  .bg-slideshow[data-active] {
+    opacity: 0.09;
+  }
 }
 
 /* Reduced motion */

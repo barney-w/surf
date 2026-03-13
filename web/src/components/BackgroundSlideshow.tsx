@@ -28,11 +28,12 @@ export function BackgroundSlideshow() {
       {BG_IMAGES.map((src, i) => (
         <div
           key={src}
-          className="fixed inset-0 bg-cover bg-center bg-no-repeat transition-opacity duration-[2000ms] ease-in-out pointer-events-none"
+          className="fixed inset-0 bg-cover bg-center bg-no-repeat transition-opacity duration-[2000ms] ease-in-out pointer-events-none bg-slideshow"
           style={{
             backgroundImage: `url(${src})`,
-            opacity: i === bgIndex ? 0.09 : 0,
+            opacity: i === bgIndex ? undefined : 0,
           }}
+          data-active={i === bgIndex || undefined}
         />
       ))}
     </>

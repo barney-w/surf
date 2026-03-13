@@ -195,11 +195,11 @@ function AppContent() {
   return (
     <div className="flex flex-col h-full bg-canvas">
       <OfflineBanner />
-      <header className="relative flex items-center gap-3 px-6 py-3 border-b border-border shrink-0">
+      <header className="relative flex flex-wrap items-center gap-2 sm:gap-3 px-3 sm:px-6 py-2 sm:py-3 border-b border-border shrink-0">
         <h1 className="font-display text-lg font-semibold text-text-primary tracking-tight flex-1">
           Surf
         </h1>
-        <h4 className="absolute inset-x-0 text-center font-display text-xs font-semibold text-text-primary tracking-tight pointer-events-none">
+        <h4 className="absolute inset-x-0 text-center font-display text-xs font-semibold text-text-primary tracking-tight pointer-events-none hidden sm:block">
           Responses are AI-generated.
         </h4>
         <Button
@@ -217,9 +217,12 @@ function AppContent() {
           <span className="hidden sm:inline text-sm font-medium">New chat</span>
         </Button>
         <ThemeToggle />
-        <div className="w-px h-5 bg-border mx-4" />
+        <div className="w-px h-5 bg-border mx-1 sm:mx-4" />
         <UserMenu />
       </header>
+      <p className="sm:hidden text-center font-display text-xs font-semibold text-text-primary tracking-tight py-1.5 border-b border-border shrink-0">
+        Responses are AI-generated.
+      </p>
       <main className="flex-1 overflow-hidden">
         <ChatPage key={chatKey} onHasMessages={handleHasMessages} />
       </main>

@@ -66,10 +66,10 @@
       "value": true
     },
     "entraTenantId": {
-      "value": "799af2de-e455-499c-babe-71a7929442ca"
+      "value": "<your-entra-tenant-id>"
     },
     "entraClientId": {
-      "value": "08ff7e73-6758-4c55-bdb1-cc4f124de8ac"
+      "value": "<your-entra-client-id>"
     },
     "apiCorsOrigins": {
       "value": "[\"http://localhost:3000\",\"https://tauri.localhost\"]"
