@@ -18,10 +18,13 @@ from src.middleware.body_limit import BodySizeLimitMiddleware
 from src.middleware.error_handler import add_error_handlers
 from src.middleware.logging import reset_logging_context, set_logging_context, setup_logging
 from src.middleware.telemetry import setup_telemetry
+from src.agents._base import AuthLevel
 from src.orchestrator.builder import build_agent_graph, create_model_client
 from src.orchestrator.history import ConversationHistoryProvider
 from src.rag.tools import clear_search_clients, set_embed_func, set_search_client
+from src.routes.agents import router as agents_router
 from src.routes.chat import router as chat_router
+from src.routes.guest import router as guest_router
 from src.routes.user import router as user_router
 from src.services.conversation import ConversationService
 from src.services.graph import GraphService
@@ -220,12 +223,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Build agents once; only the Workflow is recreated per request
         # (agent_framework Workflow is stateful and does not allow concurrent runs).
         context_providers = [history_provider] if history_provider else []
-        agent_graph = build_agent_graph(client, settings, context_providers=context_providers)
-        app.state.workflow = agent_graph.build_workflow
+
+        public_graph = build_agent_graph(
+            client, settings, context_providers=context_providers, auth_filter=AuthLevel.PUBLIC
+        )
+        full_graph = build_agent_graph(client, settings, context_providers=context_providers)
+
+        app.state.agent_graphs = {
+            AuthLevel.PUBLIC: public_graph,
+            AuthLevel.MICROSOFT_ACCOUNT: full_graph,
+            AuthLevel.ORGANISATIONAL: full_graph,
+        }
+        app.state.agent_graph = full_graph  # backward compat for direct targeting
+        app.state.workflow = full_graph.build_workflow  # backward compat
         logger.info("AI workflow factory initialised")
     else:
         logger.warning("AZURE_OPENAI_ENDPOINT not set — running in dev mode without AI workflow")
         app.state.workflow = None
+        app.state.agent_graph = None
 
     yield
 
@@ -264,7 +279,9 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # pyright: ignore[reportArgumentType]
 
 add_error_handlers(app)
+app.include_router(agents_router)
 app.include_router(chat_router)
+app.include_router(guest_router)
 app.include_router(user_router)
 
 if settings.environment == "dev" and settings.postgres_enabled:

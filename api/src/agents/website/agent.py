@@ -33,6 +33,14 @@ class WebsiteAgent(DomainAgent):
         return skills_dir if skills_dir.is_dir() else None
 
     @property
+    def display_name(self) -> str:
+        return "Website"
+
+    @property
+    def image(self) -> str:
+        return "website"
+
+    @property
     def system_prompt(self) -> str:
         return WEBSITE_SYSTEM_PROMPT
 

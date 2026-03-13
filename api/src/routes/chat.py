@@ -22,7 +22,7 @@ from src.agents._output import (
     parse_agent_output,
     sanitize_agent_response,
 )
-from src.middleware.auth import get_current_user
+from src.middleware.auth import UserContext, get_current_user
 from src.middleware.error_handler import LLM_TIMEOUT_SECONDS, LLMTimeoutError
 from src.middleware.input_validation import validate_message
 from src.middleware.rate_limit import limiter
@@ -35,10 +35,69 @@ from src.models.chat import ChatRequest, ChatResponse
 from src.models.conversation import AttachmentRecord, FeedbackRecord, MessageRecord
 from src.orchestrator.builder import current_attachments
 from src.orchestrator.history import current_conversation_id, current_user_id, reset_history_cache
+from src.agents._proofread import proofread_message
+from src.config.settings import get_settings
 from src.rag.quality_gate import run_quality_gate
 from src.rag.tools import rag_results_collector
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_workflow_factory(
+    body: ChatRequest,
+    request: Request,
+    user: "UserContext",
+) -> object:
+    """Return the workflow factory for the request, applying direct agent targeting.
+
+    When ``body.agent`` is set to a domain agent name (not "coordinator"), this
+    builds a single-agent workflow that bypasses the coordinator.  Auth-level
+    checks ensure the caller has sufficient permissions for the targeted agent.
+
+    Raises HTTPException (404/403/503) on validation failures.
+    """
+    from src.agents._base import AuthLevel
+    from src.agents._registry import AgentRegistry
+    from src.routes.agents import _can_access, _resolve_caller_auth_level
+
+    caller_level = _resolve_caller_auth_level(user)
+
+    if body.agent and body.agent != "coordinator":
+        agent_graph = request.app.state.agent_graph
+        if agent_graph is None:
+            raise HTTPException(status_code=503, detail="AI workflow not available.")
+
+        # Check agent exists in the registry
+        agent_cls = AgentRegistry.get(body.agent)
+        if agent_cls is None:
+            raise HTTPException(status_code=404, detail=f"Agent '{body.agent}' not found")
+
+        # Check auth level
+        agent_def = agent_cls()
+        if not _can_access(agent_def.auth_level, caller_level):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Insufficient permissions to access {agent_def.display_name} agent",
+            )
+
+        def _factory() -> "Workflow":
+            wf = agent_graph.build_single_agent_workflow(body.agent)
+            if wf is None:
+                raise HTTPException(
+                    status_code=404, detail=f"Agent '{body.agent}' not found in workflow graph"
+                )
+            return wf
+
+        return _factory
+
+    # Default path: select the auth-filtered graph for the caller's level.
+    agent_graphs = getattr(request.app.state, "agent_graphs", None)
+    if agent_graphs is not None:
+        graph = agent_graphs.get(caller_level, agent_graphs[AuthLevel.PUBLIC])
+        return graph.build_workflow
+
+    return request.app.state.workflow
+
 
 # Number of heartbeat ticks (5s each) before emitting phase(waiting).
 _HEARTBEAT_WAIT_TICKS = 2  # 10 seconds
@@ -123,6 +182,17 @@ def _build_attachment_records(body: ChatRequest) -> list[AttachmentRecord]:
     return records
 
 
+async def _proofread_response(agent_response: AgentResponseModel) -> AgentResponseModel:
+    """Run the proofread step on the agent response message if enabled."""
+    settings = get_settings()
+    if not settings.proofread_enabled:
+        return agent_response
+    corrected = await proofread_message(agent_response.message, settings)
+    if corrected != agent_response.message:
+        return agent_response.model_copy(update={"message": corrected})
+    return agent_response
+
+
 def _set_attachments_context(body: ChatRequest) -> None:
     """Set the current_attachments context variable from request attachments."""
     if body.attachments:
@@ -188,11 +258,11 @@ async def _run_workflow(
 @limiter.limit("10/minute")  # pyright: ignore[reportUnknownMemberType,reportUntypedFunctionDecorator]
 async def chat(body: ChatRequest, request: Request) -> JSONResponse:
     """Send a message and receive an AI response."""
-    workflow = request.app.state.workflow
     conversation_service = request.app.state.conversation_service
     user = await get_current_user(request)
     user_id = user.user_id
 
+    workflow = _resolve_workflow_factory(body, request, user)
     if workflow is None:
         raise HTTPException(
             status_code=503,
@@ -299,6 +369,9 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
         if recovered:
             agent_response = agent_response.model_copy(update={"sources": recovered})
 
+    # Proofread — fix generation artefacts (dropped chars, broken markdown)
+    agent_response = await _proofread_response(agent_response)
+
     routing = RoutingMetadata(
         routed_by="coordinator",
         primary_agent=routed_agent,
@@ -384,6 +457,8 @@ class _MessageFieldExtractor:
         self._done = False
         self._guard_buf = ""  # buffer first N chars for pollution check
         self._suppressed = False  # True once pollution is detected
+        self._unicode_remaining = 0  # hex digits still expected for \uXXXX
+        self._unicode_hex = ""  # accumulated hex digits
 
     def feed(self, chunk: str) -> str:
         """Feed a token chunk. Returns any message content ready to stream."""
@@ -446,20 +521,36 @@ class _MessageFieldExtractor:
         """Read characters from inside a JSON string value until the closing quote."""
         out: list[str] = []
         for ch in s:
+            # Accumulating hex digits for a \uXXXX escape
+            if self._unicode_remaining > 0:
+                self._unicode_hex += ch
+                self._unicode_remaining -= 1
+                if self._unicode_remaining == 0:
+                    try:
+                        out.append(chr(int(self._unicode_hex, 16)))
+                    except ValueError:
+                        out.append(self._unicode_hex)
+                    self._unicode_hex = ""
+                continue
+
             if self._escape:
-                out.append(
-                    {
-                        "n": "\n",
-                        "t": "\t",
-                        "r": "\r",
-                        '"': '"',
-                        "\\": "\\",
-                        "/": "/",
-                        "b": "\b",
-                        "f": "\f",
-                        "u": "",
-                    }.get(ch, ch)
-                )
+                if ch == "u":
+                    # Start \uXXXX — need 4 hex digits (may span chunks)
+                    self._unicode_remaining = 4
+                    self._unicode_hex = ""
+                else:
+                    out.append(
+                        {
+                            "n": "\n",
+                            "t": "\t",
+                            "r": "\r",
+                            '"': '"',
+                            "\\": "\\",
+                            "/": "/",
+                            "b": "\b",
+                            "f": "\f",
+                        }.get(ch, ch)
+                    )
                 self._escape = False
             elif ch == "\\":
                 self._escape = True
@@ -485,11 +576,11 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
     forwarded directly.  The final 'done' event carries the full enriched
     response (confidence breakdown, verification, sources, follow-ups).
     """
-    workflow = request.app.state.workflow
     conversation_service = request.app.state.conversation_service
     user = await get_current_user(request)
     user_id = user.user_id
 
+    workflow = _resolve_workflow_factory(body, request, user)
     if workflow is None:
 
         async def _no_workflow() -> AsyncGenerator[str, None]:
@@ -824,6 +915,9 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             if recovered_sources:
                 agent_response = agent_response.model_copy(update={"sources": recovered_sources})
                 logger.info("injected %d recovered sources into response", len(recovered_sources))
+
+        # Proofread — fix generation artefacts (dropped chars, broken markdown)
+        agent_response = await _proofread_response(agent_response)
 
         enriched = enrich_agent_response(agent_response)
 

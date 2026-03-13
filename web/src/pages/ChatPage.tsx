@@ -11,137 +11,24 @@ import { ErrorResponse } from "@surf-kit/agent/response";
 import { WaveLoader } from "@surf-kit/core";
 import { useAuth } from "../auth/AuthProvider";
 import { getApiBase } from "../auth/platform";
-
-const SUGGESTED_QUESTIONS = [
-  "What's the leave policy?",
-  "How do I reset my password?",
-  "What IT equipment can I request?",
-];
-
-/* ------------------------------------------------------------------ */
-/*  Sign-in gate — shown in place of the composer when not authed      */
-/* ------------------------------------------------------------------ */
-
-function SignInGate() {
-  const { login } = useAuth();
-
-  return (
-    <div className="w-full max-w-[640px] mx-auto anim-fade-up">
-      <div className="glass-panel px-6 py-5 flex flex-col items-center gap-4 text-center">
-        <div className="w-10 h-10 rounded-full bg-accent-subtle flex items-center justify-center">
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-accent"
-          >
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          </svg>
-        </div>
-
-        <div>
-          <p className="text-text-primary font-display font-semibold text-base">
-            Sign in to start chatting
-          </p>
-          <p className="text-text-secondary text-sm mt-1 max-w-xs">
-            Authenticate with your organisation account to ask questions and get
-            personalised answers.
-          </p>
-        </div>
-
-        <button
-          onClick={login}
-          className="group relative mt-1 px-6 py-2.5 rounded-xl font-display font-semibold text-sm
-                     bg-accent text-white
-                     hover:bg-accent-hover active:scale-[0.97]
-                     transition-all duration-200 cursor-pointer
-                     focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
-        >
-          <span className="relative z-10 flex items-center gap-2">
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-              <polyline points="10 17 15 12 10 7" />
-              <line x1="15" y1="12" x2="3" y2="12" />
-            </svg>
-            Sign in
-          </span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-const BG_IMAGES = [
-  "/branding/bg.jpg",
-  "/branding/bg2.jpg",
-  "/branding/bg3.jpg",
-];
-
-/* ------------------------------------------------------------------ */
-/*  Background slideshow                                               */
-/* ------------------------------------------------------------------ */
-
-function BackgroundSlideshow() {
-  const [bgIndex, setBgIndex] = useState(0);
-
-  useEffect(() => {
-    BG_IMAGES.forEach((src) => {
-      const img = new Image();
-      img.src = src;
-    });
-  }, []);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setBgIndex((prev) => (prev + 1) % BG_IMAGES.length);
-    }, 15000);
-    return () => clearInterval(id);
-  }, []);
-
-  return (
-    <>
-      {BG_IMAGES.map((src, i) => (
-        <div
-          key={src}
-          className="fixed inset-0 bg-cover bg-center bg-no-repeat transition-opacity duration-[2000ms] ease-in-out pointer-events-none"
-          style={{
-            backgroundImage: `url(${src})`,
-            opacity: i === bgIndex ? 0.09 : 0,
-          }}
-        />
-      ))}
-    </>
-  );
-}
+import { BackgroundSlideshow } from "../components/BackgroundSlideshow";
+import { AgentSelector, AgentIcon, useAgentAccess, AGENT_QUESTIONS } from "../components/AgentSelector";
 
 /* ------------------------------------------------------------------ */
 /*  Token-aware chat config                                            */
 /* ------------------------------------------------------------------ */
 
 function useChatConfig() {
-  const { getApiToken, isAuthenticated } = useAuth();
+  const { getApiToken, isAuthenticated, isGuest } = useAuth();
   const getApiTokenRef = useRef(getApiToken);
   getApiTokenRef.current = getApiToken;
   const isAuthenticatedRef = useRef(isAuthenticated);
   isAuthenticatedRef.current = isAuthenticated;
+  const isGuestRef = useRef(isGuest);
+  isGuestRef.current = isGuest;
 
   const getHeaders = useCallback(async (): Promise<Record<string, string>> => {
-    if (!isAuthenticatedRef.current) return {};
+    if (!isAuthenticatedRef.current && !isGuestRef.current) return {};
     const token = await getApiTokenRef.current();
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, []);
@@ -168,11 +55,18 @@ export function ChatPage({
 }: {
   onHasMessages?: (has: boolean) => void;
 }) {
-  const { profile, isLoading: authLoading, isAuthenticated } = useAuth();
-  const authRequired = !!import.meta.env.VITE_ENTRA_CLIENT_ID;
-  const gated = authRequired && !isAuthenticated;
+  const { profile, isLoading: authLoading, login } = useAuth();
+  const { agents, selectedAgent, setSelectedAgent } = useAgentAccess();
+  const suggestedQuestions = AGENT_QUESTIONS[selectedAgent.id] ?? AGENT_QUESTIONS.coordinator;
   const chatConfig = useChatConfig();
-  const { state, actions } = useAgentChat(chatConfig);
+  const configWithAgent = useMemo(
+    () => ({
+      ...chatConfig,
+      bodyExtra: selectedAgent.id === "coordinator" ? undefined : { agent: selectedAgent.id },
+    }),
+    [chatConfig, selectedAgent.id],
+  );
+  const { state, actions } = useAgentChat(configWithAgent);
   const [isDraining, setIsDraining] = useState(false);
   const hasMessages = state.messages.length > 0;
   const showStreaming = state.isLoading || isDraining;
@@ -253,6 +147,16 @@ export function ChatPage({
           )}
 
           <div className="shrink-0 py-3">
+            <div className="flex items-center gap-2 px-2 pb-1">
+              <AgentIcon
+                iconName={selectedAgent.iconName}
+                size={14}
+                style={{ color: `var(${selectedAgent.accentVar})` }}
+              />
+              <span className="text-xs text-text-secondary font-display">
+                {selectedAgent.label}
+              </span>
+            </div>
             <MessageComposer
               onSend={handleSend}
               isLoading={state.isLoading}
@@ -265,12 +169,8 @@ export function ChatPage({
         <div className="flex-1 flex flex-col items-center">
           <div className="flex-[3]" />
           <WelcomeScreen
-            title={gated ? "Hi, I'm Surf." : welcomeTitle}
-            message={
-              gated
-                ? "I can coordinate specialist agents to answer your questions — sign in to get started."
-                : "I can coordinate specialist agents to answer your questions."
-            }
+            title={welcomeTitle}
+            message="I can coordinate specialist agents to answer your questions."
             icon={
               <img
                 src="/surf.png"
@@ -278,22 +178,25 @@ export function ChatPage({
                 className="w-32 h-32 rounded-md"
               />
             }
-            suggestedQuestions={gated ? [] : SUGGESTED_QUESTIONS}
+            suggestedQuestions={suggestedQuestions}
             onQuestionSelect={handleSend}
             className="flex-none mb-6"
           />
-          {gated ? (
-            <SignInGate />
-          ) : (
-            <div className="w-full max-w-[640px]">
-              <MessageComposer
-                onSend={handleSend}
-                isLoading={state.isLoading}
-                placeholder="Ask a question..."
-                className="bg-surface border-border"
-              />
-            </div>
-          )}
+          <AgentSelector
+            agents={agents}
+            selectedId={selectedAgent.id}
+            onSelect={setSelectedAgent}
+            onSignInPrompt={login}
+            className="w-full max-w-[640px] mb-4"
+          />
+          <div className="w-full max-w-[640px]">
+            <MessageComposer
+              onSend={handleSend}
+              isLoading={state.isLoading}
+              placeholder="Ask a question..."
+              className="bg-surface border-border"
+            />
+          </div>
           <div className="flex-[2]" />
         </div>
       )}

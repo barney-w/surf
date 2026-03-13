@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.agents._base import DomainAgent, RAGScope
+from src.agents._base import AuthLevel, DomainAgent, RAGScope
 from src.agents._registry import AgentRegistry
 
 
@@ -32,6 +32,15 @@ def _register_website_agent():
     if AgentRegistry.get("website_agent") is None:
         AgentRegistry.register(WebsiteAgent)
     return WebsiteAgent
+
+
+def _register_it_agent():
+    """Import ITAgent and ensure it is registered (re-register if needed after clear)."""
+    from src.agents.it.agent import ITAgent
+
+    if AgentRegistry.get("it_agent") is None:
+        AgentRegistry.register(ITAgent)
+    return ITAgent
 
 
 class TestAgentAutoRegistration:
@@ -505,3 +514,413 @@ class TestPerAgentModel:
 
             # Should be called with the agent-specific model
             mock_create.assert_any_call(settings, "claude-opus-4-6")
+
+
+class TestAuthLevelEnum:
+    """Verify AuthLevel enum values."""
+
+    def test_public_value(self):
+        assert AuthLevel.PUBLIC.value == "public"
+
+    def test_microsoft_account_value(self):
+        assert AuthLevel.MICROSOFT_ACCOUNT.value == "microsoft"
+
+    def test_organisational_value(self):
+        assert AuthLevel.ORGANISATIONAL.value == "organisational"
+
+    def test_is_str_subclass(self):
+        assert isinstance(AuthLevel.PUBLIC, str)
+
+
+class TestDomainAgentDefaults:
+    """Verify default auth_level, display_name, and image on DomainAgent."""
+
+    def test_default_auth_level_is_public(self):
+        """A plain DomainAgent subclass defaults to PUBLIC."""
+
+        class PlainAgent(DomainAgent):
+            @property
+            def name(self) -> str:
+                return "plain_agent"
+
+            @property
+            def description(self) -> str:
+                return "A plain agent"
+
+            @property
+            def system_prompt(self) -> str:
+                return "Plain prompt"
+
+            @property
+            def rag_scope(self) -> RAGScope:
+                return RAGScope(domain="plain")
+
+        agent = PlainAgent()
+        assert agent.auth_level is AuthLevel.PUBLIC
+
+    def test_default_display_name_generated_from_name(self):
+        class PlainAgent(DomainAgent):
+            @property
+            def name(self) -> str:
+                return "my_cool_agent"
+
+            @property
+            def description(self) -> str:
+                return "A plain agent"
+
+            @property
+            def system_prompt(self) -> str:
+                return "Plain prompt"
+
+            @property
+            def rag_scope(self) -> RAGScope:
+                return RAGScope(domain="plain2")
+
+        agent = PlainAgent()
+        assert agent.display_name == "My Cool Agent"
+
+    def test_default_image_is_default(self):
+        class PlainAgent(DomainAgent):
+            @property
+            def name(self) -> str:
+                return "img_agent"
+
+            @property
+            def description(self) -> str:
+                return "A plain agent"
+
+            @property
+            def system_prompt(self) -> str:
+                return "Plain prompt"
+
+            @property
+            def rag_scope(self) -> RAGScope:
+                return RAGScope(domain="plain3")
+
+        agent = PlainAgent()
+        assert agent.image == "default"
+
+
+class TestHRAgentAuthProperties:
+    """Verify HRAgent overrides for auth_level, display_name, image."""
+
+    def test_auth_level_is_microsoft_account(self):
+        _register_hr_agent()
+        from src.agents.hr.agent import HRAgent
+
+        agent = HRAgent()
+        assert agent.auth_level is AuthLevel.MICROSOFT_ACCOUNT
+
+    def test_display_name_is_hr(self):
+        _register_hr_agent()
+        from src.agents.hr.agent import HRAgent
+
+        agent = HRAgent()
+        assert agent.display_name == "HR"
+
+    def test_image_is_hr(self):
+        _register_hr_agent()
+        from src.agents.hr.agent import HRAgent
+
+        agent = HRAgent()
+        assert agent.image == "hr"
+
+
+class TestWebsiteAgentAuthProperties:
+    """Verify WebsiteAgent overrides for display_name and image."""
+
+    def test_display_name_is_website(self):
+        _register_website_agent()
+        from src.agents.website.agent import WebsiteAgent
+
+        agent = WebsiteAgent()
+        assert agent.display_name == "Website"
+
+    def test_image_is_website(self):
+        _register_website_agent()
+        from src.agents.website.agent import WebsiteAgent
+
+        agent = WebsiteAgent()
+        assert agent.image == "website"
+
+    def test_auth_level_defaults_to_public(self):
+        _register_website_agent()
+        from src.agents.website.agent import WebsiteAgent
+
+        agent = WebsiteAgent()
+        assert agent.auth_level is AuthLevel.PUBLIC
+
+
+class TestITAgentAuthProperties:
+    """Verify ITAgent overrides for auth_level, display_name, image."""
+
+    def test_auth_level_is_organisational(self):
+        _register_it_agent()
+        from src.agents.it.agent import ITAgent
+
+        agent = ITAgent()
+        assert agent.auth_level is AuthLevel.ORGANISATIONAL
+
+    def test_display_name_is_it_support(self):
+        _register_it_agent()
+        from src.agents.it.agent import ITAgent
+
+        agent = ITAgent()
+        assert agent.display_name == "IT Support"
+
+    def test_image_is_it(self):
+        _register_it_agent()
+        from src.agents.it.agent import ITAgent
+
+        agent = ITAgent()
+        assert agent.image == "it"
+
+
+class TestAgentMetadata:
+    """Verify AgentRegistry.agent_metadata() returns correct structure."""
+
+    def test_metadata_returns_list_of_dicts(self):
+        _register_hr_agent()
+        metadata = AgentRegistry.agent_metadata()
+        assert isinstance(metadata, list)
+        assert len(metadata) == 1
+
+    def test_metadata_has_required_keys(self):
+        _register_hr_agent()
+        metadata = AgentRegistry.agent_metadata()
+        entry = metadata[0]
+        assert set(entry.keys()) == {"id", "name", "description", "auth_level", "image"}
+
+    def test_metadata_values_for_hr(self):
+        _register_hr_agent()
+        metadata = AgentRegistry.agent_metadata()
+        entry = metadata[0]
+        assert entry["id"] == "hr_agent"
+        assert entry["name"] == "HR"
+        assert entry["auth_level"] == "microsoft"
+        assert entry["image"] == "hr"
+
+    def test_metadata_multiple_agents(self):
+        _register_hr_agent()
+        _register_website_agent()
+        _register_it_agent()
+        metadata = AgentRegistry.agent_metadata()
+        assert len(metadata) == 3
+        ids = {m["id"] for m in metadata}
+        assert ids == {"hr_agent", "website_agent", "it_agent"}
+
+
+# ---------------------------------------------------------------------------
+# Tests for the /api/v1/agents endpoint and its helper functions
+# ---------------------------------------------------------------------------
+
+import importlib  # noqa: E402
+import sys  # noqa: E402
+import types  # noqa: E402
+
+from fastapi import FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+# Stub telemetry to prevent opentelemetry import chain
+if "src.middleware.telemetry" not in sys.modules:
+    _telemetry_stub = types.ModuleType("src.middleware.telemetry")
+    _telemetry_stub.setup_telemetry = lambda *a, **kw: None  # type: ignore[attr-defined]
+    sys.modules["src.middleware.telemetry"] = _telemetry_stub
+
+from src.middleware.auth import UserContext  # noqa: E402
+
+# Load src.routes.agents without triggering src.routes.__init__ (which imports chat)
+_agents_mod_path = Path(__file__).resolve().parents[2] / "src" / "routes" / "agents.py"
+_spec = importlib.util.spec_from_file_location("src.routes.agents", _agents_mod_path)
+assert _spec and _spec.loader
+_agents_mod = importlib.util.module_from_spec(_spec)
+sys.modules["src.routes.agents"] = _agents_mod
+_spec.loader.exec_module(_agents_mod)
+
+_resolve_caller_auth_level = _agents_mod._resolve_caller_auth_level  # type: ignore[attr-defined]
+_can_access = _agents_mod._can_access  # type: ignore[attr-defined]
+_agents_router = _agents_mod.router  # type: ignore[attr-defined]
+
+
+class TestResolveCallerAuthLevel:
+    """Verify _resolve_caller_auth_level maps UserContext to the correct AuthLevel."""
+
+    def test_guest_user_returns_public(self):
+        user = UserContext(user_id="guest-1", name="Guest", email="", is_guest=True)
+        assert _resolve_caller_auth_level(user) == AuthLevel.PUBLIC
+
+    def test_personal_account_returns_microsoft_account(self):
+        # Consumer tenant ID = personal Microsoft account
+        user = UserContext(
+            user_id="user-1",
+            name="Personal User",
+            email="user@outlook.com",
+            tid="9188040d-6c67-4c5b-b112-36a304b66dad",
+        )
+        assert _resolve_caller_auth_level(user) == AuthLevel.MICROSOFT_ACCOUNT
+
+    def test_no_tid_returns_microsoft_account(self):
+        user = UserContext(user_id="user-2", name="No Tid", email="user@example.com")
+        assert _resolve_caller_auth_level(user) == AuthLevel.MICROSOFT_ACCOUNT
+
+    def test_organisational_account_returns_organisational(self):
+        user = UserContext(
+            user_id="user-3",
+            name="Org User",
+            email="user@contoso.com",
+            tid="aaaabbbb-cccc-dddd-eeee-ffffgggghhhh",
+        )
+        assert _resolve_caller_auth_level(user) == AuthLevel.ORGANISATIONAL
+
+
+class TestCanAccess:
+    """Verify _can_access hierarchy logic."""
+
+    def test_public_can_access_public(self):
+        assert _can_access(AuthLevel.PUBLIC, AuthLevel.PUBLIC) is True
+
+    def test_public_cannot_access_microsoft(self):
+        assert _can_access(AuthLevel.MICROSOFT_ACCOUNT, AuthLevel.PUBLIC) is False
+
+    def test_public_cannot_access_organisational(self):
+        assert _can_access(AuthLevel.ORGANISATIONAL, AuthLevel.PUBLIC) is False
+
+    def test_microsoft_can_access_public(self):
+        assert _can_access(AuthLevel.PUBLIC, AuthLevel.MICROSOFT_ACCOUNT) is True
+
+    def test_microsoft_can_access_microsoft(self):
+        assert _can_access(AuthLevel.MICROSOFT_ACCOUNT, AuthLevel.MICROSOFT_ACCOUNT) is True
+
+    def test_microsoft_cannot_access_organisational(self):
+        assert _can_access(AuthLevel.ORGANISATIONAL, AuthLevel.MICROSOFT_ACCOUNT) is False
+
+    def test_organisational_can_access_all(self):
+        assert _can_access(AuthLevel.PUBLIC, AuthLevel.ORGANISATIONAL) is True
+        assert _can_access(AuthLevel.MICROSOFT_ACCOUNT, AuthLevel.ORGANISATIONAL) is True
+        assert _can_access(AuthLevel.ORGANISATIONAL, AuthLevel.ORGANISATIONAL) is True
+
+
+def _make_agents_app() -> FastAPI:
+    """Create a minimal FastAPI app with the agents router."""
+    app = FastAPI()
+    app.include_router(_agents_router)
+    return app
+
+
+class TestAgentsEndpoint:
+    """Verify GET /api/v1/agents endpoint behaviour."""
+
+    def test_returns_coordinator_plus_registered_agents(self):
+        _register_hr_agent()
+        _register_website_agent()
+
+        app = _make_agents_app()
+
+        # Mock get_current_user to return an organisational user
+        org_user = UserContext(
+            user_id="org-1",
+            name="Org User",
+            email="user@contoso.com",
+            tid="some-org-tenant-id",
+        )
+        with patch.object(_agents_mod, "get_current_user", return_value=org_user):
+            client = TestClient(app)
+            response = client.get("/api/v1/agents")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Coordinator + hr_agent + website_agent
+        assert len(data) == 3
+
+        # Coordinator is always first
+        assert data[0]["id"] == "coordinator"
+        assert data[0]["accessible"] is True
+        assert data[0]["enabled"] is True
+
+        # All registered agents present
+        ids = {a["id"] for a in data}
+        assert "hr_agent" in ids
+        assert "website_agent" in ids
+
+    def test_accessible_flag_varies_by_auth_level(self):
+        _register_hr_agent()  # auth_level = microsoft
+        _register_website_agent()  # auth_level = public
+        _register_it_agent()  # auth_level = organisational
+
+        app = _make_agents_app()
+
+        # Guest user (PUBLIC level)
+        guest_user = UserContext(
+            user_id="guest-1", name="Guest", email="", is_guest=True
+        )
+        with patch.object(_agents_mod, "get_current_user", return_value=guest_user):
+            client = TestClient(app)
+            response = client.get("/api/v1/agents")
+
+        data = response.json()
+        by_id = {a["id"]: a for a in data}
+
+        # Guest can access public agents only
+        assert by_id["coordinator"]["accessible"] is True
+        assert by_id["website_agent"]["accessible"] is True
+        assert by_id["hr_agent"]["accessible"] is False  # microsoft level
+        assert by_id["it_agent"]["accessible"] is False  # organisational level
+
+    def test_microsoft_account_accessibility(self):
+        _register_hr_agent()  # auth_level = microsoft
+        _register_website_agent()  # auth_level = public
+        _register_it_agent()  # auth_level = organisational
+
+        app = _make_agents_app()
+
+        # Personal Microsoft account user
+        ms_user = UserContext(
+            user_id="ms-1",
+            name="MS User",
+            email="user@outlook.com",
+            tid="9188040d-6c67-4c5b-b112-36a304b66dad",
+        )
+        with patch.object(_agents_mod, "get_current_user", return_value=ms_user):
+            client = TestClient(app)
+            response = client.get("/api/v1/agents")
+
+        data = response.json()
+        by_id = {a["id"]: a for a in data}
+
+        assert by_id["website_agent"]["accessible"] is True
+        assert by_id["hr_agent"]["accessible"] is True
+        assert by_id["it_agent"]["accessible"] is False  # organisational only
+
+    def test_organisational_user_can_access_all(self):
+        _register_hr_agent()
+        _register_website_agent()
+        _register_it_agent()
+
+        app = _make_agents_app()
+
+        org_user = UserContext(
+            user_id="org-1",
+            name="Org User",
+            email="user@contoso.com",
+            tid="some-org-tenant-id",
+        )
+        with patch.object(_agents_mod, "get_current_user", return_value=org_user):
+            client = TestClient(app)
+            response = client.get("/api/v1/agents")
+
+        data = response.json()
+        assert all(a["accessible"] is True for a in data)
+
+    def test_all_agents_have_enabled_flag(self):
+        _register_hr_agent()
+
+        app = _make_agents_app()
+
+        user = UserContext(user_id="u1", name="User", email="u@e.com")
+        with patch.object(_agents_mod, "get_current_user", return_value=user):
+            client = TestClient(app)
+            response = client.get("/api/v1/agents")
+
+        data = response.json()
+        assert all(a["enabled"] is True for a in data)

@@ -1,4 +1,4 @@
-from src.agents._base import DomainAgent, RAGScope
+from src.agents._base import AuthLevel, DomainAgent, RAGScope
 from src.agents.it.prompts import IT_SYSTEM_PROMPT
 
 
@@ -22,6 +22,18 @@ class ITAgent(DomainAgent):
             domain="it",
             document_types=["policy", "procedure", "guideline", "knowledge-base"],
         )
+
+    @property
+    def auth_level(self) -> AuthLevel:
+        return AuthLevel.ORGANISATIONAL
+
+    @property
+    def display_name(self) -> str:
+        return "IT Support"
+
+    @property
+    def image(self) -> str:
+        return "it"
 
     @property
     def system_prompt(self) -> str:

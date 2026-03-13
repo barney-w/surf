@@ -15,6 +15,7 @@ from agent_framework import (
 from agent_framework.anthropic import AnthropicClient
 from agent_framework.orchestrations import HandoffBuilder
 
+from src.agents._base import AuthLevel
 from src.agents._discovery import discover_agents
 from src.agents._registry import AgentRegistry
 from src.agents.coordinator.prompts import build_coordinator_prompt
@@ -44,12 +45,13 @@ If you need to search first, call the search tool, then respond with ONLY JSON.
 
 The JSON object must match this schema:
 {
-  "message": "Your answer (plain text, NO === SOURCE === markers)",
+  "message": "Your answer in Markdown (bold, lists, headings — NO === SOURCE === markers)",
   "sources": [{"title": "...", "section": "..." or null, "document_id": "...",
               "confidence": 0.9, "url": "..." or null, "snippet": "..."}],
   "confidence": "high" | "medium" | "low",
-  "ui_hint": "text" (default; only use "table"/"list"/"steps"/"card"/"warning"
-            when the answer is SIGNIFICANTLY clearer in that format),
+  "ui_hint": "steps" | "table" | "card" | "list" | "warning" | "text"
+            (ACTIVELY choose the best format — see instructions. "text" is ONLY
+            for purely conversational answers with no inherent structure),
   "structured_data": null (default; only set to a JSON-encoded string when ui_hint is NOT "text"),
   "follow_up_suggestions": ["action 1", "action 2", "action 3"]
 }
@@ -273,6 +275,16 @@ class _CachedAgentGraph:
         self.domain_agents = domain_agents
         self.termination_condition = termination_condition
 
+    def build_single_agent_workflow(self, agent_name: str) -> Workflow | None:
+        """Build a workflow targeting a single domain agent (no coordinator)."""
+        for agent in self.domain_agents:
+            if agent.name == agent_name:
+                builder = HandoffBuilder(name=f"surf-direct-{agent_name}", participants=[agent])
+                builder.with_start_agent(agent)
+                builder.with_termination_condition(self.termination_condition)
+                return builder.build()
+        return None
+
     def build_workflow(self) -> Workflow:
         """Create a fresh Workflow instance from the cached agent graph."""
         all_participants = [self.coordinator, *self.domain_agents]
@@ -287,14 +299,30 @@ def build_agent_graph(
     client: AnthropicClient,
     settings: Settings,
     context_providers: Sequence[BaseContextProvider] | None = None,
+    auth_filter: AuthLevel | None = None,
 ) -> _CachedAgentGraph:
     """Build the agent graph once at startup.
 
     Discovers domain agents, creates Agent objects, and returns a cached graph.
     Call ``graph.build_workflow()`` per request to get a fresh Workflow.
+
+    When *auth_filter* is set, only agents whose ``auth_level`` is at or below
+    the given level are included. This allows building a restricted graph
+    (e.g. public-only) where the coordinator cannot see or route to agents
+    the caller is not authorised to access.
     """
     discover_agents()
     registry = AgentRegistry.get_all()
+
+    # Filter registry entries by auth level when an auth_filter is provided.
+    if auth_filter is not None:
+        hierarchy = {AuthLevel.PUBLIC: 0, AuthLevel.MICROSOFT_ACCOUNT: 1, AuthLevel.ORGANISATIONAL: 2}
+        filter_level = hierarchy[auth_filter]
+        registry = {
+            name: cls
+            for name, cls in registry.items()
+            if hierarchy[cls().auth_level] <= filter_level
+        }
 
     # Resolve domain model — priority: per-agent > settings.domain > settings.global
     domain_model_id = settings.anthropic_domain_model_id or settings.anthropic_model_id
@@ -350,7 +378,13 @@ def build_agent_graph(
         )
         domain_agents.append(cast("Agent[ChatOptions[None]]", agent))
 
-    coordinator_prompt = build_coordinator_prompt(AgentRegistry.agent_descriptions())
+    # Build descriptions from the (possibly filtered) registry so the
+    # coordinator only knows about agents present in this graph.
+    agent_descriptions = [
+        {"name": cls().name, "description": cls().description}
+        for cls in registry.values()
+    ]
+    coordinator_prompt = build_coordinator_prompt(agent_descriptions)
     coordinator = cast(
         "Agent[ChatOptions[None]]",
         client.as_agent(

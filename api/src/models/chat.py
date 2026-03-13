@@ -48,6 +48,7 @@ class Attachment(BaseModel):
 class ChatRequest(BaseModel):
     conversation_id: str | None = None
     message: str = Field(min_length=1, max_length=10000)
+    agent: str | None = None  # Optional direct agent targeting
     attachments: list[Attachment] = Field(default_factory=list)  # pyright: ignore[reportUnknownVariableType]
 
     @field_validator("attachments")

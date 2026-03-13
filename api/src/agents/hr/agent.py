@@ -1,4 +1,4 @@
-from src.agents._base import DomainAgent, RAGScope
+from src.agents._base import AuthLevel, DomainAgent, RAGScope
 from src.agents.hr.prompts import HR_SYSTEM_PROMPT
 
 
@@ -24,6 +24,18 @@ class HRAgent(DomainAgent):
             domain="hr",
             document_types=["policy", "procedure", "agreement", "guideline", "form"],
         )
+
+    @property
+    def auth_level(self) -> AuthLevel:
+        return AuthLevel.MICROSOFT_ACCOUNT
+
+    @property
+    def display_name(self) -> str:
+        return "HR"
+
+    @property
+    def image(self) -> str:
+        return "hr"
 
     @property
     def system_prompt(self) -> str:

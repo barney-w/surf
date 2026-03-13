@@ -1,8 +1,17 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
+
+
+class AuthLevel(str, Enum):
+    """Minimum authentication level required to access an agent."""
+
+    PUBLIC = "public"
+    MICROSOFT_ACCOUNT = "microsoft"
+    ORGANISATIONAL = "organisational"
 
 
 @dataclass
@@ -65,6 +74,21 @@ class DomainAgent(ABC):
     def model_id(self) -> str | None:
         """Model override for this agent. None = use settings default."""
         return None
+
+    @property
+    def auth_level(self) -> AuthLevel:
+        """Minimum auth level required to access this agent."""
+        return AuthLevel.PUBLIC
+
+    @property
+    def display_name(self) -> str:
+        """Human-friendly name for the frontend."""
+        return self.name.replace("_", " ").title()
+
+    @property
+    def image(self) -> str:
+        """Icon identifier for the frontend."""
+        return "default"
 
     @property
     def default_ui_hint(self) -> str:
