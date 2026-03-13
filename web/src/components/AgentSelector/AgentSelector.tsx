@@ -17,17 +17,11 @@ export function AgentSelector({
   className = "",
 }: AgentSelectorProps) {
   return (
-    <div
-      className={`flex gap-3 overflow-x-auto pb-2 snap-x ${className}`}
-      style={{
-        scrollbarWidth: "none",
-        WebkitOverflowScrolling: "touch",
-      }}
-    >
+    <div className={`flex gap-4 overflow-x-auto scrollbar-hide snap-x snap-mandatory px-2 py-2 ${className}`}>
       {agents.map((agent, index) => (
         <div
           key={agent.id}
-          className="snap-start min-w-[140px] max-w-[180px] flex-shrink-0"
+          className="w-[200px] shrink-0 snap-center"
         >
           <AgentCard
             agent={agent}

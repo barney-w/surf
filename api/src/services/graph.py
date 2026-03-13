@@ -35,7 +35,7 @@ class GraphService:
             self._app = msal.ConfidentialClientApplication(
                 client_id=settings.entra_client_id,
                 client_credential=settings.entra_client_secret,
-                authority=f"https://login.microsoftonline.com/{settings.entra_tenant_id}",
+                authority="https://login.microsoftonline.com/common",
             )
             logger.info("GraphService initialised with OBO capability")
         else:

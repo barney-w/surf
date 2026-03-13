@@ -18,7 +18,7 @@ export const AGENTS: AgentDef[] = [
     authLevel: "public",
     enabled: true,
     accentVar: "--color-agent-coordinator",
-    iconName: "AgentCoordinator",
+    iconName: "Waypoints",
   },
   {
     id: "website_agent",
@@ -27,7 +27,7 @@ export const AGENTS: AgentDef[] = [
     authLevel: "public",
     enabled: true,
     accentVar: "--color-agent-general",
-    iconName: "AgentFacilities",
+    iconName: "Wifi",
   },
   {
     id: "hr_agent",
@@ -36,7 +36,7 @@ export const AGENTS: AgentDef[] = [
     authLevel: "microsoft",
     enabled: true,
     accentVar: "--color-agent-hr",
-    iconName: "AgentHr",
+    iconName: "BookOpen",
   },
   {
     id: "it_agent",
@@ -45,7 +45,7 @@ export const AGENTS: AgentDef[] = [
     authLevel: "organisational",
     enabled: false,
     accentVar: "--color-agent-it",
-    iconName: "AgentIt",
+    iconName: "HardDrive",
   },
   {
     id: "finance_agent",
@@ -54,7 +54,7 @@ export const AGENTS: AgentDef[] = [
     authLevel: "organisational",
     enabled: false,
     accentVar: "--color-agent-finance",
-    iconName: "AgentFinance",
+    iconName: "BadgeDollarSign",
   },
 ];
 

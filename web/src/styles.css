@@ -209,6 +209,29 @@
 }
 .pulse-glow { animation: pulseGlow 2s ease-in-out infinite; }
 
+/* Scale pop (checkmark, badges) */
+@keyframes scalePop {
+  0%   { opacity: 0; transform: scale(0.3); }
+  60%  { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.anim-scale-pop { animation: scalePop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* Agent card base styling */
+.agent-card {
+  background: var(--surf-color-bg-surface-raised);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Hide scrollbar but keep scrolling */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
 
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 4px; }

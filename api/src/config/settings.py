@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     anthropic_domain_model_id: str = ""
     anthropic_foundry_base_url: str = ""
     anthropic_foundry_api_key: str = ""
+    anthropic_proofread_model_id: str = "claude-haiku-4-5-20251001"
+    proofread_enabled: bool = True
 
     # Azure AI Search
     azure_search_endpoint: str = ""
@@ -47,6 +49,8 @@ class Settings(BaseSettings):
     entra_tenant_id: str = ""
     entra_client_id: str = ""
     entra_client_secret: str = ""
+    guest_token_secret: str = ""
+    guest_token_ttl_minutes: int = 30
 
     # API
     api_cors_origins: list[str] = [

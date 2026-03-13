@@ -30,11 +30,13 @@ interface UserProfile {
 interface AuthState {
   isLoading: boolean;
   isAuthenticated: boolean;
+  isGuest: boolean;
   account: AccountInfo | null;
   profile: UserProfile | null;
   photoUrl: string | null;
   error: string | null;
   login: () => void;
+  loginAsGuest: () => void;
   logout: () => void;
   getApiToken: () => Promise<string | null>;
 }
@@ -42,11 +44,13 @@ interface AuthState {
 const AuthContext = createContext<AuthState>({
   isLoading: true,
   isAuthenticated: false,
+  isGuest: false,
   account: null,
   profile: null,
   photoUrl: null,
   error: null,
   login: () => {},
+  loginAsGuest: () => {},
   logout: () => {},
   getApiToken: async () => null,
 });
@@ -77,6 +81,9 @@ let tokenPromise: Promise<string | null> | null = null;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(!!clientId);
+  const [isGuest, setIsGuest] = useState(false);
+  const [guestToken, setGuestToken] = useState<string | null>(null);
+  const guestTokenRef = useRef<string | null>(null);
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -152,7 +159,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             void persistMsalCache();
             void fetchProfile(tokenResult.accessToken);
           } catch {
-            // Silent token acquisition failed — profile won't load
+            // API scope token failed (e.g. personal accounts) — try login scopes
+            try {
+              const fallback = await msal.acquireTokenSilent({
+                scopes: loginScopes,
+                account: redirectResult.account,
+              });
+              void fetchProfile(fallback.accessToken);
+            } catch {
+              // Both failed — profile won't load but user is still authenticated
+            }
           }
           return;
         }
@@ -173,7 +189,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             void persistMsalCache();
             void fetchProfile(tokenResult.accessToken);
           } catch {
-            // Token refresh failed — user is still "authenticated" from cache
+            // API scope failed — try login scopes as fallback
+            try {
+              const fallback = await msal.acquireTokenSilent({
+                scopes: loginScopes,
+                account: accounts[0],
+              });
+              void fetchProfile(fallback.accessToken);
+            } catch {
+              // Both failed — user is still "authenticated" from cache
+            }
           }
           return;
         }
@@ -238,10 +263,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchProfile]);
 
+  const loginAsGuest = useCallback(async () => {
+    const apiBase = getApiBase();
+    try {
+      const resp = await fetch(`${apiBase}/auth/guest`, { method: "POST" });
+      if (!resp.ok) {
+        setError("Guest access is not available.");
+        return;
+      }
+      const data = await resp.json() as { token: string; guest_id: string };
+      guestTokenRef.current = data.token;
+      setGuestToken(data.token);
+      setIsGuest(true);
+    } catch {
+      setError("Could not connect to the server.");
+    }
+  }, []);
+
   const logout = useCallback(async () => {
     if (!msalInstance) return;
     setAccount(null);
     setProfile(null);
+    setIsGuest(false);
+    guestTokenRef.current = null;
+    setGuestToken(null);
     if (photoUrl) URL.revokeObjectURL(photoUrl);
     setPhotoUrl(null);
     void clearMsalCache();
@@ -253,6 +298,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [photoUrl]);
 
   const getApiToken = useCallback(async (): Promise<string | null> => {
+    if (guestTokenRef.current) return guestTokenRef.current;
     if (!msalInstance || !account) return null;
     if (tokenPromise) return tokenPromise;
     tokenPromise = (async () => {
@@ -264,6 +310,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         void persistMsalCache();
         return result.accessToken;
       } catch (err) {
+        // API scope failed — try login scopes as fallback (personal accounts)
+        try {
+          const fallback = await msalInstance.acquireTokenSilent({
+            scopes: loginScopes,
+            account,
+          });
+          return fallback.accessToken;
+        } catch {
+          // Login scopes also failed
+        }
+
         // In Tauri, any token failure should attempt popup re-auth before
         // giving up — silent renewal often fails due to WebView limitations.
         if (err instanceof InteractionRequiredAuthError || needsPopupAuth()) {
@@ -295,21 +352,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       tokenPromise = null;
     }
-  }, [account]);
+  }, [account, guestToken]);
 
   const value = useMemo<AuthState>(
     () => ({
       isLoading,
       isAuthenticated: !!account,
+      isGuest,
       account,
       profile,
       photoUrl,
       error,
       login,
+      loginAsGuest,
       logout,
       getApiToken,
     }),
-    [isLoading, account, profile, photoUrl, error, login, logout, getApiToken],
+    [isLoading, account, isGuest, profile, photoUrl, error, login, loginAsGuest, logout, getApiToken],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

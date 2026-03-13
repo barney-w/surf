@@ -9,7 +9,7 @@ messages, and feedback stored in PostgreSQL.
 import contextlib
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -105,12 +105,12 @@ async def list_conversations(
         params.append(agent)
         idx += 1
     if date_from:
-        conditions.append(f"c.created_at >= ${idx}::timestamptz")
-        params.append(date_from)
+        conditions.append(f"c.created_at >= ${idx}")
+        params.append(datetime.fromisoformat(date_from).replace(tzinfo=UTC))
         idx += 1
     if date_to:
-        conditions.append(f"c.created_at <= ${idx}::timestamptz")
-        params.append(date_to)
+        conditions.append(f"c.created_at <= ${idx}")
+        params.append(datetime.fromisoformat(date_to).replace(tzinfo=UTC))
         idx += 1
 
     where = ""

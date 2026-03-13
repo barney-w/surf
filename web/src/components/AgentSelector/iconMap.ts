@@ -1,18 +1,18 @@
 import {
-  AgentCoordinator,
-  AgentFacilities,
-  AgentFinance,
-  AgentHr,
-  AgentIt,
-} from "@surf-kit/icons";
+  Waypoints,
+  Wifi,
+  BookOpen,
+  HardDrive,
+  BadgeDollarSign,
+} from "lucide-react";
 
 export const ICON_MAP: Record<
   string,
   React.ComponentType<{ size?: number; className?: string; style?: React.CSSProperties }>
 > = {
-  AgentCoordinator,
-  AgentFacilities,
-  AgentFinance,
-  AgentHr,
-  AgentIt,
+  Waypoints,
+  Wifi,
+  BookOpen,
+  HardDrive,
+  BadgeDollarSign,
 };

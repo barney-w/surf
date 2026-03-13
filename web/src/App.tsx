@@ -1,10 +1,13 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useEffect, useState } from "react";
 import { ThemeProvider } from "@surf-kit/theme";
 import type { ColorMode } from "@surf-kit/theme";
 import { Button, DropdownMenu } from "@surf-kit/core";
+import { WaveLoader } from "@surf-kit/core";
 import { useAuth } from "./auth/AuthProvider";
 import { isTauri } from "./auth/platform";
 import { ChatPage } from "./pages/ChatPage";
+import { SignInPage } from "./pages/SignInPage";
+import { ThemeToggle } from "./components/ThemeToggle";
 
 const STORAGE_KEY = "surf-color-mode";
 
@@ -16,47 +19,36 @@ function getSavedColorMode(): ColorMode {
   return "brand";
 }
 
-const ColorModeContext = createContext<{
+export const ColorModeContext = createContext<{
   colorMode: ColorMode;
   toggleColorMode: () => void;
 }>({ colorMode: "brand", toggleColorMode: () => {} });
 
-function ThemeToggle() {
-  const { colorMode, toggleColorMode } = useContext(ColorModeContext);
-
+function SignInButton() {
+  const { login } = useAuth();
   return (
     <button
-      onClick={toggleColorMode}
-      aria-label={`Switch to ${colorMode === "brand" ? "light" : "brand"} theme`}
-      className="p-1.5 rounded-md text-text-secondary hover:text-text-primary hover:bg-surface transition-colors cursor-pointer"
+      onClick={login}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium
+                 text-accent border border-accent/30 hover:border-accent hover:bg-accent-subtle
+                 transition-all duration-150 cursor-pointer active:scale-[0.97]"
     >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        {colorMode === "brand" ? (
-          /* Sun icon — clicking switches to light */
-          <>
-            <circle cx="12" cy="12" r="5" />
-            <line x1="12" y1="1" x2="12" y2="3" />
-            <line x1="12" y1="21" x2="12" y2="23" />
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-            <line x1="1" y1="12" x2="3" y2="12" />
-            <line x1="21" y1="12" x2="23" y2="12" />
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-          </>
-        ) : (
-          /* Moon icon — clicking switches to brand/dark */
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-        )}
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+        <polyline points="10 17 15 12 10 7" />
+        <line x1="15" y1="12" x2="3" y2="12" />
       </svg>
+      Sign in
     </button>
   );
 }
 
 function UserMenu() {
-  const { isAuthenticated, profile, photoUrl, logout } = useAuth();
+  const { isAuthenticated, isGuest, profile, photoUrl, logout } = useAuth();
 
-  if (!isAuthenticated || !profile) return null;
+  if (!isAuthenticated || !profile) {
+    return isGuest ? <SignInButton /> : null;
+  }
 
   const initials = (profile.givenName ?? profile.displayName ?? "?")
     .charAt(0)
@@ -95,22 +87,6 @@ function UserMenu() {
         }}
       />
     </div>
-  );
-}
-
-function SignInButton() {
-  const { isAuthenticated, isLoading, login } = useAuth();
-
-  const clientId = import.meta.env.VITE_ENTRA_CLIENT_ID;
-  if (!clientId || isAuthenticated || isLoading) return null;
-
-  return (
-    <button
-      onClick={login}
-      className="text-sm text-text-secondary hover:text-text-primary border border-border-strong hover:border-accent px-3 py-1 rounded-md transition-colors cursor-pointer"
-    >
-      Sign in
-    </button>
   );
 }
 
@@ -156,6 +132,7 @@ function OfflineBanner() {
 }
 
 function AppContent() {
+  const { isAuthenticated, isGuest, isLoading: authLoading } = useAuth();
   const [chatKey, setChatKey] = useState(0);
   const [hasMessages, setHasMessages] = useState(false);
   const handleHasMessages = useCallback((has: boolean) => setHasMessages(has), []);
@@ -176,6 +153,21 @@ function AppContent() {
       // Plugin not available
     });
   }, []);
+
+  const authRequired = !!import.meta.env.VITE_ENTRA_CLIENT_ID;
+  const needsSignIn = authRequired && !isAuthenticated && !isGuest;
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full bg-canvas">
+        <WaveLoader size="md" color="#38bdf8" />
+      </div>
+    );
+  }
+
+  if (needsSignIn) {
+    return <SignInPage />;
+  }
 
   return (
     <div className="flex flex-col h-full bg-canvas">
@@ -201,7 +193,6 @@ function AppContent() {
         <ThemeToggle />
         <div className="w-px h-5 bg-border mx-4" />
         <UserMenu />
-        <SignInButton />
       </header>
       <main className="flex-1 overflow-hidden">
         <ChatPage key={chatKey} onHasMessages={handleHasMessages} />

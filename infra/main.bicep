@@ -111,6 +111,13 @@ param entraTenantId string = ''
 @description('Entra ID client ID (app registration)')
 param entraClientId string = ''
 
+@secure()
+@description('HMAC secret for guest access tokens (stored in Key Vault)')
+param guestTokenSecret string = ''
+
+@description('Set true after initial deployment once guest-token-secret exists in Key Vault')
+param guestTokenSecretInKv bool = false
+
 @description('Enable authentication (true for staging/prod)')
 param authEnabled bool = false
 
@@ -121,7 +128,7 @@ param containerAppsInternal bool = false
 param apiCorsOrigins string = '["http://localhost:3000"]'
 
 @description('Web minimum replicas')
-param webMinReplicas int = 0
+param webMinReplicas int = 1
 
 @description('Web maximum replicas')
 param webMaxReplicas int = 1
@@ -295,7 +302,8 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.13.3' = {
     secrets: concat(
       !empty(anthropicApiKey) ? [{ name: 'anthropic-api-key', value: anthropicApiKey }] : [],
       !empty(anthropicFoundryApiKey) ? [{ name: 'anthropic-foundry-api-key', value: anthropicFoundryApiKey }] : [],
-      !empty(entraClientSecret) ? [{ name: 'entra-client-secret', value: entraClientSecret }] : []
+      !empty(entraClientSecret) ? [{ name: 'entra-client-secret', value: entraClientSecret }] : [],
+      !empty(guestTokenSecret) ? [{ name: 'guest-token-secret', value: guestTokenSecret }] : []
     )
     roleAssignments: [
       {
@@ -602,6 +610,13 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
             keyVaultUrl: '${keyVault.outputs.uri}secrets/entra-client-secret'
             identity: managedIdentityResourceId
           }
+        ] : [],
+        (!empty(keyVaultName) && guestTokenSecretInKv) ? [
+          {
+            name: 'guest-token-secret'
+            keyVaultUrl: '${keyVault.outputs.uri}secrets/guest-token-secret'
+            identity: managedIdentityResourceId
+          }
         ] : []
       )
       registries: [
@@ -637,7 +652,8 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
             anthropicApiKeyInKv ? [{ name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }] : [],
             !empty(anthropicFoundryBaseUrl) ? [{ name: 'ANTHROPIC_FOUNDRY_BASE_URL', value: anthropicFoundryBaseUrl }] : [],
             !empty(anthropicFoundryApiKey) ? [{ name: 'ANTHROPIC_FOUNDRY_API_KEY', secretRef: 'anthropic-foundry-api-key' }] : [],
-            entraClientSecretInKv ? [{ name: 'ENTRA_CLIENT_SECRET', secretRef: 'entra-client-secret' }] : []
+            entraClientSecretInKv ? [{ name: 'ENTRA_CLIENT_SECRET', secretRef: 'entra-client-secret' }] : [],
+            guestTokenSecretInKv ? [{ name: 'GUEST_TOKEN_SECRET', secretRef: 'guest-token-secret' }] : []
           ))
           probes: [
             {

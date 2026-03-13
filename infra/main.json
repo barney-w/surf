@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "12316943130972861600"
+      "templateHash": "5697892595448748010"
     }
   },
   "parameters": {
@@ -243,6 +243,20 @@
         "description": "Entra ID client ID (app registration)"
       }
     },
+    "guestTokenSecret": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "HMAC secret for guest access tokens (stored in Key Vault)"
+      }
+    },
+    "guestTokenSecretInKv": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Set true after initial deployment once guest-token-secret exists in Key Vault"
+      }
+    },
     "authEnabled": {
       "type": "bool",
       "defaultValue": false,
@@ -266,7 +280,7 @@
     },
     "webMinReplicas": {
       "type": "int",
-      "defaultValue": 0,
+      "defaultValue": 1,
       "metadata": {
         "description": "Web minimum replicas"
       }
@@ -369,7 +383,7 @@
             "transport": "auto",
             "allowInsecure": true
           },
-          "secrets": "[concat(if(and(not(empty(reference('keyVault').outputs.name.value)), parameters('anthropicApiKeyInKv')), createArray(createObject('name', 'anthropic-api-key', 'keyVaultUrl', format('{0}secrets/anthropic-api-key', reference('keyVault').outputs.uri.value), 'identity', variables('managedIdentityResourceId'))), createArray()), if(and(not(empty(reference('keyVault').outputs.name.value)), not(empty(parameters('anthropicFoundryApiKey')))), createArray(createObject('name', 'anthropic-foundry-api-key', 'keyVaultUrl', format('{0}secrets/anthropic-foundry-api-key', reference('keyVault').outputs.uri.value), 'identity', variables('managedIdentityResourceId'))), createArray()), if(and(not(empty(reference('keyVault').outputs.name.value)), parameters('entraClientSecretInKv')), createArray(createObject('name', 'entra-client-secret', 'keyVaultUrl', format('{0}secrets/entra-client-secret', reference('keyVault').outputs.uri.value), 'identity', variables('managedIdentityResourceId'))), createArray()))]",
+          "secrets": "[concat(if(and(not(empty(reference('keyVault').outputs.name.value)), parameters('anthropicApiKeyInKv')), createArray(createObject('name', 'anthropic-api-key', 'keyVaultUrl', format('{0}secrets/anthropic-api-key', reference('keyVault').outputs.uri.value), 'identity', variables('managedIdentityResourceId'))), createArray()), if(and(not(empty(reference('keyVault').outputs.name.value)), not(empty(parameters('anthropicFoundryApiKey')))), createArray(createObject('name', 'anthropic-foundry-api-key', 'keyVaultUrl', format('{0}secrets/anthropic-foundry-api-key', reference('keyVault').outputs.uri.value), 'identity', variables('managedIdentityResourceId'))), createArray()), if(and(not(empty(reference('keyVault').outputs.name.value)), parameters('entraClientSecretInKv')), createArray(createObject('name', 'entra-client-secret', 'keyVaultUrl', format('{0}secrets/entra-client-secret', reference('keyVault').outputs.uri.value), 'identity', variables('managedIdentityResourceId'))), createArray()), if(and(not(empty(reference('keyVault').outputs.name.value)), parameters('guestTokenSecretInKv')), createArray(createObject('name', 'guest-token-secret', 'keyVaultUrl', format('{0}secrets/guest-token-secret', reference('keyVault').outputs.uri.value), 'identity', variables('managedIdentityResourceId'))), createArray()))]",
           "registries": [
             {
               "server": "[reference('acr').outputs.loginServer.value]",
@@ -386,7 +400,7 @@
                 "cpu": "[json(parameters('containerAppsCpu'))]",
                 "memory": "[parameters('containerAppsMemory')]"
               },
-              "env": "[concat(createArray(createObject('name', 'AZURE_OPENAI_ENDPOINT', 'value', reference('openAi').outputs.endpoint.value), createObject('name', 'AZURE_SEARCH_ENDPOINT', 'value', reference('aiSearch').outputs.endpoint.value), createObject('name', 'AZURE_SEARCH_SHAREPOINT_INDEX', 'value', parameters('aiSearchSharepointIndex')), createObject('name', 'AZURE_STORAGE_ACCOUNT_URL', 'value', reference('storage').outputs.primaryBlobEndpoint.value), createObject('name', 'AZURE_KEYVAULT_URL', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'AZURE_CLIENT_ID', 'value', reference('managedIdentity').outputs.clientId.value), createObject('name', 'ANTHROPIC_MODEL_ID', 'value', parameters('anthropicModelId')), createObject('name', 'API_CORS_ORIGINS', 'value', parameters('apiCorsOrigins')), createObject('name', 'AUTH_ENABLED', 'value', string(parameters('authEnabled'))), createObject('name', 'ENTRA_TENANT_ID', 'value', parameters('entraTenantId')), createObject('name', 'ENTRA_CLIENT_ID', 'value', parameters('entraClientId')), createObject('name', 'POSTGRES_ENABLED', 'value', 'False')), concat(if(parameters('anthropicApiKeyInKv'), createArray(createObject('name', 'ANTHROPIC_API_KEY', 'secretRef', 'anthropic-api-key')), createArray()), if(not(empty(parameters('anthropicFoundryBaseUrl'))), createArray(createObject('name', 'ANTHROPIC_FOUNDRY_BASE_URL', 'value', parameters('anthropicFoundryBaseUrl'))), createArray()), if(not(empty(parameters('anthropicFoundryApiKey'))), createArray(createObject('name', 'ANTHROPIC_FOUNDRY_API_KEY', 'secretRef', 'anthropic-foundry-api-key')), createArray()), if(parameters('entraClientSecretInKv'), createArray(createObject('name', 'ENTRA_CLIENT_SECRET', 'secretRef', 'entra-client-secret')), createArray())))]",
+              "env": "[concat(createArray(createObject('name', 'AZURE_OPENAI_ENDPOINT', 'value', reference('openAi').outputs.endpoint.value), createObject('name', 'AZURE_SEARCH_ENDPOINT', 'value', reference('aiSearch').outputs.endpoint.value), createObject('name', 'AZURE_SEARCH_SHAREPOINT_INDEX', 'value', parameters('aiSearchSharepointIndex')), createObject('name', 'AZURE_STORAGE_ACCOUNT_URL', 'value', reference('storage').outputs.primaryBlobEndpoint.value), createObject('name', 'AZURE_KEYVAULT_URL', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'AZURE_CLIENT_ID', 'value', reference('managedIdentity').outputs.clientId.value), createObject('name', 'ANTHROPIC_MODEL_ID', 'value', parameters('anthropicModelId')), createObject('name', 'API_CORS_ORIGINS', 'value', parameters('apiCorsOrigins')), createObject('name', 'AUTH_ENABLED', 'value', string(parameters('authEnabled'))), createObject('name', 'ENTRA_TENANT_ID', 'value', parameters('entraTenantId')), createObject('name', 'ENTRA_CLIENT_ID', 'value', parameters('entraClientId')), createObject('name', 'POSTGRES_ENABLED', 'value', 'False')), concat(if(parameters('anthropicApiKeyInKv'), createArray(createObject('name', 'ANTHROPIC_API_KEY', 'secretRef', 'anthropic-api-key')), createArray()), if(not(empty(parameters('anthropicFoundryBaseUrl'))), createArray(createObject('name', 'ANTHROPIC_FOUNDRY_BASE_URL', 'value', parameters('anthropicFoundryBaseUrl'))), createArray()), if(not(empty(parameters('anthropicFoundryApiKey'))), createArray(createObject('name', 'ANTHROPIC_FOUNDRY_API_KEY', 'secretRef', 'anthropic-foundry-api-key')), createArray()), if(parameters('entraClientSecretInKv'), createArray(createObject('name', 'ENTRA_CLIENT_SECRET', 'secretRef', 'entra-client-secret')), createArray()), if(parameters('guestTokenSecretInKv'), createArray(createObject('name', 'GUEST_TOKEN_SECRET', 'secretRef', 'guest-token-secret')), createArray())))]",
               "probes": [
                 {
                   "type": "Liveness",
@@ -8564,7 +8578,7 @@
             }
           },
           "secrets": {
-            "value": "[concat(if(not(empty(parameters('anthropicApiKey'))), createArray(createObject('name', 'anthropic-api-key', 'value', parameters('anthropicApiKey'))), createArray()), if(not(empty(parameters('anthropicFoundryApiKey'))), createArray(createObject('name', 'anthropic-foundry-api-key', 'value', parameters('anthropicFoundryApiKey'))), createArray()), if(not(empty(parameters('entraClientSecret'))), createArray(createObject('name', 'entra-client-secret', 'value', parameters('entraClientSecret'))), createArray()))]"
+            "value": "[concat(if(not(empty(parameters('anthropicApiKey'))), createArray(createObject('name', 'anthropic-api-key', 'value', parameters('anthropicApiKey'))), createArray()), if(not(empty(parameters('anthropicFoundryApiKey'))), createArray(createObject('name', 'anthropic-foundry-api-key', 'value', parameters('anthropicFoundryApiKey'))), createArray()), if(not(empty(parameters('entraClientSecret'))), createArray(createObject('name', 'entra-client-secret', 'value', parameters('entraClientSecret'))), createArray()), if(not(empty(parameters('guestTokenSecret'))), createArray(createObject('name', 'guest-token-secret', 'value', parameters('guestTokenSecret'))), createArray()))]"
           },
           "roleAssignments": {
             "value": [

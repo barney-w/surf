@@ -21,6 +21,7 @@ from src.agents._output import (
     extract_sources,
     parse_agent_output,
     sanitize_agent_response,
+    strip_source_urls,
 )
 from src.middleware.auth import UserContext, get_current_user
 from src.middleware.error_handler import LLM_TIMEOUT_SECONDS, LLMTimeoutError
@@ -209,6 +210,7 @@ async def _run_workflow(
     *,
     conversation_id: str,
     user_id: str,
+    target_agent: str | None = None,
 ) -> tuple[str, AgentResponseModel | None, str, list[str]]:
     """Run the AI workflow with a timeout.
 
@@ -230,7 +232,7 @@ async def _run_workflow(
     async def _execute() -> tuple[str, AgentResponseModel | None, str]:
         response_text = ""
         structured_result: AgentResponseModel | None = None
-        routed_agent = "coordinator"
+        routed_agent = target_agent if target_agent else "coordinator"
         async for _event in workflow.run(  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
             message,
             stream=True,
@@ -309,6 +311,7 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
             sanitised_message,
             conversation_id=conversation_id,
             user_id=user_id,
+            target_agent=body.agent if body.agent and body.agent != "coordinator" else None,
         )
     except LLMTimeoutError:
         raise
@@ -371,6 +374,11 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
 
     # Proofread — fix generation artefacts (dropped chars, broken markdown)
     agent_response = await _proofread_response(agent_response)
+
+    # Strip source URLs for agents backed by internal document stores
+    # (e.g. SharePoint) to avoid exposing infrastructure details.
+    if routed_agent == "hr_agent":
+        agent_response = strip_source_urls(agent_response)
 
     routing = RoutingMetadata(
         routed_by="coordinator",
@@ -649,7 +657,11 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         yield _sse({"type": "phase", "phase": "thinking"})
 
         wf: Workflow = workflow()  # type: ignore[operator]
-        routed_agent = "coordinator"
+        # When directly targeting an agent (no coordinator), initialise
+        # routed_agent to the target so output is processed as domain-agent
+        # JSON rather than buffered as coordinator plain text.
+        is_direct = bool(body.agent and body.agent != "coordinator")
+        routed_agent = body.agent if is_direct else "coordinator"
         structured_result: AgentResponseModel | None = None
         response_text = ""
         coordinator_buf = ""  # buffer coordinator tokens; discard on handoff
@@ -918,6 +930,11 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
         # Proofread — fix generation artefacts (dropped chars, broken markdown)
         agent_response = await _proofread_response(agent_response)
+
+        # Strip source URLs for agents backed by internal document stores
+        # (e.g. SharePoint) to avoid exposing infrastructure details.
+        if routed_agent == "hr_agent":
+            agent_response = strip_source_urls(agent_response)
 
         enriched = enrich_agent_response(agent_response)
 

@@ -12,7 +12,7 @@ import { WaveLoader } from "@surf-kit/core";
 import { useAuth } from "../auth/AuthProvider";
 import { getApiBase } from "../auth/platform";
 import { BackgroundSlideshow } from "../components/BackgroundSlideshow";
-import { AgentSelector, AgentIcon, useAgentAccess, AGENT_QUESTIONS } from "../components/AgentSelector";
+import { AgentSelectorModal, useAgentAccess, AGENT_QUESTIONS } from "../components/AgentSelector";
 
 /* ------------------------------------------------------------------ */
 /*  Token-aware chat config                                            */
@@ -147,16 +147,6 @@ export function ChatPage({
           )}
 
           <div className="shrink-0 py-3">
-            <div className="flex items-center gap-2 px-2 pb-1">
-              <AgentIcon
-                iconName={selectedAgent.iconName}
-                size={14}
-                style={{ color: `var(${selectedAgent.accentVar})` }}
-              />
-              <span className="text-xs text-text-secondary font-display">
-                {selectedAgent.label}
-              </span>
-            </div>
             <MessageComposer
               onSend={handleSend}
               isLoading={state.isLoading}
@@ -172,22 +162,18 @@ export function ChatPage({
             title={welcomeTitle}
             message="I can coordinate specialist agents to answer your questions."
             icon={
-              <img
-                src="/surf.png"
-                alt="Surf"
-                className="w-32 h-32 rounded-md"
-              />
+              <div className="pb-6">
+                <AgentSelectorModal
+                  agents={agents}
+                  selectedAgent={selectedAgent}
+                  onSelect={setSelectedAgent}
+                  onSignInPrompt={login}
+                />
+              </div>
             }
             suggestedQuestions={suggestedQuestions}
             onQuestionSelect={handleSend}
             className="flex-none mb-6"
-          />
-          <AgentSelector
-            agents={agents}
-            selectedId={selectedAgent.id}
-            onSelect={setSelectedAgent}
-            onSignInPrompt={login}
-            className="w-full max-w-[640px] mb-4"
           />
           <div className="w-full max-w-[640px]">
             <MessageComposer
