@@ -14,7 +14,8 @@ export const AGENTS: AgentDef[] = [
   {
     id: "coordinator",
     label: "Coordinator",
-    description: "Automatically routes your question to the best specialist agent.",
+    description:
+      "Default mode. Surf will automatically route your question to the best agent.",
     authLevel: "public",
     enabled: true,
     accentVar: "--color-agent-coordinator",
@@ -23,7 +24,8 @@ export const AGENTS: AgentDef[] = [
   {
     id: "website_agent",
     label: "Website",
-    description: "Search public website content — services, facilities, events and more.",
+    description:
+      "Search public website content — services, facilities, events and more.",
     authLevel: "public",
     enabled: true,
     accentVar: "--color-agent-general",
@@ -32,7 +34,8 @@ export const AGENTS: AgentDef[] = [
   {
     id: "hr_agent",
     label: "HR",
-    description: "Policies, leave entitlements, onboarding and workplace procedures.",
+    description:
+      "Policies, leave entitlements, onboarding and workplace procedures.",
     authLevel: "microsoft",
     enabled: true,
     accentVar: "--color-agent-hr",
@@ -57,6 +60,14 @@ export const AGENTS: AgentDef[] = [
     iconName: "BadgeDollarSign",
   },
 ];
+
+export const AGENT_MESSAGES: Record<string, string> = {
+  coordinator: "I can coordinate specialist agents to answer your questions.",
+  website_agent:
+    "I can find anything on the website — services, facilities, events and more.",
+  hr_agent:
+    "Ask me about policies, leave entitlements, onboarding and workplace procedures.",
+};
 
 export const AGENT_QUESTIONS: Record<string, string[]> = {
   coordinator: [

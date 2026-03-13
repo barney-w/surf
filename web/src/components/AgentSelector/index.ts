@@ -2,4 +2,4 @@ export { AgentSelector } from "./AgentSelector";
 export { AgentSelectorModal } from "./AgentSelectorModal";
 export { useAgentAccess } from "./useAgentAccess";
 export type { AgentWithAccess } from "./useAgentAccess";
-export { AGENTS, AGENT_QUESTIONS, type AgentDef, type AuthLevel } from "./agentConfig";
+export { AGENTS, AGENT_MESSAGES, AGENT_QUESTIONS, type AgentDef, type AuthLevel } from "./agentConfig";

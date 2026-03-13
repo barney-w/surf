@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { Lock, Globe, Clock } from "lucide-react";
 import type { AgentWithAccess } from "./useAgentAccess";
 import type { AuthLevel } from "./agentConfig";
@@ -29,34 +29,47 @@ function MicrosoftLogo({ size = 14 }: { size?: number }) {
 
 /* ── Badge components ── */
 
-function PublicBadge() {
+function PublicBadge({ selected }: { selected?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-xl border border-border/60 text-text-secondary bg-surface-raised/50">
-      <Globe size={12} className="text-text-muted" />
+    <span
+      className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1 rounded-full transition-colors duration-300"
+      style={{
+        background: selected ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.05)",
+        color: selected ? "rgba(255,255,255,0.8)" : "rgba(0,0,0,0.45)",
+      }}
+    >
+      <Globe size={11} />
       Public
     </span>
   );
 }
 
-function MicrosoftRequiredBadge() {
+function MicrosoftRequiredBadge({ selected }: { selected?: boolean }) {
   return (
     <span
-      className="inline-flex items-center gap-2 text-[11px] font-semibold px-3 py-1.5 rounded-xl whitespace-nowrap
-                 bg-[#0078D4] text-white shadow-sm
-                 group-hover:bg-[#106EBE] group-hover:shadow-md
-                 transition-all duration-200"
+      className="inline-flex items-center gap-2 text-[11px] font-semibold px-3 py-1 rounded-full whitespace-nowrap transition-colors duration-300"
+      style={{
+        background: selected ? "rgba(255,255,255,0.15)" : "rgba(0,103,184,0.08)",
+        color: selected ? "rgba(255,255,255,0.9)" : "rgba(0,103,184,0.8)",
+      }}
     >
-      <Lock size={11} className="shrink-0" />
+      <Lock size={10} className="shrink-0" />
       <MicrosoftLogo size={12} />
       <span className="shrink-0">Microsoft account</span>
     </span>
   );
 }
 
-function OrgBadge() {
+function OrgBadge({ selected }: { selected?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-xl border border-border/60 text-text-secondary bg-surface-raised/50">
-      <Lock size={11} className="text-text-muted" />
+    <span
+      className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1 rounded-full transition-colors duration-300"
+      style={{
+        background: selected ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.05)",
+        color: selected ? "rgba(255,255,255,0.8)" : "rgba(0,0,0,0.45)",
+      }}
+    >
+      <Lock size={10} />
       Organisation
     </span>
   );
@@ -64,14 +77,20 @@ function OrgBadge() {
 
 function ComingSoonBadge() {
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-xl border border-border/40 text-text-muted bg-surface-sunken/60 backdrop-blur-sm">
-      <Clock size={12} />
+    <span
+      className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1 rounded-full"
+      style={{
+        background: "rgba(0,0,0,0.04)",
+        color: "rgba(0,0,0,0.35)",
+      }}
+    >
+      <Clock size={11} />
       Coming soon
     </span>
   );
 }
 
-const BADGE_FOR_AUTH: Record<AuthLevel, React.ComponentType> = {
+const BADGE_FOR_AUTH: Record<AuthLevel, React.ComponentType<{ selected?: boolean }>> = {
   public: PublicBadge,
   microsoft: MicrosoftRequiredBadge,
   organisational: OrgBadge,
@@ -88,15 +107,18 @@ export function AgentCard({
   const isLocked = !agent.accessible && agent.enabled;
   const isDisabled = !agent.enabled;
   const cardRef = useRef<HTMLButtonElement>(null);
+  const [tapping, setTapping] = useState(false);
 
-  const handleClick = () => {
+  const handleClick = useCallback(() => {
     if (isDisabled) return;
     if (isLocked) {
       onSignInPrompt?.();
       return;
     }
+    setTapping(true);
+    setTimeout(() => setTapping(false), 300);
     onSelect(agent.id);
-  };
+  }, [isDisabled, isLocked, onSignInPrompt, onSelect, agent.id]);
 
   useEffect(() => {
     if (selected && cardRef.current) {
@@ -105,7 +127,12 @@ export function AgentCard({
   }, [selected]);
 
   const accentColor = `var(${agent.accentVar})`;
-  const BadgeComponent = isDisabled ? ComingSoonBadge : BADGE_FOR_AUTH[agent.authLevel];
+  const isCoordinator = agent.id === "coordinator";
+  const BadgeComponent = isDisabled
+    ? ComingSoonBadge
+    : isCoordinator
+      ? null
+      : BADGE_FOR_AUTH[agent.authLevel];
 
   return (
     <button
@@ -113,101 +140,102 @@ export function AgentCard({
       type="button"
       onClick={handleClick}
       className={[
-        "agent-card group relative rounded-2xl border text-left w-full h-full",
-        "flex flex-col items-center gap-2.5 p-5 transition-all duration-300 ease-out",
-        "anim-fade-up",
+        "agent-card group relative rounded-2xl text-left w-full",
+        "flex flex-col gap-3 p-5 transition-all duration-300 ease-out",
+        "anim-fade-up-blur",
+        tapping ? "agent-card-tap" : "",
         isDisabled
-          ? "cursor-not-allowed border-border"
+          ? "cursor-not-allowed"
           : isLocked
-            ? "cursor-pointer border-border hover:border-border-strong"
+            ? "cursor-pointer hover:shadow-lg"
             : [
-                "cursor-pointer border-border",
+                "cursor-pointer",
                 "hover:-translate-y-1 hover:shadow-xl",
-                selected
-                  ? "border-transparent"
-                  : "hover:border-border-strong",
+                selected ? "agent-card-selected" : "",
               ].join(" "),
       ].join(" ")}
       style={{
-        animationDelay: `${baseDelay + index * 60}ms`,
-        ...(selected && !isDisabled && !isLocked
-          ? {
-              background: `linear-gradient(160deg, color-mix(in srgb, ${accentColor} 10%, var(--surf-color-bg-surface-raised)), var(--surf-color-bg-surface-raised))`,
-              borderColor: accentColor,
-              boxShadow: `0 0 0 1px color-mix(in srgb, ${accentColor} 30%, transparent), 0 8px 32px color-mix(in srgb, ${accentColor} 15%, transparent)`,
-            }
-          : {}),
-      }}
+        "--agent-accent": accentColor,
+        animationDelay: `${baseDelay + index * 80}ms`,
+        background: selected && !isDisabled && !isLocked ? accentColor : undefined,
+      } as React.CSSProperties}
       aria-disabled={isDisabled || undefined}
       tabIndex={isDisabled ? -1 : 0}
     >
-      {/* Top accent line */}
-      <div
-        className="absolute top-0 left-0 right-0 h-[2px] transition-all duration-500"
-        style={{
-          background: `linear-gradient(90deg, transparent 10%, ${accentColor}, transparent 90%)`,
-          opacity: selected ? 1 : 0,
-          transform: selected ? "scaleX(1)" : "scaleX(0.3)",
-        }}
-      />
-
-      {/* Disabled overlay — soft frosted layer */}
+      {/* Disabled frosted overlay */}
       {isDisabled && (
-        <div className="absolute inset-0 rounded-2xl bg-canvas/40 z-[1] pointer-events-none" />
+        <div className="absolute inset-0 rounded-2xl bg-white/40 z-[1] pointer-events-none" />
       )}
 
-      {/* Agent icon */}
-      <div className="relative mt-1">
+      {/* Icon + title row */}
+      <div className="flex items-center gap-3">
         <div
-          className="w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300"
+          className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors duration-300"
           style={{
-            background: isDisabled
-              ? "color-mix(in srgb, var(--surf-color-text-muted) 8%, transparent)"
+            background: selected
+              ? "rgba(255,255,255,0.2)"
               : `color-mix(in srgb, ${accentColor} 12%, transparent)`,
-            boxShadow: selected
-              ? `0 0 20px color-mix(in srgb, ${accentColor} 25%, transparent)`
-              : undefined,
           }}
         >
           <AgentIcon
             iconName={agent.iconName}
-            size={28}
+            size={18}
             style={{
               color: isDisabled
-                ? "var(--surf-color-text-muted)"
-                : isLocked
-                  ? "var(--surf-color-text-muted)"
+                ? "rgba(0,0,0,0.25)"
+                : selected
+                  ? "#fff"
                   : accentColor,
+              transition: "color 0.3s ease",
             }}
           />
         </div>
+
+        <span
+          className="font-display font-semibold text-lg tracking-tight leading-tight transition-colors duration-300"
+          style={{
+            color: isDisabled
+              ? "rgba(0,0,0,0.3)"
+              : selected
+                ? "#fff"
+                : "rgba(0,0,0,0.85)",
+          }}
+        >
+          {agent.label}
+        </span>
+
+        {/* Lock indicator for locked agents */}
         {isLocked && (
-          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-surface-raised border border-border flex items-center justify-center shadow-sm">
-            <Lock size={10} className="text-text-muted" />
-          </div>
+          <Lock size={14} className="ml-auto shrink-0" style={{ color: "rgba(0,0,0,0.3)" }} />
         )}
       </div>
 
-      {/* Agent name */}
-      <span className={`font-display font-semibold text-sm text-center leading-tight ${isDisabled ? "text-text-muted" : "text-text-primary"}`}>
-        {agent.label}
-      </span>
-
-      {/* Description — hidden via overflow, fixed height, no clamp truncation */}
-      <p className={`text-[11px] text-center leading-relaxed h-[3em] overflow-hidden ${isDisabled ? "text-text-muted/70" : "text-text-secondary"}`}>
+      {/* Description */}
+      <p
+        className="text-[13px] leading-relaxed transition-colors duration-300"
+        style={{
+          color: isDisabled
+            ? "rgba(0,0,0,0.25)"
+            : selected
+              ? "rgba(255,255,255,0.8)"
+              : "rgba(0,0,0,0.5)",
+        }}
+      >
         {agent.description}
       </p>
 
-      {/* Badge — always at bottom, in front of disabled overlay */}
-      <div className="mt-auto pt-1.5 relative z-[2]">
-        <BadgeComponent />
-      </div>
+      {/* Badge */}
+      {BadgeComponent && (
+        <div className="mt-auto pt-1 relative z-[2]">
+          <BadgeComponent selected={selected} />
+        </div>
+      )}
 
       {/* Selected checkmark */}
       {selected && !isDisabled && !isLocked && (
         <div
-          className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full flex items-center justify-center anim-scale-pop"
-          style={{ background: accentColor }}
+          className="absolute top-3 right-3 w-5 h-5 rounded-full flex items-center justify-center anim-scale-pop"
+          style={{ background: "rgba(255,255,255,0.25)" }}
         >
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />

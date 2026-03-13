@@ -12,7 +12,36 @@ import { WaveLoader } from "@surf-kit/core";
 import { useAuth } from "../auth/AuthProvider";
 import { getApiBase } from "../auth/platform";
 import { BackgroundSlideshow } from "../components/BackgroundSlideshow";
-import { AgentSelectorModal, useAgentAccess, AGENT_QUESTIONS } from "../components/AgentSelector";
+import { AgentSelectorModal, useAgentAccess, AGENT_MESSAGES, AGENT_QUESTIONS } from "../components/AgentSelector";
+
+/* ------------------------------------------------------------------ */
+/*  Typewriter effect for agent welcome message                        */
+/* ------------------------------------------------------------------ */
+
+function useTypewriter(text: string, charDelay = 25) {
+  const [displayed, setDisplayed] = useState(text);
+  const [typing, setTyping] = useState(false);
+  const prevText = useRef(text);
+
+  useEffect(() => {
+    if (text === prevText.current) return;
+    prevText.current = text;
+    setDisplayed("");
+    setTyping(true);
+    let i = 0;
+    const id = setInterval(() => {
+      i++;
+      setDisplayed(text.slice(0, i));
+      if (i >= text.length) {
+        clearInterval(id);
+        setTyping(false);
+      }
+    }, charDelay);
+    return () => clearInterval(id);
+  }, [text, charDelay]);
+
+  return { displayed, typing };
+}
 
 /* ------------------------------------------------------------------ */
 /*  Token-aware chat config                                            */
@@ -57,6 +86,8 @@ export function ChatPage({
 }) {
   const { profile, isLoading: authLoading, login } = useAuth();
   const { agents, selectedAgent, setSelectedAgent } = useAgentAccess();
+  const agentMessage = AGENT_MESSAGES[selectedAgent.id] ?? AGENT_MESSAGES.coordinator;
+  const { displayed: typedMessage, typing } = useTypewriter(agentMessage);
   const suggestedQuestions = AGENT_QUESTIONS[selectedAgent.id] ?? AGENT_QUESTIONS.coordinator;
   const chatConfig = useChatConfig();
   const configWithAgent = useMemo(
@@ -160,7 +191,12 @@ export function ChatPage({
           <div className="flex-[3]" />
           <WelcomeScreen
             title={welcomeTitle}
-            message="I can coordinate specialist agents to answer your questions."
+            message={
+              <span>
+                {typedMessage}
+                {typing && <span className="typewriter-cursor" />}
+              </span>
+            }
             icon={
               <div className="pb-6">
                 <AgentSelectorModal

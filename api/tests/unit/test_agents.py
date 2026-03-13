@@ -413,6 +413,74 @@ class TestSafeHandoffAnthropicClient:
         assert prepared[0]["role"] == "user"
         assert prepared[-1]["role"] == "user"
 
+    def test_attachments_skip_tool_result_messages(self):
+        """Attachments must be injected into the original user message, not into
+        a tool_result user message — otherwise the API returns a 400."""
+        import base64
+
+        from agent_framework import Message
+
+        from src.orchestrator.builder import (
+            _SafeHandoffAnthropicClient,  # pyright: ignore[reportPrivateUsage]
+            current_attachments,
+        )
+
+        client = _SafeHandoffAnthropicClient(api_key="test-key", model_id="test-model")
+        messages = [Message(role="user", text="Analyse this document")]
+
+        # Simulate the prepared output having a tool_use + tool_result pair
+        # by patching the parent's method to return the full conversation.
+        tool_use_id = "toolu_test123"
+        fake_prepared = [
+            {"role": "user", "content": [{"type": "text", "text": "Analyse this document"}]},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": tool_use_id,
+                        "name": "search_knowledge_base",
+                        "input": {"query": "document analysis"},
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": "Found 3 results.",
+                    }
+                ],
+            },
+        ]
+
+        # Set an image attachment in the context var (avoids PDF parsing deps).
+        dummy_img = base64.b64encode(b"fake-image-data").decode()
+        token = current_attachments.set([{"content_type": "image/png", "data": dummy_img}])
+        try:
+            with patch.object(
+                type(client).__bases__[0],
+                "_prepare_messages_for_anthropic",
+                return_value=fake_prepared,
+            ):
+                result = client._prepare_messages_for_anthropic(messages)  # pyright: ignore[reportPrivateUsage]
+        finally:
+            current_attachments.reset(token)
+
+        # The tool_result message must NOT contain an image block.
+        tool_result_msg = result[2]
+        assert tool_result_msg["role"] == "user"
+        content_types = [b["type"] for b in tool_result_msg["content"]]
+        assert "image" not in content_types, "Attachment was injected into tool_result message"
+        assert "tool_result" in content_types
+
+        # The original user message SHOULD contain the image block.
+        original_msg = result[0]
+        content_types = [b["type"] for b in original_msg["content"]]
+        assert "image" in content_types, "Attachment was not injected into original user message"
+
 
 class TestPerAgentModel:
     """Verify per-agent model resolution in build_agent_graph."""

@@ -149,11 +149,10 @@ class TestGuestTokenEndpoint:
 
     @pytest.mark.asyncio
     async def test_guest_endpoint_returns_token(self):
+        from fastapi import FastAPI
         from fastapi.testclient import TestClient
 
         from src.routes.guest import router
-
-        from fastapi import FastAPI
 
         app = FastAPI()
         app.include_router(router)
@@ -188,11 +187,10 @@ class TestGuestTokenEndpoint:
 
     @pytest.mark.asyncio
     async def test_guest_endpoint_disabled_without_secret(self):
+        from fastapi import FastAPI
         from fastapi.testclient import TestClient
 
         from src.routes.guest import router
-
-        from fastapi import FastAPI
 
         app = FastAPI()
         app.include_router(router)

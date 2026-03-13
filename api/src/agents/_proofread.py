@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -31,8 +32,12 @@ _SYSTEM_PROMPT = (
     "- NEVER add or remove sentences\n"
     "- NEVER change factual content (numbers, names, dates)\n"
     "- If the text looks correct, return it exactly as-is\n"
-    "- Return ONLY the corrected text, no commentary"
+    "- Return ONLY the corrected text wrapped in <corrected> tags, no commentary\n\n"
+    "You MUST wrap your entire output in <corrected>...</corrected> tags. "
+    "Do NOT write anything before or after the tags."
 )
+
+_CORRECTED_RE = re.compile(r"<corrected>(.*)</corrected>", re.DOTALL)
 
 
 def _build_client(settings: Settings) -> object:
@@ -72,7 +77,17 @@ async def proofread_message(message: str, settings: Settings) -> str:
             timeout=_TIMEOUT_SECONDS,
         )
 
-        corrected = response.content[0].text  # type: ignore[union-attr]
+        raw = response.content[0].text  # type: ignore[union-attr]
+
+        # Extract content from <corrected> tags.  If the model ignored the
+        # instruction and returned bare text or added commentary outside the
+        # tags, we either extract the tagged portion or fall back to the
+        # original message to avoid leaking proofreader reasoning.
+        tag_match = _CORRECTED_RE.search(raw)
+        if not tag_match:
+            logger.warning("proofread: no <corrected> tags found — using original")
+            return message
+        corrected = tag_match.group(1).strip()
 
         # Length guard — reject wildly different output
         original_len = len(message)

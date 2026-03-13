@@ -121,7 +121,7 @@ function AgentCarousel({
   const scroll = useCallback((dir: "left" | "right") => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollBy({ left: dir === "left" ? -240 : 240, behavior: "smooth" });
+    el.scrollBy({ left: dir === "left" ? -280 : 280, behavior: "smooth" });
   }, []);
 
   return (
@@ -155,10 +155,10 @@ function AgentCarousel({
       {/* Scrollable row */}
       <div
         ref={scrollRef}
-        className="flex gap-4 overflow-x-auto overflow-y-visible px-6 py-2 snap-x snap-mandatory scrollbar-hide"
+        className="flex gap-5 overflow-x-auto overflow-y-visible px-6 py-6 pb-8 snap-x snap-mandatory scrollbar-hide"
       >
         {agents.map((agent, index) => (
-          <div key={agent.id} className="w-[200px] shrink-0 snap-center">
+          <div key={agent.id} className="w-[250px] shrink-0 snap-center flex">
             <AgentCard
               agent={agent}
               selected={selectedId === agent.id}
@@ -284,14 +284,14 @@ export function AgentSelectorModal({
             aria-label="Choose your agent"
             className={`fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 transition-all ${
               isIn
-                ? "bg-black/60 backdrop-blur-lg"
-                : "bg-black/0 backdrop-blur-none"
+                ? "agent-modal-backdrop-in"
+                : "agent-modal-backdrop-out"
             }`}
-            style={{ transitionDuration: "300ms" }}
+            style={{ transitionDuration: "400ms" }}
             onClick={handleBackdrop}
           >
             <div
-              className={`relative rounded-3xl border border-white/10 w-full transition-all flex flex-col overflow-hidden
+              className={`agent-modal-panel relative rounded-3xl border border-white/[0.08] w-full transition-all flex flex-col overflow-hidden
                           max-h-[90vh] sm:max-h-[85vh]
                           max-w-[95vw] sm:max-w-[900px] ${
                             isIn
@@ -303,29 +303,17 @@ export function AgentSelectorModal({
                 transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)",
               }}
             >
-              {/* Teal background base */}
-              <div className="absolute inset-0 bg-brand-dark" />
-
-              {/* Background image overlay */}
-              <div
-                className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-15"
-                style={{ backgroundImage: "url(/branding/bg3.jpg)" }}
-              />
-
-              {/* Subtle gradient overlay for depth */}
-              <div className="absolute inset-0 bg-gradient-to-b from-brand-dark/40 via-transparent to-brand-dark/60" />
 
               {/* Close button */}
               <button
                 type="button"
                 onClick={close}
-                className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full flex items-center justify-center
-                           text-white/60 hover:text-white hover:bg-white/10
-                           border border-transparent hover:border-white/20
+                className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full flex items-center justify-center
+                           text-white/50 hover:text-white hover:bg-white/10
                            transition-all duration-150 cursor-pointer"
                 aria-label="Close"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
 
               {/* Header */}
@@ -334,13 +322,14 @@ export function AgentSelectorModal({
                   <img
                     src="/surf.png"
                     alt=""
-                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl shadow-lg"
+                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl"
+                    style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }}
                   />
                 </div>
-                <h2 className="font-display text-xl sm:text-2xl font-semibold text-white">
+                <h2 className="font-display text-xl sm:text-2xl font-semibold text-white/95">
                   Choose your agent
                 </h2>
-                <p className="text-sm text-white/70 mt-2 text-center max-w-md">
+                <p className="text-sm text-white/50 mt-2 text-center max-w-md">
                   Select a specialist or let the coordinator route your question
                   automatically.
                 </p>

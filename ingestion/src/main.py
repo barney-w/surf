@@ -727,6 +727,7 @@ def index_website(
         asyncio.run(crawler.close())
 
     # Free large objects no longer needed before embedding
+    document_count = len(documents)
     del documents
     all_pages.clear()
     all_pdfs.clear()
@@ -806,7 +807,7 @@ def index_website(
 
     # Summary
     click.echo("\n--- Indexing Summary ---")
-    click.echo(f"Documents created : {len(documents)}")
+    click.echo(f"Documents created : {document_count}")
     click.echo(f"Chunks created    : {len(all_chunks)}")
     click.echo(f"Errors            : {len(errors)}")
     if errors:

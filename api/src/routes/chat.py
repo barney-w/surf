@@ -23,6 +23,8 @@ from src.agents._output import (
     sanitize_agent_response,
     strip_source_urls,
 )
+from src.agents._proofread import proofread_message
+from src.config.settings import get_settings
 from src.middleware.auth import UserContext, get_current_user
 from src.middleware.error_handler import LLM_TIMEOUT_SECONDS, LLMTimeoutError
 from src.middleware.input_validation import validate_message
@@ -36,8 +38,6 @@ from src.models.chat import ChatRequest, ChatResponse
 from src.models.conversation import AttachmentRecord, FeedbackRecord, MessageRecord
 from src.orchestrator.builder import current_attachments
 from src.orchestrator.history import current_conversation_id, current_user_id, reset_history_cache
-from src.agents._proofread import proofread_message
-from src.config.settings import get_settings
 from src.rag.quality_gate import run_quality_gate
 from src.rag.tools import rag_results_collector
 

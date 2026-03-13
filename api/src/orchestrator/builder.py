@@ -171,14 +171,22 @@ class _SafeHandoffAnthropicClient(AnthropicClient):
     def _prepare_messages_for_anthropic(self, messages: Sequence[Message]) -> list[dict[str, Any]]:
         prepared = super()._prepare_messages_for_anthropic(messages)
 
-        # Inject multimodal content (images/PDFs) into the last user message.
+        # Inject multimodal content (images/PDFs) into the last user message
+        # that is NOT a tool_result turn.  After a tool call the message list
+        # contains a user message holding only tool_result blocks — injecting
+        # attachments there corrupts the structure and causes a 400 from the API.
         attachments = current_attachments.get(None)
         if attachments:
-            # Find the last user message and prepend attachment content blocks.
             for msg in reversed(prepared):
                 if msg.get("role") != "user":
                     continue
                 content: list[dict[str, Any]] = msg.get("content", [])
+                # Skip tool_result messages — they must not be mixed with
+                # document/image blocks.
+                if isinstance(content, list) and any(
+                    isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+                ):
+                    continue
                 if isinstance(content, str):
                     content = [{"type": "text", "text": content}]
                     msg["content"] = content
@@ -198,7 +206,7 @@ class _SafeHandoffAnthropicClient(AnthropicClient):
                         )
                     elif ct == "application/pdf":
                         content.insert(0, _prepare_pdf_block(att["data"]))
-                break  # only inject into the last user message
+                break  # only inject into the first eligible user message
 
         if prepared and prepared[-1].get("role") == "assistant":
             logger.debug(
@@ -316,7 +324,11 @@ def build_agent_graph(
 
     # Filter registry entries by auth level when an auth_filter is provided.
     if auth_filter is not None:
-        hierarchy = {AuthLevel.PUBLIC: 0, AuthLevel.MICROSOFT_ACCOUNT: 1, AuthLevel.ORGANISATIONAL: 2}
+        hierarchy = {
+            AuthLevel.PUBLIC: 0,
+            AuthLevel.MICROSOFT_ACCOUNT: 1,
+            AuthLevel.ORGANISATIONAL: 2,
+        }
         filter_level = hierarchy[auth_filter]
         registry = {
             name: cls

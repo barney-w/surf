@@ -69,7 +69,9 @@ class TestProofreadLengthDivergence:
         bloated = original + " " * 200  # >30% longer
         with patch("src.agents._proofread._build_client") as mock_build:
             client = AsyncMock()
-            client.messages.create = AsyncMock(return_value=_mock_response(bloated))
+            client.messages.create = AsyncMock(
+                return_value=_mock_response(f"<corrected>{bloated}</corrected>")
+            )
             mock_build.return_value = client
             result = await proofread_message(original, _settings())
         assert result == original
@@ -82,7 +84,9 @@ class TestProofreadSuccess:
         corrected = "Your own illness or injury entitles you to **10 days per year**."
         with patch("src.agents._proofread._build_client") as mock_build:
             client = AsyncMock()
-            client.messages.create = AsyncMock(return_value=_mock_response(corrected))
+            client.messages.create = AsyncMock(
+                return_value=_mock_response(f"<corrected>{corrected}</corrected>")
+            )
             mock_build.return_value = client
             result = await proofread_message(original, _settings())
         assert result == corrected
@@ -92,7 +96,44 @@ class TestProofreadSuccess:
         original = "Your annual leave entitlement is 20 days per year."
         with patch("src.agents._proofread._build_client") as mock_build:
             client = AsyncMock()
-            client.messages.create = AsyncMock(return_value=_mock_response(original))
+            client.messages.create = AsyncMock(
+                return_value=_mock_response(f"<corrected>{original}</corrected>")
+            )
+            mock_build.return_value = client
+            result = await proofread_message(original, _settings())
+        assert result == original
+
+
+class TestProofreadCommentaryStripping:
+    @pytest.mark.asyncio
+    async def test_commentary_before_tags_stripped(self):
+        """Model prepends reasoning but still wraps in tags — only tagged content used."""
+        original = "The library is open Monday to Friday, 9am to 5pm."
+        raw_output = (
+            "The text appears to be correct. There are no obvious generation "
+            "artefacts. I'm returning it exactly as-is.\n\n"
+            f"<corrected>{original}</corrected>"
+        )
+        with patch("src.agents._proofread._build_client") as mock_build:
+            client = AsyncMock()
+            client.messages.create = AsyncMock(return_value=_mock_response(raw_output))
+            mock_build.return_value = client
+            result = await proofread_message(original, _settings())
+        assert result == original
+
+    @pytest.mark.asyncio
+    async def test_no_tags_falls_back_to_original(self):
+        """Model ignores tag instruction entirely — fall back to original."""
+        original = "The library is open Monday to Friday, 9am to 5pm."
+        raw_output = (
+            "The text appears to be correct. There are no obvious generation "
+            "artefacts such as dropped characters, broken markdown, or "
+            "incomplete words at boundaries. I'm returning it exactly as-is.\n\n"
+            + original
+        )
+        with patch("src.agents._proofread._build_client") as mock_build:
+            client = AsyncMock()
+            client.messages.create = AsyncMock(return_value=_mock_response(raw_output))
             mock_build.return_value = client
             result = await proofread_message(original, _settings())
         assert result == original

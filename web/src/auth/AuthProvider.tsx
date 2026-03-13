@@ -281,18 +281,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    if (!msalInstance) return;
-    setAccount(null);
-    setProfile(null);
-    setIsGuest(false);
-    guestTokenRef.current = null;
-    setGuestToken(null);
-    if (photoUrl) URL.revokeObjectURL(photoUrl);
-    setPhotoUrl(null);
-    void clearMsalCache();
+    const clearLocalState = () => {
+      setAccount(null);
+      setProfile(null);
+      setIsGuest(false);
+      guestTokenRef.current = null;
+      setGuestToken(null);
+      if (photoUrl) URL.revokeObjectURL(photoUrl);
+      setPhotoUrl(null);
+      void clearMsalCache();
+    };
+
+    if (!msalInstance) {
+      // Guest-only session — just clear local state
+      clearLocalState();
+      return;
+    }
+
     if (needsPopupAuth()) {
+      // Popup: sign out of Microsoft first, then clear local state
       await msalInstance.logoutPopup();
+      clearLocalState();
     } else {
+      // Redirect: browser will navigate away, so clear cache but don't
+      // reset React state — that causes a flash of the sign-in page
+      // before the redirect fires. State resets on page reload.
+      void clearMsalCache();
       void msalInstance.logoutRedirect();
     }
   }, [photoUrl]);

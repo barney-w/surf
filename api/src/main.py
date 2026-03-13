@@ -12,13 +12,13 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from openai import AsyncAzureOpenAI
 
+from src.agents._base import AuthLevel
 from src.config.settings import get_settings
 from src.middleware.auth import get_current_user
 from src.middleware.body_limit import BodySizeLimitMiddleware
 from src.middleware.error_handler import add_error_handlers
 from src.middleware.logging import reset_logging_context, set_logging_context, setup_logging
 from src.middleware.telemetry import setup_telemetry
-from src.agents._base import AuthLevel
 from src.orchestrator.builder import build_agent_graph, create_model_client
 from src.orchestrator.history import ConversationHistoryProvider
 from src.rag.tools import clear_search_clients, set_embed_func, set_search_client
