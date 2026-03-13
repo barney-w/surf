@@ -18,7 +18,6 @@ from pathlib import Path
 import click
 from azure.identity import DefaultAzureCredential
 from azure.search.documents import SearchClient
-
 from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
@@ -146,7 +145,7 @@ def run_sample_queries(client: SearchClient, verbose: bool) -> list[bool]:
             status = "WARN"
             passed = False
 
-        click.echo(f"  {status}  \"{query_text}\" — {num_results} result(s)")
+        click.echo(f'  {status}  "{query_text}" — {num_results} result(s)')
 
         if num_results > 0:
             top_hit = hits[0]

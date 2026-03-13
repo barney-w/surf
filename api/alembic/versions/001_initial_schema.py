@@ -4,15 +4,15 @@ Revision ID: 001
 Revises:
 Create Date: 2026-03-12
 """
-from typing import Sequence, Union
+
+from collections.abc import Sequence
 
 from alembic import op
-import sqlalchemy as sa
 
 revision: str = "001"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -56,9 +56,7 @@ def upgrade() -> None:
             created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
         )
     """)
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_feedback_conversation ON feedback (conversation_id)"
-    )
+    op.execute("CREATE INDEX IF NOT EXISTS idx_feedback_conversation ON feedback (conversation_id)")
 
 
 def downgrade() -> None:

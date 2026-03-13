@@ -128,8 +128,7 @@ class TestProofreadCommentaryStripping:
         raw_output = (
             "The text appears to be correct. There are no obvious generation "
             "artefacts such as dropped characters, broken markdown, or "
-            "incomplete words at boundaries. I'm returning it exactly as-is.\n\n"
-            + original
+            "incomplete words at boundaries. I'm returning it exactly as-is.\n\n" + original
         )
         with patch("src.agents._proofread._build_client") as mock_build:
             client = AsyncMock()

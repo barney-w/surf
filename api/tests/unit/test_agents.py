@@ -919,9 +919,7 @@ class TestAgentsEndpoint:
         app = _make_agents_app()
 
         # Guest user (PUBLIC level)
-        guest_user = UserContext(
-            user_id="guest-1", name="Guest", email="", is_guest=True
-        )
+        guest_user = UserContext(user_id="guest-1", name="Guest", email="", is_guest=True)
         with patch.object(_agents_mod, "get_current_user", return_value=guest_user):
             client = TestClient(app)
             response = client.get("/api/v1/agents")

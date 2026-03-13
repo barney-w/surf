@@ -122,7 +122,7 @@ async def list_conversations(
 
     async with pool.acquire() as conn:
         total = await conn.fetchval(
-            f"SELECT COUNT(*) FROM conversations c {where}",  # noqa: S608
+            f"SELECT COUNT(*) FROM conversations c {where}",  # noqa: S608  # nosec B608
             *params,
         )
         rows = await conn.fetch(
@@ -136,7 +136,7 @@ async def list_conversations(
             GROUP BY c.id
             ORDER BY c.updated_at DESC
             LIMIT ${idx} OFFSET ${idx + 1}
-            """,  # noqa: S608
+            """,  # noqa: S608  # nosec B608
             *params,
             limit,
             offset,

@@ -91,6 +91,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --prerelease=allow
 
+      - name: Apply database migrations
+        run: uv run alembic upgrade head
+        env:
+          DATABASE_URL: postgresql://surf:test@localhost:5432/surf
+
       - name: Run tests
         run: uv run pytest --tb=short
         env:

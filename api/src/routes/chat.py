@@ -490,16 +490,20 @@ class _MessageFieldExtractor:
         if self._suppressed:
             return ""
 
-        # Still buffering the guard window.
+        # Still buffering the guard window.  Process the full input through
+        # _read_string (escape sequences like \uXXXX consume multiple input
+        # chars per output char, so we cannot split by input length).
         if len(self._guard_buf) < self._GUARD_LEN:
-            needed = self._GUARD_LEN - len(self._guard_buf)
-            chars, remaining = s[:needed], s[needed:]
-
-            out_inner, done = self._read_string(chars)
+            out_inner, done = self._read_string(s)
             self._guard_buf += out_inner
             if done:
                 self._done = True
-                # Short message that ended before guard window — not pollution.
+                if self._guard_buf.startswith(self._SOURCE_POLLUTION_PREFIX):
+                    self._suppressed = True
+                    logger.warning(
+                        "_MessageFieldExtractor: source pollution detected — suppressing stream"
+                    )
+                    return ""
                 return self._guard_buf
 
             if len(self._guard_buf) >= self._GUARD_LEN:
@@ -509,13 +513,10 @@ class _MessageFieldExtractor:
                         "_MessageFieldExtractor: source pollution detected — suppressing stream"
                     )
                     return ""
-                # Guard passed — emit buffered chars then continue with remainder.
+                # Guard passed — emit all buffered chars.
                 flushed = self._guard_buf
                 self._guard_buf = ""
-                out_rest, done = self._read_string(remaining)
-                if done:
-                    self._done = True
-                return flushed + out_rest
+                return flushed
 
             return ""  # guard window not yet full
 

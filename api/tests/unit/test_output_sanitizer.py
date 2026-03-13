@@ -492,8 +492,7 @@ class TestParseAgentOutputMarkdown:
     def test_markdown_bold_italic_preserved(self):
         payload = {
             "message": (
-                "The deadline is **Friday 15 March**. "
-                "Late submissions will *not* be accepted."
+                "The deadline is **Friday 15 March**. Late submissions will *not* be accepted."
             ),
             "sources": [],
             "confidence": "high",

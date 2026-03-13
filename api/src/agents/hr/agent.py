@@ -40,7 +40,8 @@ class HRAgent(DomainAgent):
     @property
     def system_prompt(self) -> str:
         return HR_SYSTEM_PROMPT_TEMPLATE.replace(
-            "{organisation_name}", get_organisation_name(),
+            "{organisation_name}",
+            get_organisation_name(),
         )
 
     @property

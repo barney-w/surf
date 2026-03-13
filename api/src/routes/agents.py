@@ -55,10 +55,12 @@ async def list_agents(request: Request) -> list[dict]:
     agents = [coordinator]
     for agent in metadata:
         agent_auth = AuthLevel(agent["auth_level"])
-        agents.append({
-            **agent,
-            "accessible": _can_access(agent_auth, caller_level),
-            "enabled": True,
-        })
+        agents.append(
+            {
+                **agent,
+                "accessible": _can_access(agent_auth, caller_level),
+                "enabled": True,
+            }
+        )
 
     return agents

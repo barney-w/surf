@@ -246,9 +246,7 @@ async def _embed_and_index(
     total_uploaded = 0
     embed_offset = 0
 
-    for group_num, group_start in enumerate(
-        range(0, total_chunks, group_size), start=1
-    ):
+    for group_num, group_start in enumerate(range(0, total_chunks, group_size), start=1):
         group = chunks[group_start : group_start + group_size]
         texts = [c.content for c in group]
 
@@ -257,9 +255,13 @@ async def _embed_and_index(
             f"({len(group)} chunks, {group_start}–{group_start + len(group) - 1})..."
         )
 
-        def _report(batch_num: int, total_batches: int) -> None:
+        def _report(
+            batch_num: int,
+            total_batches: int,
+            _offset: int = embed_offset,
+        ) -> None:
             click.echo(
-                f"    Embedding batch {embed_offset + batch_num}/"
+                f"    Embedding batch {_offset + batch_num}/"
                 f"{(total_chunks + embed_batch_size - 1) // embed_batch_size}..."
             )
 
@@ -516,8 +518,7 @@ def crawl_website(base_url: str, output_dir: str, dry_run: bool, pages_only: boo
             click.echo(f"  {url}")
         return
 
-    async def _crawl() -> (
-        tuple[list[CrawledPage], list[CrawledPDF], CrawlResult]    ):
+    async def _crawl() -> tuple[list[CrawledPage], list[CrawledPDF], CrawlResult]:
         try:
             return await crawler.crawl(pages_only=pages_only)
         finally:
@@ -564,15 +565,9 @@ def crawl_website(base_url: str, output_dir: str, dry_run: bool, pages_only: boo
 @click.option("--base-url", required=True, help="Website base URL to crawl")
 @click.option("--dry-run", is_flag=True, help="Crawl and chunk only, don't embed or index")
 @click.option("--pages-only", is_flag=True, help="Skip PDF indexing")
-@click.option(
-    "--incremental", is_flag=True, help="Only process new/changed pages since last run"
-)
-@click.option(
-    "--chunk-size", default=700, show_default=True, help="Maximum tokens per chunk"
-)
-@click.option(
-    "--overlap", default=150, show_default=True, help="Token overlap between chunks"
-)
+@click.option("--incremental", is_flag=True, help="Only process new/changed pages since last run")
+@click.option("--chunk-size", default=700, show_default=True, help="Maximum tokens per chunk")
+@click.option("--overlap", default=150, show_default=True, help="Token overlap between chunks")
 @click.option(
     "--embed-batch-size",
     default=16,
@@ -595,9 +590,7 @@ def index_website(
     chunking_config = ChunkingConfig(max_chunk_tokens=chunk_size, overlap_tokens=overlap)
     crawler = WebsiteCrawler(config)
 
-    async def _crawl_pages() -> (
-        tuple[list[CrawledPage], list[CrawledPDF], CrawlResult]
-    ):
+    async def _crawl_pages() -> tuple[list[CrawledPage], list[CrawledPDF], CrawlResult]:
         try:
             pages, pdfs, result = await crawler.crawl(pages_only=pages_only)
             return pages, pdfs, result
@@ -608,8 +601,7 @@ def index_website(
     all_pages, all_pdfs, result = asyncio.run(_crawl_pages())
 
     click.echo(
-        f"Crawled {result.pages_crawled} page(s), "
-        f"{result.pdfs_discovered} PDF(s) discovered."
+        f"Crawled {result.pages_crawled} page(s), {result.pdfs_discovered} PDF(s) discovered."
     )
 
     # Incremental: diff against previous manifest
@@ -630,13 +622,10 @@ def index_website(
         storage_container = os.environ.get("AZURE_STORAGE_CONTAINER", "documents")
         if not storage_account_url:
             raise click.ClickException(
-                "AZURE_STORAGE_ACCOUNT_URL environment variable is required "
-                "for incremental mode"
+                "AZURE_STORAGE_ACCOUNT_URL environment variable is required for incremental mode"
             )
 
-        async def _load_previous_manifest() -> (
-            tuple[CrawlManifest | None, Any]
-        ):
+        async def _load_previous_manifest() -> tuple[CrawlManifest | None, Any]:
             credential = AsyncDefaultAzureCredential()
             cc = ContainerClient(
                 account_url=storage_account_url,
@@ -649,18 +638,10 @@ def index_website(
         previous_manifest, container_client = asyncio.run(_load_previous_manifest())
 
         if previous_manifest is not None:
-            new_pages, changed_pages, removed_page_paths = (
-                previous_manifest.diff_pages(all_pages)
-            )
-            new_pdfs, changed_pdfs, removed_pdf_paths = (
-                previous_manifest.diff_pdfs(all_pdfs)
-            )
-            n_unchanged_pages = (
-                len(all_pages) - len(new_pages) - len(changed_pages)
-            )
-            n_unchanged_pdfs = (
-                len(all_pdfs) - len(new_pdfs) - len(changed_pdfs)
-            )
+            new_pages, changed_pages, removed_page_paths = previous_manifest.diff_pages(all_pages)
+            new_pdfs, changed_pdfs, removed_pdf_paths = previous_manifest.diff_pdfs(all_pdfs)
+            n_unchanged_pages = len(all_pages) - len(new_pages) - len(changed_pages)
+            n_unchanged_pdfs = len(all_pdfs) - len(new_pdfs) - len(changed_pdfs)
             pages_to_process = new_pages + changed_pages
             pdfs_to_process = new_pdfs + changed_pdfs
 
@@ -695,7 +676,9 @@ def index_website(
 
     # Download, convert, and chunk PDFs one at a time to cap memory usage
     if not pages_only:
+
         async def _download_and_chunk_pdfs() -> None:
+            nonlocal documents
             try:
                 with tempfile.TemporaryDirectory() as tmp:
                     tmp_path = Path(tmp)
@@ -739,9 +722,7 @@ def index_website(
                 f"Generating embeddings ({embed_batch_size} chunks/batch) "
                 f"and uploading to index in groups of 500..."
             )
-            uploaded = asyncio.run(
-                _embed_and_index(all_chunks, embed_batch_size=embed_batch_size)
-            )
+            uploaded = asyncio.run(_embed_and_index(all_chunks, embed_batch_size=embed_batch_size))
             click.echo(f"Indexed {uploaded} chunk(s).")
         except Exception as exc:  # noqa: BLE001
             errors.append(f"Embedding/indexing: {exc}")
@@ -768,9 +749,7 @@ def index_website(
                     index_name=_resolve_index_name(),
                     credential=credential,
                 )
-                deleted = asyncio.run(
-                    delete_website_documents(search_client, all_removed)
-                )
+                deleted = asyncio.run(delete_website_documents(search_client, all_removed))
                 click.echo(f"Deleted {deleted} chunk(s) for removed items.")
             except click.ClickException:
                 raise

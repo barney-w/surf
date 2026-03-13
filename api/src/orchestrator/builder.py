@@ -393,8 +393,7 @@ def build_agent_graph(
     # Build descriptions from the (possibly filtered) registry so the
     # coordinator only knows about agents present in this graph.
     agent_descriptions = [
-        {"name": cls().name, "description": cls().description}
-        for cls in registry.values()
+        {"name": cls().name, "description": cls().description} for cls in registry.values()
     ]
     coordinator_prompt = build_coordinator_prompt(
         agent_descriptions,

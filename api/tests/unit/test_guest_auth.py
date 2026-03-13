@@ -108,8 +108,8 @@ class TestGuestTokenValidation:
             pytest.raises(HTTPException) as exc_info,
         ):
             # With no guest secret, it falls through to Entra validation which fails
-            mock_jwks.return_value.get_signing_key_from_jwt.side_effect = (
-                jwt.InvalidTokenError("Not an RSA token")
+            mock_jwks.return_value.get_signing_key_from_jwt.side_effect = jwt.InvalidTokenError(
+                "Not an RSA token"
             )
             await get_current_user(request)
 
@@ -138,8 +138,8 @@ class TestGuestTokenValidation:
             patch("src.middleware.auth._get_jwks_client") as mock_jwks,
             pytest.raises(HTTPException),
         ):
-            mock_jwks.return_value.get_signing_key_from_jwt.side_effect = (
-                jwt.InvalidTokenError("Not an RSA token")
+            mock_jwks.return_value.get_signing_key_from_jwt.side_effect = jwt.InvalidTokenError(
+                "Not an RSA token"
             )
             await get_current_user(request)
 
