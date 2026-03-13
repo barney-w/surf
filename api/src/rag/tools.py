@@ -9,7 +9,7 @@ from azure.search.documents.aio import SearchClient
 from pydantic import Field
 
 from src.agents._base import RAGScope
-from src.rag.search import SearchIndexNotFoundError, SearchResult, search_index
+from src.rag.search import SearchIndexNotFoundError, SearchInfrastructureError, SearchResult, search_index
 
 logger = logging.getLogger(__name__)
 
@@ -252,6 +252,44 @@ def _get_search_clients() -> list[SearchClient]:
     return _search_clients
 
 
+async def verify_rag_connectivity() -> dict[str, str]:
+    """Test search and embedding connectivity. Returns status dict.
+
+    Intended for startup probes and health checks. Performs a minimal
+    search query and embedding call to verify the full pipeline works.
+    """
+    results: dict[str, str] = {}
+
+    # Test search
+    if not _search_clients:
+        results["search"] = "not_configured"
+    else:
+        try:
+            await search_index(
+                query="connectivity test",
+                search_client=_search_clients,
+                top_k=1,
+                use_hybrid=False,
+            )
+            results["search"] = "ok"
+        except SearchIndexNotFoundError as exc:
+            results["search"] = f"index_not_found: {exc}"
+        except SearchInfrastructureError as exc:
+            results["search"] = f"error: {exc}"
+
+    # Test embedding
+    if _embed_func is None:
+        results["embedding"] = "not_configured"
+    else:
+        try:
+            await _embed_func("connectivity test")
+            results["embedding"] = "ok"
+        except Exception as exc:
+            results["embedding"] = f"error: {type(exc).__name__}: {exc}"
+
+    return results
+
+
 def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
     """Factory that creates a scoped RAG search tool for an agent."""
 
@@ -349,6 +387,13 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
             return (
                 "Knowledge search is unavailable because the configured Azure AI Search "
                 f"index could not be found. Details: {exc}"
+            )
+        except SearchInfrastructureError as exc:
+            logger.error("RAG infrastructure failure: %s", exc)
+            return (
+                "SEARCH_INFRASTRUCTURE_ERROR: The knowledge base search system is currently "
+                "experiencing a technical issue and cannot retrieve documents. "
+                f"Error: {exc}"
             )
 
         if not results:

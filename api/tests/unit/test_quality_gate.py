@@ -177,6 +177,75 @@ class TestRunQualityGate:
         assert result.remediated is response
 
 
+class TestInfrastructureErrorCheck:
+    """Tests for the search_infrastructure_error quality gate check."""
+
+    def test_detects_infrastructure_error_sentinel(self) -> None:
+        response = _make_response(
+            message="Here is some general information about recycling.",
+            sources=[],
+            confidence="medium",
+        )
+        rag_outputs = [
+            "SEARCH_INFRASTRUCTURE_ERROR: The knowledge base search system is "
+            "currently experiencing a technical issue. Error: 403 Forbidden"
+        ]
+        result = run_quality_gate(response, rag_outputs=rag_outputs, routed_agent="website_agent")
+
+        assert result.check == "search_infrastructure_error"
+        assert result.original is response
+        assert result.remediated.confidence == "low"
+        assert "technical issue" in result.remediated.message
+        assert result.remediated.sources == []
+
+    def test_infrastructure_error_overrides_agent_hallucination(self) -> None:
+        """Even if the agent provided sources, the infra error should override."""
+        response = _make_response(
+            message="Based on the recycling policy, you can put paper in your bin.",
+            sources=[_make_source(title="Recycling Guide")],
+            confidence="high",
+        )
+        rag_outputs = [
+            "SEARCH_INFRASTRUCTURE_ERROR: Connection refused"
+        ]
+        result = run_quality_gate(response, rag_outputs=rag_outputs, routed_agent="website_agent")
+
+        assert result.check == "search_infrastructure_error"
+        assert result.remediated.confidence == "low"
+        assert result.remediated.sources == []
+
+    def test_infrastructure_error_takes_priority_over_search_skipped(self) -> None:
+        """Infra error check runs before search_skipped."""
+        response = _make_response()
+        # Infra error is present — search WAS called, but failed
+        rag_outputs = ["SEARCH_INFRASTRUCTURE_ERROR: timeout"]
+        result = run_quality_gate(response, rag_outputs=rag_outputs, routed_agent="hr_agent")
+
+        assert result.check == "search_infrastructure_error"
+
+    def test_coordinator_still_bypasses_all_checks(self) -> None:
+        """Coordinator agent should still bypass quality gate even with infra errors."""
+        response = _make_response()
+        rag_outputs = ["SEARCH_INFRASTRUCTURE_ERROR: 403"]
+        result = run_quality_gate(response, rag_outputs=rag_outputs, routed_agent="coordinator")
+
+        assert result.check == "passed"
+
+    def test_no_results_message_now_collected_not_infra_error(self) -> None:
+        """'No relevant documents found' in rag_outputs should NOT trigger infra error."""
+        response = _make_response(
+            message="I wasn't able to find specific information.",
+            sources=[],
+            confidence="low",
+        )
+        rag_outputs = ["No relevant documents found for this query."]
+        result = run_quality_gate(response, rag_outputs=rag_outputs, routed_agent="website_agent")
+
+        assert result.check != "search_infrastructure_error"
+        # Should not be search_skipped either — search WAS called
+        assert result.check != "search_skipped"
+
+
 class TestQualityGateIntegration:
     """Integration-level tests verifying the gate's interaction with the response pipeline."""
 

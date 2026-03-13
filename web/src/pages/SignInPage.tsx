@@ -1,3 +1,4 @@
+import { WaveLoader } from "@surf-kit/core";
 import { useAuth } from "../auth/AuthProvider";
 import { BackgroundSlideshow } from "../components/BackgroundSlideshow";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -54,7 +55,7 @@ function ChevronRight() {
 }
 
 export function SignInPage() {
-  const { login, loginAsGuest } = useAuth();
+  const { login, loginAsGuest, isGuestLoading, error } = useAuth();
 
   return (
     <div className="flex flex-col h-full bg-canvas relative overflow-hidden">
@@ -110,13 +111,15 @@ export function SignInPage() {
             {/* Guest / limited */}
             <button
               onClick={loginAsGuest}
-              className="group w-full glass-panel px-5 py-4 flex items-center gap-4 rounded-xl
+              disabled={isGuestLoading}
+              className={`group w-full glass-panel px-5 py-4 flex items-center gap-4 rounded-xl
                          border border-border hover:border-border-strong
-                         transition-all duration-200 cursor-pointer
-                         hover:shadow-sm active:scale-[0.98]"
+                         transition-all duration-200
+                         hover:shadow-sm active:scale-[0.98]
+                         ${isGuestLoading ? "opacity-70 cursor-wait" : "cursor-pointer"}`}
             >
               <div className="w-10 h-10 rounded-lg bg-surface-raised flex items-center justify-center shrink-0">
-                <UserIcon />
+                {isGuestLoading ? <WaveLoader size="sm" color="#38bdf8" /> : <UserIcon />}
               </div>
               <div className="flex-1 text-left">
                 <p className="font-display font-semibold text-sm text-text-primary">
@@ -126,9 +129,16 @@ export function SignInPage() {
                   Limited functionality
                 </p>
               </div>
-              <ChevronRight />
+              {!isGuestLoading && <ChevronRight />}
             </button>
           </div>
+
+          {/* Error message */}
+          {error && (
+            <p className="text-sm text-red-400 text-center mt-4 anim-fade-up">
+              {error}
+            </p>
+          )}
         </div>
       </div>
 

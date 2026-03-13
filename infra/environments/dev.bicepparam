@@ -55,3 +55,6 @@ param apiCorsOrigins = '["http://localhost:3000","https://tauri.localhost","http
 // Web container — always on (temporary, revert after 2026-03-20)
 param webMinReplicas = 1
 param webMaxReplicas = 1
+
+// Custom domain
+param webCustomDomain = 'chatwith.surf'

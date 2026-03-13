@@ -145,6 +145,9 @@ param ingestionImageTag string = ''
 @description('Container image tag for surf-web (set by CI/CD)')
 param webImageTag string = ''
 
+@description('Custom domain hostname for the web app (e.g. chatwith.surf). Leave empty to skip.')
+param webCustomDomain string = ''
+
 // ---------------------------------------------------------------------------
 // Variables
 // ---------------------------------------------------------------------------
@@ -237,6 +240,18 @@ module openAi 'br/public:avm/res/cognitive-services/account:0.10.1' = {
         principalId: managedIdentity.outputs.principalId
         roleDefinitionIdOrName: 'Cognitive Services OpenAI User'
         principalType: 'ServicePrincipal'
+      }
+    ]
+    privateEndpoints: [
+      {
+        subnetResourceId: vnet.outputs.subnetResourceIds[1]
+        privateDnsZoneGroup: {
+          privateDnsZoneGroupConfigs: [
+            {
+              privateDnsZoneResourceId: dnsZoneOpenAi.outputs.resourceId
+            }
+          ]
+        }
       }
     ]
   }
@@ -448,6 +463,20 @@ module dnsZoneStorage 'br/public:avm/res/network/private-dns-zone:0.7.0' = {
   name: 'deploy-dns-zone-storage'
   params: {
     name: 'privatelink.blob.${environment().suffixes.storage}'
+    tags: tags
+    virtualNetworkLinks: [
+      {
+        virtualNetworkResourceId: vnet.outputs.resourceId
+        registrationEnabled: false
+      }
+    ]
+  }
+}
+
+module dnsZoneOpenAi 'br/public:avm/res/network/private-dns-zone:0.7.0' = {
+  name: 'deploy-dns-zone-openai'
+  params: {
+    name: 'privatelink.openai.azure.com'
     tags: tags
     virtualNetworkLinks: [
       {
@@ -751,6 +780,21 @@ resource surfIngestion 'Microsoft.App/containerApps@2024-03-01' = {
 }
 
 // ---------------------------------------------------------------------------
+// Resource: Managed Certificate for custom domain (TXT validation)
+// ---------------------------------------------------------------------------
+
+resource webManagedCert 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (!empty(webCustomDomain)) {
+  parent: containerAppsEnv
+  name: 'mc-${containerAppsEnv.name}-${replace(webCustomDomain, '.', '-')}'
+  location: location
+  tags: tags
+  properties: {
+    subjectName: webCustomDomain
+    domainControlValidation: 'TXT'
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Resource: Container App — surf-web (nginx reverse proxy + SPA)
 // ---------------------------------------------------------------------------
 
@@ -773,6 +817,13 @@ resource surfWeb 'Microsoft.App/containerApps@2024-03-01' = {
         targetPort: 8080
         transport: 'auto'
         allowInsecure: false
+        customDomains: !empty(webCustomDomain) ? [
+          {
+            name: webCustomDomain
+            bindingType: 'SniEnabled'
+            certificateId: webManagedCert.id
+          }
+        ] : []
       }
       registries: [
         {

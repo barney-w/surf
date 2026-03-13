@@ -29,6 +29,7 @@ interface UserProfile {
 
 interface AuthState {
   isLoading: boolean;
+  isGuestLoading: boolean;
   isAuthenticated: boolean;
   isGuest: boolean;
   account: AccountInfo | null;
@@ -43,6 +44,7 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState>({
   isLoading: true,
+  isGuestLoading: false,
   isAuthenticated: false,
   isGuest: false,
   account: null,
@@ -81,6 +83,7 @@ let tokenPromise: Promise<string | null> | null = null;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(!!clientId);
+  const [isGuestLoading, setIsGuestLoading] = useState(false);
   const [isGuest, setIsGuest] = useState(false);
   const [guestToken, setGuestToken] = useState<string | null>(null);
   const guestTokenRef = useRef<string | null>(null);
@@ -203,32 +206,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // Try ssoSilent (hidden iframe checks for existing Entra session)
-        // Skip in Tauri — iframe-based SSO is blocked by WebView policies
-        if (!isTauri()) {
-          try {
-            const ssoResult = await msal.ssoSilent({
-              scopes: loginScopes,
-            });
-            if (ssoResult.account) {
-              setAccount(ssoResult.account);
-              msal.setActiveAccount(ssoResult.account);
-              setIsLoading(false);
-
-              const tokenResult = await msal.acquireTokenSilent({
-                scopes: [apiScope],
-                account: ssoResult.account,
-              });
-              void fetchProfile(tokenResult.accessToken);
-              return;
-            }
-          } catch {
-            // ssoSilent failed — user will see the "Sign in" button
-          }
-        }
-
-        // No silent auth possible
+        // No cached account — show sign-in page immediately
         setIsLoading(false);
+
+        // Try ssoSilent in the background (hidden iframe checks for existing
+        // Entra session). If it succeeds, the user is silently signed in
+        // without ever needing to click. Skip in Tauri — iframe-based SSO
+        // is blocked by WebView policies.
+        if (!isTauri()) {
+          void (async () => {
+            try {
+              const ssoResult = await msal.ssoSilent({
+                scopes: loginScopes,
+              });
+              if (ssoResult.account) {
+                setAccount(ssoResult.account);
+                msal.setActiveAccount(ssoResult.account);
+                const tokenResult = await msal.acquireTokenSilent({
+                  scopes: [apiScope],
+                  account: ssoResult.account,
+                });
+                void fetchProfile(tokenResult.accessToken);
+              }
+            } catch {
+              // ssoSilent failed — user already has the sign-in page
+            }
+          })();
+        }
       } catch (err) {
         console.error('Auth error:', err);
         setError('Login failed. Please try again.');
@@ -264,11 +268,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchProfile]);
 
   const loginAsGuest = useCallback(async () => {
+    if (isGuestLoading) return;
+    setIsGuestLoading(true);
+    setError(null);
     const apiBase = getApiBase();
     try {
       const resp = await fetch(`${apiBase}/auth/guest`, { method: "POST" });
       if (!resp.ok) {
-        setError("Guest access is not available.");
+        setError("Something went wrong. Please try again.");
         return;
       }
       const data = await resp.json() as { token: string; guest_id: string };
@@ -276,9 +283,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setGuestToken(data.token);
       setIsGuest(true);
     } catch {
-      setError("Could not connect to the server.");
+      setError("Couldn't reach the server. Please check your connection and try again.");
+    } finally {
+      setIsGuestLoading(false);
     }
-  }, []);
+  }, [isGuestLoading]);
 
   const logout = useCallback(async () => {
     const clearLocalState = () => {
@@ -371,6 +380,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthState>(
     () => ({
       isLoading,
+      isGuestLoading,
       isAuthenticated: !!account,
       isGuest,
       account,
@@ -382,7 +392,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       getApiToken,
     }),
-    [isLoading, account, isGuest, profile, photoUrl, error, login, loginAsGuest, logout, getApiToken],
+    [isLoading, isGuestLoading, account, isGuest, profile, photoUrl, error, login, loginAsGuest, logout, getApiToken],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

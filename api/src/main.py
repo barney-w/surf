@@ -21,7 +21,7 @@ from src.middleware.logging import reset_logging_context, set_logging_context, s
 from src.middleware.telemetry import setup_telemetry
 from src.orchestrator.builder import build_agent_graph, create_model_client
 from src.orchestrator.history import ConversationHistoryProvider
-from src.rag.tools import clear_search_clients, set_embed_func, set_search_client
+from src.rag.tools import clear_search_clients, set_embed_func, set_search_client, verify_rag_connectivity
 from src.routes.agents import router as agents_router
 from src.routes.chat import router as chat_router
 from src.routes.guest import router as guest_router
@@ -160,6 +160,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "Embedding client initialised (deployment=%s)",
             settings.azure_openai_embedding_deployment_name,
         )
+
+    # --- RAG connectivity verification ---
+    if settings.azure_search_endpoint:
+        rag_status = await verify_rag_connectivity()
+        for component, status in rag_status.items():
+            if status == "ok":
+                logger.info("RAG startup check: %s = %s", component, status)
+            elif status == "not_configured":
+                logger.warning("RAG startup check: %s = %s", component, status)
+            else:
+                logger.error("RAG STARTUP CHECK FAILED: %s = %s", component, status)
+
+        if any("error" in s for s in rag_status.values()):
+            if settings.environment != "dev":
+                logger.critical(
+                    "RAG infrastructure is not functional — refusing to start in '%s' environment. "
+                    "Fix the underlying connectivity issue before deploying.",
+                    settings.environment,
+                )
+                raise SystemExit(1)
+            else:
+                logger.warning(
+                    "RAG infrastructure has errors but continuing in dev mode. "
+                    "RAG queries will fail at runtime."
+                )
 
     # --- Conversation service ---
     conversation_service: ConversationService | None = None
@@ -356,8 +381,12 @@ async def health_check(request: Request, deep: bool = False) -> dict[str, object
     else:
         checks["database"] = "not_configured"
 
-    # TODO: expose _search_client from tools.py for a live ping
-    checks["search"] = "not_configured"
+    rag_status = await verify_rag_connectivity()
+    checks["search"] = rag_status.get("search", "unknown")
+    checks["embedding"] = rag_status.get("embedding", "unknown")
+
+    if any("error" in str(v) for v in rag_status.values()):
+        result["status"] = "degraded"
 
     result["checks"] = checks
     return result

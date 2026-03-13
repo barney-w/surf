@@ -10,6 +10,7 @@ from azure.core.exceptions import ResourceNotFoundError
 from src.agents._base import RAGScope
 from src.rag.search import (
     SearchIndexNotFoundError,
+    SearchInfrastructureError,
     SearchResult,
     build_odata_filter,
     search_index,
@@ -116,6 +117,73 @@ class TestSearchIndex:
 
 
 # ---------------------------------------------------------------------------
+# SearchInfrastructureError
+# ---------------------------------------------------------------------------
+
+
+class TestSearchInfrastructureError:
+    @pytest.mark.asyncio
+    async def test_http_error_raises_infrastructure_error(self):
+        """HttpResponseError should raise SearchInfrastructureError, not return []."""
+        from azure.core.exceptions import HttpResponseError
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(
+            side_effect=HttpResponseError("403 Forbidden")
+        )
+
+        with pytest.raises(SearchInfrastructureError):
+            await search_index("test query", search_client=mock_client)
+
+    @pytest.mark.asyncio
+    async def test_permission_error_raises_infrastructure_error(self):
+        """OpenAI PermissionDeniedError should raise SearchInfrastructureError."""
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(
+            side_effect=PermissionError("Public access is disabled")
+        )
+
+        with pytest.raises(SearchInfrastructureError):
+            await search_index("test query", search_client=mock_client)
+
+    @pytest.mark.asyncio
+    async def test_unexpected_error_raises_infrastructure_error(self):
+        """Any unexpected exception should raise SearchInfrastructureError."""
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(
+            side_effect=ConnectionError("Network unreachable")
+        )
+
+        with pytest.raises(SearchInfrastructureError):
+            await search_index("test query", search_client=mock_client)
+
+    @pytest.mark.asyncio
+    async def test_resource_not_found_still_raises_index_error(self):
+        """ResourceNotFoundError should still raise SearchIndexNotFoundError (not infra error)."""
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(
+            side_effect=ResourceNotFoundError("Index not found")
+        )
+
+        with pytest.raises(SearchIndexNotFoundError):
+            await search_index("test query", search_client=mock_client)
+
+    @pytest.mark.asyncio
+    async def test_legitimate_empty_results_still_return_empty(self):
+        """A search that succeeds but finds nothing should return [], not raise."""
+
+        async def _empty():
+            return
+            yield  # noqa: RET504
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=_empty())
+
+        results = await search_index("obscure topic", search_client=mock_client)
+        assert results == []
+
+
+# ---------------------------------------------------------------------------
 # create_rag_tool — factory
 # ---------------------------------------------------------------------------
 
@@ -196,10 +264,15 @@ class TestRagToolFilterWiring:
 
 @pytest.fixture(autouse=True)
 def _reset_search_clients():  # pyright: ignore[reportUnusedFunction]
-    """Clear module-level search clients between tests."""
+    """Clear module-level search clients and embed func between tests."""
     clear_search_clients()
+    from src.rag import tools
+
+    original_embed = tools._embed_func
+    tools._embed_func = None
     yield
     clear_search_clients()
+    tools._embed_func = original_embed
 
 
 class TestResultFormatting:
@@ -501,6 +574,74 @@ class TestSearchClientRegistry:
 
         with pytest.raises(RuntimeError, match="Search client not initialised"):
             _get_search_clients()
+
+
+# ---------------------------------------------------------------------------
+# verify_rag_connectivity
+# ---------------------------------------------------------------------------
+
+
+class TestVerifyRagConnectivity:
+    @pytest.mark.asyncio
+    async def test_returns_not_configured_when_no_clients(self):
+        from src.rag.tools import verify_rag_connectivity
+
+        result = await verify_rag_connectivity()
+        assert result["search"] == "not_configured"
+        assert result["embedding"] == "not_configured"
+
+    @pytest.mark.asyncio
+    async def test_search_ok_when_client_works(self):
+        from src.rag.tools import verify_rag_connectivity
+
+        async def _empty():
+            return
+            yield  # noqa: RET504
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=_empty())
+        set_search_client(mock_client)
+
+        result = await verify_rag_connectivity()
+        assert result["search"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_search_error_when_client_fails(self):
+        from src.rag.tools import verify_rag_connectivity
+
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(
+            side_effect=RuntimeError("Connection refused")
+        )
+        set_search_client(mock_client)
+
+        result = await verify_rag_connectivity()
+        assert result["search"].startswith("error:")
+
+    @pytest.mark.asyncio
+    async def test_embedding_ok_when_func_works(self):
+        from src.rag.tools import set_embed_func, verify_rag_connectivity
+
+        async def _fake_embed(text: str) -> list[float]:
+            return [0.1, 0.2, 0.3]
+
+        set_embed_func(_fake_embed)
+
+        result = await verify_rag_connectivity()
+        assert result["embedding"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_embedding_error_when_func_fails(self):
+        from src.rag.tools import set_embed_func, verify_rag_connectivity
+
+        async def _broken_embed(text: str) -> list[float]:
+            raise PermissionError("403 Public access disabled")
+
+        set_embed_func(_broken_embed)
+
+        result = await verify_rag_connectivity()
+        assert result["embedding"].startswith("error:")
+        assert "PermissionError" in result["embedding"]
 
 
 # ---------------------------------------------------------------------------
@@ -934,3 +1075,28 @@ class TestMultiStrategySearch:
         )
 
         assert result == "No relevant documents found for this query."
+
+    @pytest.mark.asyncio
+    async def test_infrastructure_error_returns_sentinel(self):
+        """SearchInfrastructureError should return SEARCH_INFRASTRUCTURE_ERROR sentinel."""
+        self.mock_search.side_effect = SearchInfrastructureError("403 Forbidden")
+
+        rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
+        result = await rag_tool.invoke(
+            arguments={"query": "test query", "document_type": None}
+        )
+
+        assert result.startswith("SEARCH_INFRASTRUCTURE_ERROR:")
+        assert "403 Forbidden" in result
+
+    @pytest.mark.asyncio
+    async def test_infrastructure_error_does_not_return_sources(self):
+        """Infrastructure error should not contain SOURCE blocks."""
+        self.mock_search.side_effect = SearchInfrastructureError("Connection refused")
+
+        rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
+        result = await rag_tool.invoke(
+            arguments={"query": "test query", "document_type": None}
+        )
+
+        assert "=== SOURCE" not in result

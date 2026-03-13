@@ -15,6 +15,8 @@ from src.models.agent import AgentResponseModel
 
 logger = logging.getLogger(__name__)
 
+INFRA_ERROR_SENTINEL = "SEARCH_INFRASTRUCTURE_ERROR:"
+
 # Phrases indicating the agent claims it couldn't find relevant documents.
 _NO_KNOWLEDGE_PATTERNS = [
     r"couldn'?t find",
@@ -66,6 +68,36 @@ def run_quality_gate(
     """
     if routed_agent == "coordinator":
         return QualityGateResult("passed", agent_response, agent_response)
+
+    # Check 0: Infrastructure failure (highest priority — overrides everything)
+    has_infra_error = any(INFRA_ERROR_SENTINEL in output for output in rag_outputs)
+    if has_infra_error:
+        logger.error(
+            "quality_gate: search_infrastructure_error agent=%s",
+            routed_agent,
+            extra={
+                "event": "quality_gate_result",
+                "check": "search_infrastructure_error",
+                "agent": routed_agent,
+                "has_infra_error": True,
+            },
+        )
+        remediated = agent_response.model_copy(update={
+            "confidence": "low",
+            "message": (
+                "I'm sorry, I'm currently experiencing a technical issue connecting "
+                "to my knowledge base and cannot search for information to answer your "
+                "question reliably. Please try again in a few minutes. If the issue "
+                "persists, contact the support team for assistance."
+            ),
+            "sources": [],
+            "follow_up_suggestions": [
+                "Try asking again",
+                "Contact the support team",
+                "Check back later",
+            ],
+        })
+        return QualityGateResult("search_infrastructure_error", agent_response, remediated)
 
     # Check 1: Search was skipped entirely
     if not rag_outputs:
