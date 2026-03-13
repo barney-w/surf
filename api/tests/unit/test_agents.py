@@ -160,15 +160,15 @@ class TestWebsitePromptContent:
     """Verify website prompt includes shared instructions and domain content."""
 
     def test_website_prompt_includes_shared_instructions(self):
-        from src.agents.website.prompts import WEBSITE_SYSTEM_PROMPT
+        from src.agents.website.prompts import WEBSITE_SYSTEM_PROMPT_TEMPLATE
 
-        assert "=== SOURCE N ===" in WEBSITE_SYSTEM_PROMPT
-        assert "search_knowledge_base" in WEBSITE_SYSTEM_PROMPT
+        assert "=== SOURCE N ===" in WEBSITE_SYSTEM_PROMPT_TEMPLATE
+        assert "search_knowledge_base" in WEBSITE_SYSTEM_PROMPT_TEMPLATE
 
     def test_website_prompt_includes_domain_content(self):
-        from src.agents.website.prompts import WEBSITE_SYSTEM_PROMPT
+        from src.agents.website.prompts import WEBSITE_SYSTEM_PROMPT_TEMPLATE
 
-        assert "public website information specialist" in WEBSITE_SYSTEM_PROMPT
+        assert "public-facing website information specialist" in WEBSITE_SYSTEM_PROMPT_TEMPLATE
 
 
 class TestWebsiteSkillMd:
@@ -274,18 +274,18 @@ class TestSharedInstructions:
     """Verify shared instructions are included in domain agent prompts."""
 
     def test_hr_prompt_includes_shared_instructions(self):
-        from src.agents.hr.prompts import HR_SYSTEM_PROMPT
+        from src.agents.hr.prompts import HR_SYSTEM_PROMPT_TEMPLATE
 
-        assert "=== SOURCE N ===" in HR_SYSTEM_PROMPT
-        assert "search_knowledge_base" in HR_SYSTEM_PROMPT
-        assert "HR and organisational policy specialist" in HR_SYSTEM_PROMPT
+        assert "=== SOURCE N ===" in HR_SYSTEM_PROMPT_TEMPLATE
+        assert "search_knowledge_base" in HR_SYSTEM_PROMPT_TEMPLATE
+        assert "HR and organisational policy specialist" in HR_SYSTEM_PROMPT_TEMPLATE
 
     def test_it_prompt_includes_shared_instructions(self):
-        from src.agents.it.prompts import IT_SYSTEM_PROMPT
+        from src.agents.it.prompts import IT_SYSTEM_PROMPT_TEMPLATE
 
-        assert "=== SOURCE N ===" in IT_SYSTEM_PROMPT
-        assert "search_knowledge_base" in IT_SYSTEM_PROMPT
-        assert "IT support specialist" in IT_SYSTEM_PROMPT
+        assert "=== SOURCE N ===" in IT_SYSTEM_PROMPT_TEMPLATE
+        assert "search_knowledge_base" in IT_SYSTEM_PROMPT_TEMPLATE
+        assert "IT support specialist" in IT_SYSTEM_PROMPT_TEMPLATE
 
     def test_shared_instructions_contain_key_sections(self):
         from src.agents.shared_instructions import DOMAIN_AGENT_INSTRUCTIONS

@@ -2,8 +2,17 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+
+@lru_cache
+def get_organisation_name() -> str:
+    """Return the configured organisation name, falling back to a generic label."""
+    from src.config.settings import get_settings
+
+    return get_settings().organisation_name or "the organisation"
 
 
 class AuthLevel(StrEnum):

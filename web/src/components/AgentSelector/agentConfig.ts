@@ -71,18 +71,18 @@ export const AGENT_MESSAGES: Record<string, string> = {
 
 export const AGENT_QUESTIONS: Record<string, string[]> = {
   coordinator: [
-    "What leave am I entitled to?",
-    "What are the workplace health and safety guidelines?",
-    "What services and facilities are available to the community?",
+    "What can I put in my recycling bin?",
+    "How do I book a community centre?",
+    "What are the library opening hours?",
   ],
   website_agent: [
     "What community facilities are available?",
-    "What are the opening hours for the library?",
-    "How do I register for a community event?",
+    "How do I apply for a parking permit?",
+    "Where can I walk my dog off-leash?",
   ],
   hr_agent: [
-    "How much annual leave do I have?",
-    "What is the flexible work policy?",
-    "How do I submit a leave request?",
+    "How much notice do I need to give for annual leave?",
+    "Do I need a medical certificate for sick leave?",
+    "How much annual leave do full-time employees get?",
   ],
 };

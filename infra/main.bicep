@@ -124,6 +124,9 @@ param authEnabled bool = false
 @description('Whether the Container Apps Environment is internal (VNet-only)')
 param containerAppsInternal bool = false
 
+@description('Organisation name displayed in agent prompts (empty = generic)')
+param organisationName string = ''
+
 @description('CORS allowed origins for surf-api (JSON array string)')
 param apiCorsOrigins string = '["http://localhost:3000"]'
 
@@ -649,6 +652,7 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'ENTRA_CLIENT_ID', value: entraClientId }
             { name: 'POSTGRES_ENABLED', value: 'False' }
           ], concat(
+            !empty(organisationName) ? [{ name: 'ORGANISATION_NAME', value: organisationName }] : [],
             anthropicApiKeyInKv ? [{ name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }] : [],
             !empty(anthropicFoundryBaseUrl) ? [{ name: 'ANTHROPIC_FOUNDRY_BASE_URL', value: anthropicFoundryBaseUrl }] : [],
             !empty(anthropicFoundryApiKey) ? [{ name: 'ANTHROPIC_FOUNDRY_API_KEY', secretRef: 'anthropic-foundry-api-key' }] : [],

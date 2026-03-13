@@ -1,5 +1,5 @@
-from src.agents._base import AuthLevel, DomainAgent, RAGScope
-from src.agents.it.prompts import IT_SYSTEM_PROMPT
+from src.agents._base import AuthLevel, DomainAgent, RAGScope, get_organisation_name
+from src.agents.it.prompts import IT_SYSTEM_PROMPT_TEMPLATE
 
 
 class ITAgent(DomainAgent):
@@ -37,7 +37,9 @@ class ITAgent(DomainAgent):
 
     @property
     def system_prompt(self) -> str:
-        return IT_SYSTEM_PROMPT
+        return IT_SYSTEM_PROMPT_TEMPLATE.replace(
+            "{organisation_name}", get_organisation_name(),
+        )
 
     @property
     def default_ui_hint(self) -> str:

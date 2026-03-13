@@ -15,7 +15,7 @@ from agent_framework import (
 from agent_framework.anthropic import AnthropicClient
 from agent_framework.orchestrations import HandoffBuilder
 
-from src.agents._base import AuthLevel
+from src.agents._base import AuthLevel, get_organisation_name
 from src.agents._discovery import discover_agents
 from src.agents._registry import AgentRegistry
 from src.agents.coordinator.prompts import build_coordinator_prompt
@@ -396,7 +396,10 @@ def build_agent_graph(
         {"name": cls().name, "description": cls().description}
         for cls in registry.values()
     ]
-    coordinator_prompt = build_coordinator_prompt(agent_descriptions)
+    coordinator_prompt = build_coordinator_prompt(
+        agent_descriptions,
+        organisation_name=get_organisation_name(),
+    )
     coordinator = cast(
         "Agent[ChatOptions[None]]",
         client.as_agent(

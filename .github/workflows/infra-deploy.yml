@@ -50,8 +50,11 @@ jobs:
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --template-file infra/main.bicep \
             --parameters infra/environments/dev.bicepparam \
+            --parameters entraTenantId="${{ vars.ENTRA_TENANT_ID }}" \
+            --parameters entraClientId="${{ vars.ENTRA_CLIENT_ID }}" \
             --parameters anthropicApiKey="${{ secrets.ANTHROPIC_API_KEY }}" \
-            --parameters guestTokenSecret="${{ secrets.GUEST_TOKEN_SECRET }}"
+            --parameters guestTokenSecret="${{ secrets.GUEST_TOKEN_SECRET }}" \
+            --parameters organisationName="${{ vars.ORGANISATION_NAME }}"
 
   # ---------------------------------------------------------------------------
   # Deploy infrastructure
@@ -82,6 +85,9 @@ jobs:
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --template-file infra/main.bicep \
             --parameters infra/environments/dev.bicepparam \
+            --parameters entraTenantId="${{ vars.ENTRA_TENANT_ID }}" \
+            --parameters entraClientId="${{ vars.ENTRA_CLIENT_ID }}" \
             --parameters anthropicApiKey="${{ secrets.ANTHROPIC_API_KEY }}" \
             --parameters guestTokenSecret="${{ secrets.GUEST_TOKEN_SECRET }}" \
+            --parameters organisationName="${{ vars.ORGANISATION_NAME }}" \
             --name "surf-dev-$(date +%Y%m%d%H%M%S)"

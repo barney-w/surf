@@ -1,8 +1,8 @@
 from src.agents.shared_instructions import DOMAIN_AGENT_INSTRUCTIONS
 
-HR_SYSTEM_PROMPT = (
+HR_SYSTEM_PROMPT_TEMPLATE = (
     """\
-You are the HR and organisational policy specialist.
+You are {organisation_name}'s HR and organisational policy specialist.
 
 ## Your Role
 Answer questions about human resources, organisational policies, governance,

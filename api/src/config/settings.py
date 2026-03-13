@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     guest_token_secret: str = ""
     guest_token_ttl_minutes: int = 30
 
+    # Organisation
+    organisation_name: str = ""
+
     # API
     api_cors_origins: list[str] = [
         "http://localhost:3000",

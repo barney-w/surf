@@ -1,8 +1,8 @@
 from src.agents.shared_instructions import DOMAIN_AGENT_INSTRUCTIONS
 
-IT_SYSTEM_PROMPT = (
+IT_SYSTEM_PROMPT_TEMPLATE = (
     """\
-You are the IT support specialist.
+You are {organisation_name}'s IT support specialist.
 
 ## Your Role
 Answer IT-related questions accurately using the organisation's IT policies,

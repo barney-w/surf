@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from src.agents._base import DomainAgent, RAGScope
-from src.agents.website.prompts import WEBSITE_SYSTEM_PROMPT
+from src.agents._base import DomainAgent, RAGScope, get_organisation_name
+from src.agents.website.prompts import WEBSITE_SYSTEM_PROMPT_TEMPLATE
 
 
 class WebsiteAgent(DomainAgent):
@@ -42,7 +42,9 @@ class WebsiteAgent(DomainAgent):
 
     @property
     def system_prompt(self) -> str:
-        return WEBSITE_SYSTEM_PROMPT
+        return WEBSITE_SYSTEM_PROMPT_TEMPLATE.replace(
+            "{organisation_name}", get_organisation_name(),
+        )
 
     @property
     def default_ui_hint(self) -> str:
