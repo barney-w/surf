@@ -12,6 +12,9 @@ config = context.config
 # Override DB URL from environment (falls back to alembic.ini for local dev)
 db_url = os.environ.get("DATABASE_URL")
 if db_url:
+    # Ensure the async driver is specified for SQLAlchemy async engine
+    if db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     config.set_main_option("sqlalchemy.url", db_url)
 
 if config.config_file_name is not None:
