@@ -246,11 +246,7 @@ module aiSearch 'br/public:avm/res/search/search-service:0.12.0' = {
     replicaCount: aiSearchReplicaCount
     partitionCount: aiSearchPartitionCount
     publicNetworkAccess: 'Disabled'
-    authOptions: {
-      aadOrApiKey: {
-        aadAuthFailureMode: 'http401WithBearerChallenge'
-      }
-    }
+    disableLocalAuth: true
     managedIdentities: {
       systemAssigned: true
     }
@@ -466,6 +462,7 @@ module storage 'br/public:avm/res/storage/storage-account:0.14.3' = {
     accessTier: 'Hot'
     allowBlobPublicAccess: false
     allowSharedKeyAccess: false
+    requireInfrastructureEncryption: false
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
     publicNetworkAccess: 'Disabled'

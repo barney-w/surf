@@ -20,14 +20,10 @@ class UserContext:
 
 
 @lru_cache(maxsize=1)
-def _get_jwks_client(jwks_uri: str) -> jwt.PyJWKClient:
-    """Create a cached JWKS client for Entra ID token validation."""
+def _get_jwks_client() -> jwt.PyJWKClient:
+    """Create a cached JWKS client for Entra ID token validation (multi-tenant)."""
+    jwks_uri = "https://login.microsoftonline.com/common/discovery/v2.0/keys"
     return jwt.PyJWKClient(jwks_uri, cache_keys=True, lifespan=300)
-
-
-def _get_jwks_uri(tenant_id: str) -> str:
-    """Build the JWKS URI for an Entra ID tenant."""
-    return f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
 
 
 async def get_current_user(request: Request) -> UserContext:
@@ -60,26 +56,30 @@ async def get_current_user(request: Request) -> UserContext:
 
     # Validate JWT
     try:
-        jwks_uri = _get_jwks_uri(settings.entra_tenant_id)
-        jwks_client = _get_jwks_client(jwks_uri)
+        jwks_client = _get_jwks_client()
         signing_key = jwks_client.get_signing_key_from_jwt(token)
 
-        # Entra issues v1 tokens (iss: sts.windows.net) for custom API scopes
-        # and v2 tokens (iss: login.microsoftonline.com) for MS Graph scopes.
-        # Accept both.
-        issuers = [
-            f"https://login.microsoftonline.com/{settings.entra_tenant_id}/v2.0",
-            f"https://sts.windows.net/{settings.entra_tenant_id}/",
-        ]
-
+        # Multi-tenant: issuer varies per tenant so we validate the issuer
+        # format after decoding rather than passing a fixed list.
         payload = jwt.decode(
             token,
             signing_key.key,
             algorithms=["RS256"],
-            audience=f"api://{settings.entra_client_id}",
-            issuer=issuers,
-            options={"require": ["exp", "iss", "aud", "oid"]},
+            audience=[settings.entra_client_id, f"api://{settings.entra_client_id}"],
+            options={
+                "require": ["exp", "iss", "aud", "oid"],
+                "verify_iss": False,
+            },
         )
+
+        # Verify issuer matches Entra ID pattern (v1 or v2 format)
+        issuer = payload.get("iss", "")
+        if not (
+            issuer.startswith("https://login.microsoftonline.com/")
+            or issuer.startswith("https://sts.windows.net/")
+        ):
+            logger.warning("Token issuer '%s' is not a recognised Entra ID issuer", issuer)
+            raise jwt.InvalidIssuerError("Invalid issuer")
     except jwt.ExpiredSignatureError as e:
         logger.warning("Token has expired")
         raise HTTPException(status_code=401, detail="Token has expired") from e

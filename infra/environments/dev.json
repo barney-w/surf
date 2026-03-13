@@ -1,0 +1,84 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "dev"
+    },
+    "location": {
+      "value": "australiaeast"
+    },
+    "projectName": {
+      "value": "surf"
+    },
+    "aiSearchSku": {
+      "value": "basic"
+    },
+    "aiSearchReplicaCount": {
+      "value": 1
+    },
+    "aiSearchPartitionCount": {
+      "value": 1
+    },
+    "storageSku": {
+      "value": "Standard_LRS"
+    },
+    "keyVaultSku": {
+      "value": "standard"
+    },
+    "keyVaultEnablePurgeProtection": {
+      "value": false
+    },
+    "logAnalyticsRetentionDays": {
+      "value": 30
+    },
+    "logAnalyticsPublicNetworkAccess": {
+      "value": "Enabled"
+    },
+    "acrSku": {
+      "value": "Basic"
+    },
+    "containerAppsCpu": {
+      "value": "0.25"
+    },
+    "containerAppsMemory": {
+      "value": "0.5Gi"
+    },
+    "apiMinReplicas": {
+      "value": 0
+    },
+    "apiMaxReplicas": {
+      "value": 1
+    },
+    "ingestionMinReplicas": {
+      "value": 0
+    },
+    "ingestionMaxReplicas": {
+      "value": 1
+    },
+    "embeddingCapacity": {
+      "value": 10
+    },
+    "acrPublicNetworkAccess": {
+      "value": "Enabled"
+    },
+    "authEnabled": {
+      "value": true
+    },
+    "entraTenantId": {
+      "value": "799af2de-e455-499c-babe-71a7929442ca"
+    },
+    "entraClientId": {
+      "value": "08ff7e73-6758-4c55-bdb1-cc4f124de8ac"
+    },
+    "apiCorsOrigins": {
+      "value": "[\"http://localhost:3000\",\"https://tauri.localhost\"]"
+    },
+    "webMinReplicas": {
+      "value": 0
+    },
+    "webMaxReplicas": {
+      "value": 1
+    }
+  }
+}

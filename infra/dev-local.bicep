@@ -25,6 +25,7 @@ module search 'br/public:avm/res/search/search-service:0.12.0' = {
     replicaCount: 1
     partitionCount: 1
     publicNetworkAccess: 'Enabled'
+    disableLocalAuth: false
     authOptions: {
       aadOrApiKey: {
         aadAuthFailureMode: 'http401WithBearerChallenge'

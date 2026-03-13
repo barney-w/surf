@@ -268,7 +268,7 @@
     <text x="30" y="40" font-size="6" fill="#E65100" font-family="Segoe UI, Arial">RAG pipeline</text>
   </g>
 
-  <!-- Cosmos DB -->
+  <!-- PostgreSQL -->
   <g transform="translate(305, 506)">
     <rect x="0" y="0" width="230" height="46" rx="6" fill="#FFF" stroke="#E65100" stroke-width="1.5" filter="url(#shadow-inset)"/>
     <rect x="0" y="0" width="230" height="4" rx="6" fill="#E65100"/>
@@ -276,12 +276,12 @@
       <ellipse cx="0" cy="-4" rx="7" ry="3" fill="none" stroke="#E65100" stroke-width="1.2"/>
       <path d="M-7,-4 L-7,4 Q0,10 7,4 L7,-4" fill="none" stroke="#E65100" stroke-width="1.2"/>
     </g>
-    <text x="30" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">Cosmos DB</text>
-    <text x="30" y="30" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">Serverless · Partition /user_id</text>
+    <text x="30" y="18" font-size="7" font-weight="bold" fill="#323130" font-family="Segoe UI, Arial">PostgreSQL</text>
+    <text x="30" y="30" font-size="6" fill="#605E5C" font-family="Segoe UI, Arial">User-based isolation</text>
     <text x="30" y="40" font-size="6" fill="#E65100" font-family="Segoe UI, Arial">Conversation persistence</text>
   </g>
 
-  <!-- History return arrow: Cosmos → Orchestration -->
+  <!-- History return arrow: PostgreSQL → Orchestration -->
   <path d="M 420 506 L 420 458" stroke="#E65100" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arr-orange)"/>
   <text x="428" y="484" font-size="6" fill="#E65100" font-family="Segoe UI, Arial">Last 20 msgs</text>
 
