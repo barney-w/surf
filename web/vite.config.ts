@@ -39,7 +39,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3000,
+    port: 3020,
     strictPort: true,
     host: host || false,
     open: !process.env.TAURI_ENV_PLATFORM,

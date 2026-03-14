@@ -5,7 +5,7 @@
   "identifier": "com.surf-lab.surf",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:3000",
+    "devUrl": "http://localhost:3020",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
@@ -47,9 +47,11 @@
   },
   "plugins": {
     "updater": {
+      "active": false,
       "endpoints": [
         "https://surf-releases.blob.core.windows.net/desktop/latest.json"
       ],
+      "pubkey": "",
       "windows": {
         "installMode": "passive"
       }

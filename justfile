@@ -336,14 +336,6 @@ upload-sharepoint FILE *ARGS:
 test-sharepoint-e2e *ARGS:
     cd ingestion && uv run python -m scripts.test_e2e_sharepoint {{ARGS}}
 
-# Crawl website pages and list discovered URLs (no indexing)
-crawl-website *ARGS:
-    cd ingestion && uv run python -m src crawl-website {{ARGS}}
-
-# Index website content (pages + PDFs) into search index
-index-website *ARGS:
-    cd ingestion && uv run python -m src index-website {{ARGS}}
-
 # Ingest local PDF files with manifest metadata
 ingest *ARGS:
     cd ingestion && uv run python -m src ingest {{ARGS}}
@@ -355,14 +347,6 @@ init-index *ARGS:
 # Show search index statistics
 index-status *ARGS:
     cd ingestion && uv run python -m src status {{ARGS}}
-
-# Backfill content_source field on existing indexed documents
-backfill-content-source *ARGS:
-    cd ingestion && uv run python scripts/backfill_content_source.py {{ARGS}}
-
-# Validate website content in search index (filter counts + sample queries)
-validate-website *ARGS:
-    cd ingestion && uv run python scripts/validate_website_index.py {{ARGS}}
 
 # Delete both dev resource groups and all their resources
 teardown-dev:
