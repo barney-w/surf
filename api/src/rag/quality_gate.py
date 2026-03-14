@@ -82,21 +82,23 @@ def run_quality_gate(
                 "has_infra_error": True,
             },
         )
-        remediated = agent_response.model_copy(update={
-            "confidence": "low",
-            "message": (
-                "I'm sorry, I'm currently experiencing a technical issue connecting "
-                "to my knowledge base and cannot search for information to answer your "
-                "question reliably. Please try again in a few minutes. If the issue "
-                "persists, contact the support team for assistance."
-            ),
-            "sources": [],
-            "follow_up_suggestions": [
-                "Try asking again",
-                "Contact the support team",
-                "Check back later",
-            ],
-        })
+        remediated = agent_response.model_copy(
+            update={
+                "confidence": "low",
+                "message": (
+                    "I'm sorry, I'm currently experiencing a technical issue connecting "
+                    "to my knowledge base and cannot search for information to answer your "
+                    "question reliably. Please try again in a few minutes. If the issue "
+                    "persists, contact the support team for assistance."
+                ),
+                "sources": [],
+                "follow_up_suggestions": [
+                    "Try asking again",
+                    "Contact the support team",
+                    "Check back later",
+                ],
+            }
+        )
         return QualityGateResult("search_infrastructure_error", agent_response, remediated)
 
     # Check 1: Search was skipped entirely

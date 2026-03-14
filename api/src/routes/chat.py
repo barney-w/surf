@@ -797,6 +797,27 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                         structured_result = sanitize_agent_response(data.value)
                         continue
 
+                    # Detect tool-use output (function_call content blocks).
+                    # When a domain agent calls a tool (e.g. search_knowledge_base),
+                    # the first LLM turn may have emitted preliminary text that
+                    # the extractor already processed.  Reset the extractor and
+                    # tell the client to discard streamed deltas so the real
+                    # answer (from the post-tool-use turn) streams cleanly.
+                    if (
+                        routed_agent != "coordinator"
+                        and hasattr(data, "contents")
+                        and any(getattr(c, "type", None) == "function_call" for c in data.contents)
+                    ):
+                        if extractor._in_value or extractor._done:
+                            logger.debug(
+                                "Tool use detected after partial stream — "
+                                "resetting extractor and emitting delta_reset"
+                            )
+                            extractor = _MessageFieldExtractor()
+                            domain_agent_json_buf = ""
+                            yield _sse({"type": "delta_reset"})
+                        yield _sse({"type": "phase", "phase": "retrieving"})
+
                     # Streaming token chunk (AgentResponseUpdate).
                     chunk = data.text if hasattr(data, "text") else None
                     if not chunk:
@@ -815,6 +836,9 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                         domain_agent_json_buf += chunk
                         extracted = extractor.feed(chunk)
                         if extracted:
+                            if not generating_announced:
+                                yield _sse({"type": "phase", "phase": "generating"})
+                                generating_announced = True
                             yield _sse({"type": "delta", "content": extracted})
 
                 elif event.type == "failed":

@@ -56,7 +56,8 @@ class RAGCollectorMiddleware(FunctionMiddleware):
         elif source_count > 0:
             logger.info(
                 "RAG tool completed: %.1fms, %d sources returned",
-                duration_ms, source_count,
+                duration_ms,
+                source_count,
             )
         else:
             logger.info(

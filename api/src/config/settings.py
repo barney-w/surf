@@ -17,8 +17,8 @@ class Settings(BaseSettings):
 
     # Anthropic (direct API or via Azure AI Foundry)
     anthropic_api_key: str = ""
-    anthropic_model_id: str = "claude-sonnet-4-6"
-    anthropic_domain_model_id: str = ""
+    anthropic_model_id: str = "claude-haiku-4-5-20251001"
+    anthropic_domain_model_id: str = "claude-sonnet-4-6"
     anthropic_foundry_base_url: str = ""
     anthropic_foundry_api_key: str = ""
     anthropic_proofread_model_id: str = "claude-haiku-4-5-20251001"

@@ -128,9 +128,7 @@ class TestSearchInfrastructureError:
         from azure.core.exceptions import HttpResponseError
 
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(
-            side_effect=HttpResponseError("403 Forbidden")
-        )
+        mock_client.search = AsyncMock(side_effect=HttpResponseError("403 Forbidden"))
 
         with pytest.raises(SearchInfrastructureError):
             await search_index("test query", search_client=mock_client)
@@ -139,9 +137,7 @@ class TestSearchInfrastructureError:
     async def test_permission_error_raises_infrastructure_error(self):
         """OpenAI PermissionDeniedError should raise SearchInfrastructureError."""
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(
-            side_effect=PermissionError("Public access is disabled")
-        )
+        mock_client.search = AsyncMock(side_effect=PermissionError("Public access is disabled"))
 
         with pytest.raises(SearchInfrastructureError):
             await search_index("test query", search_client=mock_client)
@@ -150,9 +146,7 @@ class TestSearchInfrastructureError:
     async def test_unexpected_error_raises_infrastructure_error(self):
         """Any unexpected exception should raise SearchInfrastructureError."""
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(
-            side_effect=ConnectionError("Network unreachable")
-        )
+        mock_client.search = AsyncMock(side_effect=ConnectionError("Network unreachable"))
 
         with pytest.raises(SearchInfrastructureError):
             await search_index("test query", search_client=mock_client)
@@ -161,9 +155,7 @@ class TestSearchInfrastructureError:
     async def test_resource_not_found_still_raises_index_error(self):
         """ResourceNotFoundError should still raise SearchIndexNotFoundError (not infra error)."""
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(
-            side_effect=ResourceNotFoundError("Index not found")
-        )
+        mock_client.search = AsyncMock(side_effect=ResourceNotFoundError("Index not found"))
 
         with pytest.raises(SearchIndexNotFoundError):
             await search_index("test query", search_client=mock_client)
@@ -610,9 +602,7 @@ class TestVerifyRagConnectivity:
         from src.rag.tools import verify_rag_connectivity
 
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(
-            side_effect=RuntimeError("Connection refused")
-        )
+        mock_client.search = AsyncMock(side_effect=RuntimeError("Connection refused"))
         set_search_client(mock_client)
 
         result = await verify_rag_connectivity()
@@ -1082,9 +1072,7 @@ class TestMultiStrategySearch:
         self.mock_search.side_effect = SearchInfrastructureError("403 Forbidden")
 
         rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
-        result = await rag_tool.invoke(
-            arguments={"query": "test query", "document_type": None}
-        )
+        result = await rag_tool.invoke(arguments={"query": "test query", "document_type": None})
 
         assert result.startswith("SEARCH_INFRASTRUCTURE_ERROR:")
         assert "403 Forbidden" in result
@@ -1095,8 +1083,6 @@ class TestMultiStrategySearch:
         self.mock_search.side_effect = SearchInfrastructureError("Connection refused")
 
         rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
-        result = await rag_tool.invoke(
-            arguments={"query": "test query", "document_type": None}
-        )
+        result = await rag_tool.invoke(arguments={"query": "test query", "document_type": None})
 
         assert "=== SOURCE" not in result

@@ -65,7 +65,10 @@ class TestRAGCollectorMiddleware:
         collector: list[str] = []
         rag_results_collector.set(collector)
 
-        error_msg = "SEARCH_INFRASTRUCTURE_ERROR: The knowledge base search system is currently experiencing a technical issue."
+        error_msg = (
+            "SEARCH_INFRASTRUCTURE_ERROR: The knowledge base search system"
+            " is currently experiencing a technical issue."
+        )
         ctx = _make_context()
 
         async def call_next():

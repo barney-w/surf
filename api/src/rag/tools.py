@@ -9,7 +9,12 @@ from azure.search.documents.aio import SearchClient
 from pydantic import Field
 
 from src.agents._base import RAGScope
-from src.rag.search import SearchIndexNotFoundError, SearchInfrastructureError, SearchResult, search_index
+from src.rag.search import (
+    SearchIndexNotFoundError,
+    SearchInfrastructureError,
+    SearchResult,
+    search_index,
+)
 
 logger = logging.getLogger(__name__)
 

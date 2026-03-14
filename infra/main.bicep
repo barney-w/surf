@@ -33,6 +33,9 @@ param aiSearchPartitionCount int = 1
 @description('Azure AI Search SharePoint index name (empty to disable)')
 param aiSearchSharepointIndex string = ''
 
+@description('Override Azure AI Search endpoint (use external service instead of Bicep-managed one)')
+param aiSearchEndpointOverride string = ''
+
 @description('Storage account SKU')
 param storageSku string = 'Standard_LRS'
 
@@ -85,8 +88,11 @@ param embeddingCapacity int = 10
 @description('Anthropic API key for direct API access (stored in Key Vault, passed to surf-api container)')
 param anthropicApiKey string = ''
 
-@description('Anthropic model ID for chat agents')
-param anthropicModelId string = 'claude-sonnet-4-6'
+@description('Anthropic model ID for coordinator (routing) agent')
+param anthropicModelId string = 'claude-haiku-4-5-20251001'
+
+@description('Anthropic model ID for domain (specialist) agents — defaults to Sonnet for quality')
+param anthropicDomainModelId string = 'claude-sonnet-4-6'
 
 @description('Anthropic Foundry base URL (empty to use direct Anthropic API)')
 param anthropicFoundryBaseUrl string = ''
@@ -167,6 +173,9 @@ var apiImage = !empty(apiImageTag) ? '${acr.outputs.loginServer}/surf-api:${apiI
 var ingestionImage = !empty(ingestionImageTag) ? '${acr.outputs.loginServer}/surf-ingestion:${ingestionImageTag}' : bootstrapImage
 var webImage = !empty(webImageTag) ? '${acr.outputs.loginServer}/surf-web:${webImageTag}' : bootstrapImage
 var keyVaultName = keyVault.outputs.name
+
+// Allow overriding the search endpoint (e.g. to use a pre-existing service with indexed data)
+var resolvedSearchEndpoint = !empty(aiSearchEndpointOverride) ? aiSearchEndpointOverride : aiSearch.outputs.endpoint
 
 // Pre-computed managed identity resource ID (identity blocks require values calculable at deployment start)
 var managedIdentityResourceId = resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'id-${baseName}')
@@ -669,12 +678,13 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
           }
           env: concat([
             { name: 'AZURE_OPENAI_ENDPOINT', value: openAi.outputs.endpoint }
-            { name: 'AZURE_SEARCH_ENDPOINT', value: aiSearch.outputs.endpoint }
+            { name: 'AZURE_SEARCH_ENDPOINT', value: resolvedSearchEndpoint }
             { name: 'AZURE_SEARCH_SHAREPOINT_INDEX', value: aiSearchSharepointIndex }
             { name: 'AZURE_STORAGE_ACCOUNT_URL', value: storage.outputs.primaryBlobEndpoint }
             { name: 'AZURE_KEYVAULT_URL', value: keyVault.outputs.uri }
             { name: 'AZURE_CLIENT_ID', value: managedIdentity.outputs.clientId }
             { name: 'ANTHROPIC_MODEL_ID', value: anthropicModelId }
+            { name: 'ANTHROPIC_DOMAIN_MODEL_ID', value: anthropicDomainModelId }
             { name: 'API_CORS_ORIGINS', value: apiCorsOrigins }
             { name: 'AUTH_ENABLED', value: string(authEnabled) }
             { name: 'ENTRA_TENANT_ID', value: entraTenantId }
@@ -764,7 +774,7 @@ resource surfIngestion 'Microsoft.App/containerApps@2024-03-01' = {
           }
           env: [
             { name: 'AZURE_OPENAI_ENDPOINT', value: openAi.outputs.endpoint }
-            { name: 'AZURE_SEARCH_ENDPOINT', value: aiSearch.outputs.endpoint }
+            { name: 'AZURE_SEARCH_ENDPOINT', value: resolvedSearchEndpoint }
             { name: 'AZURE_STORAGE_ACCOUNT_URL', value: storage.outputs.primaryBlobEndpoint }
             { name: 'AZURE_KEYVAULT_URL', value: keyVault.outputs.uri }
             { name: 'AZURE_CLIENT_ID', value: managedIdentity.outputs.clientId }

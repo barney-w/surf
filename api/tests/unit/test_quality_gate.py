@@ -205,9 +205,7 @@ class TestInfrastructureErrorCheck:
             sources=[_make_source(title="Recycling Guide")],
             confidence="high",
         )
-        rag_outputs = [
-            "SEARCH_INFRASTRUCTURE_ERROR: Connection refused"
-        ]
+        rag_outputs = ["SEARCH_INFRASTRUCTURE_ERROR: Connection refused"]
         result = run_quality_gate(response, rag_outputs=rag_outputs, routed_agent="website_agent")
 
         assert result.check == "search_infrastructure_error"

@@ -18,7 +18,7 @@ class TestSettingsDefaults:
         assert settings.azure_openai_embedding_deployment_name == "text-embedding-3-large"
         assert settings.azure_openai_api_version == "2024-12-01-preview"
         assert settings.anthropic_api_key == ""
-        assert settings.anthropic_model_id == "claude-sonnet-4-6"
+        assert settings.anthropic_model_id == "claude-haiku-4-5-20251001"
         assert settings.anthropic_foundry_base_url == ""
         assert settings.anthropic_foundry_api_key == ""
         assert settings.azure_search_endpoint == ""
@@ -87,9 +87,9 @@ class TestProductionKeyValidator:
 class TestDomainModelId:
     """Test the anthropic_domain_model_id setting."""
 
-    def test_domain_model_id_defaults_empty(self):
+    def test_domain_model_id_defaults_to_sonnet(self):
         settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
-        assert settings.anthropic_domain_model_id == ""
+        assert settings.anthropic_domain_model_id == "claude-sonnet-4-6"
 
     def test_domain_model_id_from_env(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("ANTHROPIC_DOMAIN_MODEL_ID", "claude-haiku-4-5")

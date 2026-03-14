@@ -443,6 +443,43 @@ class TestMessageFieldExtractorGuard:
         assert "*probation*" in result
         assert "- Be a current employee" in result
 
+    def test_multi_turn_tool_use_reset(self):
+        """Extractor reset between turns recovers streaming for post-tool response.
+
+        When a domain agent (e.g. Sonnet) emits a preliminary JSON answer
+        before calling a tool, the extractor marks itself done after the first
+        message field.  Resetting the extractor before the second LLM turn
+        allows the real answer to stream correctly.
+        """
+        # Turn 1: preliminary answer before tool call
+        turn1 = json.dumps({"message": "I can help with that.", "confidence": "medium"})
+        ex = self._extractor()
+        turn1_result = self._feed_all(ex, [turn1[i : i + 8] for i in range(0, len(turn1), 8)])
+        assert "I can help" in turn1_result
+        assert ex._done
+
+        # Simulate tool-use detection → reset extractor (as chat.py now does)
+        ex = self._extractor()
+
+        # Turn 2: real answer after tool results
+        msg = "Booking is a 6-step process.\n\n1. **Choose a room**\n2. **Review fees**"
+        turn2 = json.dumps({"message": msg, "confidence": "high", "sources": []})
+        turn2_result = self._feed_all(ex, [turn2[i : i + 8] for i in range(0, len(turn2), 8)])
+        assert "6-step" in turn2_result
+        assert "**Choose a room**" in turn2_result
+        assert "**Review fees**" in turn2_result
+
+    def test_extractor_done_blocks_subsequent_turns(self):
+        """Without reset, a done extractor ignores all subsequent text (pre-fix behaviour)."""
+        turn1 = json.dumps({"message": "Brief answer.", "confidence": "low"})
+        turn2 = json.dumps({"message": "Full detailed answer.", "confidence": "high"})
+        ex = self._extractor()
+        self._feed_all(ex, [turn1])
+        assert ex._done
+        # Without reset, Turn 2 is silently dropped
+        turn2_result = self._feed_all(ex, [turn2])
+        assert turn2_result == ""
+
 
 # ---------------------------------------------------------------------------
 # parse_agent_output — markdown-formatted messages

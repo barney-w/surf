@@ -21,7 +21,12 @@ from src.middleware.logging import reset_logging_context, set_logging_context, s
 from src.middleware.telemetry import setup_telemetry
 from src.orchestrator.builder import build_agent_graph, create_model_client
 from src.orchestrator.history import ConversationHistoryProvider
-from src.rag.tools import clear_search_clients, set_embed_func, set_search_client, verify_rag_connectivity
+from src.rag.tools import (
+    clear_search_clients,
+    set_embed_func,
+    set_search_client,
+    verify_rag_connectivity,
+)
 from src.routes.agents import router as agents_router
 from src.routes.chat import router as chat_router
 from src.routes.guest import router as guest_router
