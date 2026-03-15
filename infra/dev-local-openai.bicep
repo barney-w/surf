@@ -1,3 +1,5 @@
+// WARNING: Dev-only template — do NOT use for staging or production deployments.
+// Public network access is intentionally enabled for local developer convenience.
 targetScope = 'resourceGroup'
 
 @description('Azure region for OpenAI')

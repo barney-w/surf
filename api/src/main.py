@@ -208,7 +208,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             f"@{settings.postgres_host}:{settings.postgres_port}"
             f"/{settings.postgres_database}{ssl_param}"
         )
-        migration_env = {"DATABASE_URL": db_url, "PATH": os.environ.get("PATH", "")}
+        migration_env = {
+            "DATABASE_URL": db_url,
+            "PATH": os.environ.get("PATH", ""),
+            "HOME": os.environ.get("HOME", "/tmp"),
+        }
         result = subprocess.run(
             ["alembic", "upgrade", "head"],
             cwd=str(api_dir),
