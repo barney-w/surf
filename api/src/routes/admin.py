@@ -107,15 +107,15 @@ async def list_conversations(
     if date_from:
         try:
             params.append(datetime.fromisoformat(date_from).replace(tzinfo=UTC))
-        except ValueError:
-            raise HTTPException(400, "Invalid date_from format")
+        except ValueError as err:
+            raise HTTPException(400, "Invalid date_from format") from err
         conditions.append(f"c.created_at >= ${idx}")
         idx += 1
     if date_to:
         try:
             params.append(datetime.fromisoformat(date_to).replace(tzinfo=UTC))
-        except ValueError:
-            raise HTTPException(400, "Invalid date_to format")
+        except ValueError as err:
+            raise HTTPException(400, "Invalid date_to format") from err
         conditions.append(f"c.created_at <= ${idx}")
         idx += 1
 

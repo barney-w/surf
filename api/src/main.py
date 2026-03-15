@@ -1,5 +1,6 @@
 import logging
 import os
+import tempfile
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -211,7 +212,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         migration_env = {
             "DATABASE_URL": db_url,
             "PATH": os.environ.get("PATH", ""),
-            "HOME": os.environ.get("HOME", "/tmp"),
+            "HOME": os.environ.get("HOME", tempfile.gettempdir()),
         }
         result = subprocess.run(
             ["alembic", "upgrade", "head"],
