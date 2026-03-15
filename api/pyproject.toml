@@ -25,7 +25,7 @@ dependencies = [
     "agent-framework-devui",
     "azure-search-documents",
     "httpx",
-    "PyJWT[crypto]>=2.8",
+    "PyJWT[crypto]>=2.12",
     "cryptography>=41.0",
     "slowapi>=0.1.9",
     "msal>=1.28",
