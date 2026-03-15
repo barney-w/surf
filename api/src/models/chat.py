@@ -15,8 +15,8 @@ ALLOWED_ATTACHMENT_TYPES = frozenset(
     }
 )
 
-MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10 MB per file
-MAX_ATTACHMENTS = 5
+MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024  # 5 MB per file
+MAX_ATTACHMENTS = 3
 
 
 class Attachment(BaseModel):

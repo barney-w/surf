@@ -77,6 +77,14 @@ class Settings(BaseSettings):
             raise ValueError(
                 "ANTHROPIC_API_KEY or ANTHROPIC_FOUNDRY_API_KEY required in non-dev environments"
             )
+        if (
+            self.environment != "dev"
+            and self.postgres_enabled
+            and self.postgres_password == "localdev"
+        ):
+            raise ValueError(
+                "Default postgres password 'localdev' must not be used in non-dev environments"
+            )
         return self
 
 

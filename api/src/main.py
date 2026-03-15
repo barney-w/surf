@@ -208,7 +208,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             f"@{settings.postgres_host}:{settings.postgres_port}"
             f"/{settings.postgres_database}{ssl_param}"
         )
-        migration_env = {**os.environ, "DATABASE_URL": db_url}
+        migration_env = {"DATABASE_URL": db_url, "PATH": os.environ.get("PATH", "")}
         result = subprocess.run(
             ["alembic", "upgrade", "head"],
             cwd=str(api_dir),
@@ -217,7 +217,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             env=migration_env,
         )
         if result.returncode != 0:
-            logger.error("Alembic migration failed: %s", result.stderr)
+            redacted_stderr = result.stderr.replace(settings.postgres_password, "***")
+            logger.error("Alembic migration failed: %s", redacted_stderr)
             raise SystemExit(1)
         logger.info("Database migrations applied")
         logger.info("ConversationService initialised")
