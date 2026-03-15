@@ -11,7 +11,7 @@ import json
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 logger = logging.getLogger(__name__)
@@ -105,12 +105,18 @@ async def list_conversations(
         params.append(agent)
         idx += 1
     if date_from:
+        try:
+            params.append(datetime.fromisoformat(date_from).replace(tzinfo=UTC))
+        except ValueError:
+            raise HTTPException(400, "Invalid date_from format")
         conditions.append(f"c.created_at >= ${idx}")
-        params.append(datetime.fromisoformat(date_from).replace(tzinfo=UTC))
         idx += 1
     if date_to:
+        try:
+            params.append(datetime.fromisoformat(date_to).replace(tzinfo=UTC))
+        except ValueError:
+            raise HTTPException(400, "Invalid date_to format")
         conditions.append(f"c.created_at <= ${idx}")
-        params.append(datetime.fromisoformat(date_to).replace(tzinfo=UTC))
         idx += 1
 
     where = ""
