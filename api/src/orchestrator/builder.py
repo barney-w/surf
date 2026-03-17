@@ -15,6 +15,7 @@ from agent_framework import (
 from agent_framework.anthropic import AnthropicClient
 from agent_framework.orchestrations import HandoffBuilder
 
+from src.agents._base import AuthLevel, get_organisation_name
 from src.agents._discovery import discover_agents
 from src.agents._registry import AgentRegistry
 from src.agents.coordinator.prompts import build_coordinator_prompt
@@ -44,12 +45,13 @@ If you need to search first, call the search tool, then respond with ONLY JSON.
 
 The JSON object must match this schema:
 {
-  "message": "Your answer (plain text, NO === SOURCE === markers)",
+  "message": "Your answer in Markdown (bold, lists, headings — NO === SOURCE === markers)",
   "sources": [{"title": "...", "section": "..." or null, "document_id": "...",
               "confidence": 0.9, "url": "..." or null, "snippet": "..."}],
   "confidence": "high" | "medium" | "low",
-  "ui_hint": "text" (default; only use "table"/"list"/"steps"/"card"/"warning"
-            when the answer is SIGNIFICANTLY clearer in that format),
+  "ui_hint": "steps" | "table" | "card" | "list" | "warning" | "text"
+            (ACTIVELY choose the best format — see instructions. "text" is ONLY
+            for purely conversational answers with no inherent structure),
   "structured_data": null (default; only set to a JSON-encoded string when ui_hint is NOT "text"),
   "follow_up_suggestions": ["action 1", "action 2", "action 3"]
 }
@@ -169,31 +171,42 @@ class _SafeHandoffAnthropicClient(AnthropicClient):
     def _prepare_messages_for_anthropic(self, messages: Sequence[Message]) -> list[dict[str, Any]]:
         prepared = super()._prepare_messages_for_anthropic(messages)
 
-        # Inject multimodal content (images/PDFs) into the last user message.
+        # Inject multimodal content (images/PDFs) into the last user message
+        # that is NOT a tool_result turn.  After a tool call the message list
+        # contains a user message holding only tool_result blocks — injecting
+        # attachments there corrupts the structure and causes a 400 from the API.
         attachments = current_attachments.get(None)
         if attachments:
-            # Find the last user message and prepend attachment content blocks.
             for msg in reversed(prepared):
                 if msg.get("role") != "user":
                     continue
                 content: list[dict[str, Any]] = msg.get("content", [])
+                # Skip tool_result messages — they must not be mixed with
+                # document/image blocks.
+                if isinstance(content, list) and any(
+                    isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+                ):
+                    continue
                 if isinstance(content, str):
                     content = [{"type": "text", "text": content}]
                     msg["content"] = content
                 for att in attachments:
                     ct = att["content_type"]
                     if ct.startswith("image/"):
-                        content.insert(0, {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": ct,
-                                "data": att["data"],
+                        content.insert(
+                            0,
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": ct,
+                                    "data": att["data"],
+                                },
                             },
-                        })
+                        )
                     elif ct == "application/pdf":
                         content.insert(0, _prepare_pdf_block(att["data"]))
-                break  # only inject into the last user message
+                break  # only inject into the first eligible user message
 
         if prepared and prepared[-1].get("role") == "assistant":
             logger.debug(
@@ -234,6 +247,25 @@ def create_model_client(settings: Settings) -> _SafeHandoffAnthropicClient:
     )
 
 
+def create_model_client_for_model(settings: Settings, model_id: str) -> _SafeHandoffAnthropicClient:
+    """Create a client targeting a specific model, reusing the same auth config."""
+    if settings.anthropic_foundry_base_url:
+        from anthropic import AsyncAnthropicFoundry
+
+        foundry_client = AsyncAnthropicFoundry(
+            base_url=settings.anthropic_foundry_base_url,
+            api_key=settings.anthropic_foundry_api_key,
+        )
+        return _SafeHandoffAnthropicClient(
+            anthropic_client=foundry_client,
+            model_id=model_id,
+        )
+    return _SafeHandoffAnthropicClient(
+        api_key=settings.anthropic_api_key or None,
+        model_id=model_id,
+    )
+
+
 class _CachedAgentGraph:
     """Pre-built agents and configuration, reused across requests.
 
@@ -251,6 +283,16 @@ class _CachedAgentGraph:
         self.domain_agents = domain_agents
         self.termination_condition = termination_condition
 
+    def build_single_agent_workflow(self, agent_name: str) -> Workflow | None:
+        """Build a workflow targeting a single domain agent (no coordinator)."""
+        for agent in self.domain_agents:
+            if agent.name == agent_name:
+                builder = HandoffBuilder(name=f"surf-direct-{agent_name}", participants=[agent])
+                builder.with_start_agent(agent)
+                builder.with_termination_condition(self.termination_condition)
+                return builder.build()
+        return None
+
     def build_workflow(self) -> Workflow:
         """Create a fresh Workflow instance from the cached agent graph."""
         all_participants = [self.coordinator, *self.domain_agents]
@@ -263,15 +305,48 @@ class _CachedAgentGraph:
 
 def build_agent_graph(
     client: AnthropicClient,
+    settings: Settings,
     context_providers: Sequence[BaseContextProvider] | None = None,
+    auth_filter: AuthLevel | None = None,
 ) -> _CachedAgentGraph:
     """Build the agent graph once at startup.
 
     Discovers domain agents, creates Agent objects, and returns a cached graph.
     Call ``graph.build_workflow()`` per request to get a fresh Workflow.
+
+    When *auth_filter* is set, only agents whose ``auth_level`` is at or below
+    the given level are included. This allows building a restricted graph
+    (e.g. public-only) where the coordinator cannot see or route to agents
+    the caller is not authorised to access.
     """
     discover_agents()
     registry = AgentRegistry.get_all()
+
+    # Filter registry entries by auth level when an auth_filter is provided.
+    if auth_filter is not None:
+        hierarchy = {
+            AuthLevel.PUBLIC: 0,
+            AuthLevel.MICROSOFT_ACCOUNT: 1,
+            AuthLevel.ORGANISATIONAL: 2,
+        }
+        filter_level = hierarchy[auth_filter]
+        registry = {
+            name: cls
+            for name, cls in registry.items()
+            if hierarchy[cls().auth_level] <= filter_level
+        }
+
+    # Resolve domain model — priority: per-agent > settings.domain > settings.global
+    domain_model_id = settings.anthropic_domain_model_id or settings.anthropic_model_id
+    if domain_model_id != settings.anthropic_model_id:
+        domain_client: AnthropicClient = create_model_client_for_model(settings, domain_model_id)
+        logger.info(
+            "Domain agents using model %s (coordinator: %s)",
+            domain_model_id,
+            settings.anthropic_model_id,
+        )
+    else:
+        domain_client = client
 
     domain_agents: list[Agent[ChatOptions[None]]] = []
 
@@ -297,7 +372,14 @@ def build_agent_graph(
             )
             logger.info("Skills loaded for %s from %s", agent_def.name, skill_path)
 
-        agent = client.as_agent(
+        # Per-agent model override (highest priority)
+        agent_model = agent_def.model_id
+        if agent_model and agent_model != domain_model_id:
+            agent_client: AnthropicClient = create_model_client_for_model(settings, agent_model)
+        else:
+            agent_client = domain_client
+
+        agent = agent_client.as_agent(
             name=agent_def.name,
             description=agent_def.description,
             instructions=combined_prompt,
@@ -308,7 +390,15 @@ def build_agent_graph(
         )
         domain_agents.append(cast("Agent[ChatOptions[None]]", agent))
 
-    coordinator_prompt = build_coordinator_prompt(AgentRegistry.agent_descriptions())
+    # Build descriptions from the (possibly filtered) registry so the
+    # coordinator only knows about agents present in this graph.
+    agent_descriptions = [
+        {"name": cls().name, "description": cls().description} for cls in registry.values()
+    ]
+    coordinator_prompt = build_coordinator_prompt(
+        agent_descriptions,
+        organisation_name=get_organisation_name(),
+    )
     coordinator = cast(
         "Agent[ChatOptions[None]]",
         client.as_agent(

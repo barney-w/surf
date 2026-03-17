@@ -6,6 +6,7 @@
     "ghcr.io/devcontainers/features/docker-in-docker:2": {}
   },
   "postCreateCommand": "pip install uv && cd api && uv sync && cd ../ingestion && uv sync",
+  "postStartCommand": "docker compose up -d postgres",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -14,7 +15,7 @@
         "charliermarsh.ruff"
       ],
       "settings": {
-        "python.defaultInterpreterPath": "/workspaces/surf/api/.venv/bin/python",
+        "python.defaultInterpreterPath": "/workspaces/surf-lab/api/.venv/bin/python",
         "[python]": {
           "editor.defaultFormatter": "charliermarsh.ruff",
           "editor.formatOnSave": true

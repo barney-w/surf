@@ -1,4 +1,11 @@
-import { View, Text, Pressable, ActionSheetIOS, Platform, Alert } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  ActionSheetIOS,
+  Platform,
+  Alert,
+} from "react-native";
 import { useAuth } from "../auth/AuthProvider";
 
 interface HeaderProps {
@@ -12,10 +19,16 @@ function PencilIcon({ color }: { color: string }) {
 }
 
 export function Header({ hasMessages, onNewChat }: HeaderProps) {
-  const { isAuthenticated, isLoading, account, profile, login, logout } = useAuth();
+  const { isAuthenticated, isLoading, account, profile, login, logout } =
+    useAuth();
   const authConfigured = !!process.env.EXPO_PUBLIC_ENTRA_CLIENT_ID;
 
-  const initials = (profile?.givenName ?? profile?.displayName ?? account?.name ?? "?")
+  const initials = (
+    profile?.givenName ??
+    profile?.displayName ??
+    account?.name ??
+    "?"
+  )
     .charAt(0)
     .toUpperCase();
 
@@ -29,17 +42,19 @@ export function Header({ hasMessages, onNewChat }: HeaderProps) {
           destructiveButtonIndex: 1,
           cancelButtonIndex: 2,
         },
-        (index) => { if (index === 1) void logout(); },
+        (index) => {
+          if (index === 1) void logout();
+        },
       );
     } else {
-      Alert.alert(
-        displayName,
-        profile?.department ?? undefined,
-        [
-          { text: "Sign out", style: "destructive", onPress: () => void logout() },
-          { text: "Cancel", style: "cancel" },
-        ],
-      );
+      Alert.alert(displayName, profile?.department ?? undefined, [
+        {
+          text: "Sign out",
+          style: "destructive",
+          onPress: () => void logout(),
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
     }
   };
 
@@ -57,13 +72,13 @@ export function Header({ hasMessages, onNewChat }: HeaderProps) {
         onPress={onNewChat}
         disabled={!hasMessages}
         className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-md ${
-          hasMessages
-            ? "border border-accent/40"
-            : "opacity-40"
+          hasMessages ? "border border-accent/40" : "opacity-40"
         }`}
       >
         <PencilIcon color={hasMessages ? "#38bdf8" : iconColor} />
-        <Text className={`text-sm font-medium ${hasMessages ? "text-accent" : "text-text-muted"}`}>
+        <Text
+          className={`text-sm font-medium ${hasMessages ? "text-accent" : "text-text-muted"}`}
+        >
           New chat
         </Text>
       </Pressable>
@@ -83,7 +98,9 @@ export function Header({ hasMessages, onNewChat }: HeaderProps) {
             onPress={showUserMenu}
             className="w-8 h-8 rounded-full border border-border-strong items-center justify-center bg-surface"
           >
-            <Text className="text-accent text-sm font-semibold">{initials}</Text>
+            <Text className="text-accent text-sm font-semibold">
+              {initials}
+            </Text>
           </Pressable>
         </View>
       ) : authConfigured && !isLoading ? (

@@ -44,13 +44,29 @@ class RAGCollectorMiddleware(FunctionMiddleware):
         # Count sources in the output (each starts with "=== SOURCE N ===").
         source_count = result.count("=== SOURCE ")
 
-        logger.info(
-            "RAG tool completed: %.1fms, %d sources returned",
-            duration_ms,
-            source_count,
-        )
+        # Detect infrastructure errors
+        if "SEARCH_INFRASTRUCTURE_ERROR:" in result:
+            logger.error(
+                "RAG tool returned infrastructure error",
+                extra={
+                    "event": "rag_tool_infrastructure_error",
+                    "duration_ms": round(duration_ms, 1),
+                },
+            )
+        elif source_count > 0:
+            logger.info(
+                "RAG tool completed: %.1fms, %d sources returned",
+                duration_ms,
+                source_count,
+            )
+        else:
+            logger.info(
+                "RAG tool completed: %.1fms, no sources found",
+                duration_ms,
+            )
 
-        # Collect for downstream source recovery in chat routes.
-        if result and source_count > 0:
+        # Collect ALL tool outputs (not just those with sources) so the
+        # quality gate can distinguish skipped vs empty vs infra-error.
+        if result:
             with contextlib.suppress(LookupError):
                 rag_results_collector.get().append(result)

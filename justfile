@@ -1,16 +1,48 @@
 # Surf - Multi-Agent Orchestration Platform
 
+# Start local Postgres
+db:
+    docker compose up -d postgres
+
+# Wait for Postgres to be ready
+db-wait:
+    @until docker compose exec postgres pg_isready -U surf -d surf > /dev/null 2>&1; do sleep 0.5; done
+
+# Open psql shell to local Postgres
+db-shell:
+    docker compose exec postgres psql -U surf -d surf
+
+# Reset database (truncate all tables, keep schema)
+db-reset:
+    docker compose exec postgres psql -U surf -d surf -c "TRUNCATE conversations, messages, feedback CASCADE;"
+
+# Full teardown (remove volume — clean slate)
+db-destroy:
+    docker compose down -v
+
+# Open the dev admin page in browser
+admin:
+    open http://localhost:8090/api/v1/admin/
+
 # Run API in development mode with hot reload
-dev:
+dev: db db-wait
     cd api && uv run uvicorn src.main:app --reload --port 8090
 
 # Launch the DevUI (interactive chat UI for testing agents)
 devui:
     cd api && uv run python devui_server.py
 
-# Run API tests
+# Run API tests (unit, security, integration — excludes eval)
 test:
     cd api && uv run pytest
+
+# Run E2E chat evaluation suite (requires running API on :8090)
+eval:
+    cd api && uv run pytest tests/eval/ -v --tb=short -s
+
+# Run Playwright smoke tests (requires running API + web)
+smoke:
+    cd web && npx playwright test
 
 # Run ingestion tests
 test-ingestion:
@@ -83,7 +115,6 @@ setup-dev:
 
     OPENAI_ENDPOINT=$(echo "$AI_OUTPUTS" | python3 -c "import sys,json; print(json.load(sys.stdin)['openAiEndpoint']['value'])")
     SEARCH_ENDPOINT=$(echo "$OUTPUTS"    | python3 -c "import sys,json; print(json.load(sys.stdin)['searchEndpoint']['value'])")
-    COSMOS_ENDPOINT=$(echo "$OUTPUTS"    | python3 -c "import sys,json; print(json.load(sys.stdin)['cosmosEndpoint']['value'])")
     STORAGE_ENDPOINT=$(echo "$OUTPUTS"   | python3 -c "import sys,json; print(json.load(sys.stdin)['storageBlobEndpoint']['value'])")
 
     echo "Writing .env file..."
@@ -102,10 +133,13 @@ setup-dev:
     AZURE_SEARCH_ENDPOINT=${SEARCH_ENDPOINT}
     AZURE_SEARCH_INDEX_NAME=surf-index
 
-    # Cosmos DB
-    COSMOS_ENDPOINT=${COSMOS_ENDPOINT}
-    COSMOS_DATABASE_NAME=surf
-    COSMOS_CONTAINER_NAME=conversations
+    # PostgreSQL (local Docker — defaults match docker-compose.yml)
+    POSTGRES_HOST=localhost
+    POSTGRES_PORT=5432
+    POSTGRES_DATABASE=surf
+    POSTGRES_USER=surf
+    POSTGRES_PASSWORD=localdev
+    POSTGRES_SSL=false
 
     # Azure Storage
     AZURE_STORAGE_ACCOUNT_URL=${STORAGE_ENDPOINT}
@@ -176,6 +210,18 @@ api-deploy:
     echo "Updating Container App..."
     az containerapp update --name ca-api-surf-dev --resource-group rg-surf-dev --image "${IMAGE}" --output none
     echo "API deployed: ${IMAGE}"
+    echo "Waiting for health check..."
+    FQDN=$(az containerapp show --name ca-api-surf-dev --resource-group rg-surf-dev --query properties.configuration.ingress.fqdn -o tsv)
+    for i in $(seq 1 30); do
+        if curl -sf "https://${FQDN}/api/v1/health" > /dev/null 2>&1; then
+            echo "API is healthy"
+            break
+        fi
+        sleep 2
+    done
+    if [ "$i" -eq 30 ]; then
+        echo "WARNING: Health check did not pass within 60 seconds"
+    fi
 
 # Deploy web frontend to Azure Container Apps (nginx reverse proxy)
 web-deploy:
@@ -202,9 +248,61 @@ web-deploy:
     echo "Updating Container App..."
     az containerapp update --name ca-web-surf-dev --resource-group rg-surf-dev --image "${IMAGE}" --output none
     echo "Web deployed: ${IMAGE}"
+    echo "Waiting for health check..."
+    FQDN=$(az containerapp show --name ca-web-surf-dev --resource-group rg-surf-dev --query properties.configuration.ingress.fqdn -o tsv)
+    for i in $(seq 1 30); do
+        if curl -sf "https://${FQDN}/healthz" > /dev/null 2>&1; then
+            echo "Web is healthy"
+            break
+        fi
+        sleep 2
+    done
+    if [ "$i" -eq 30 ]; then
+        echo "WARNING: Health check did not pass within 60 seconds"
+    fi
+
+# Deploy infrastructure (Bicep) to Azure
+infra-deploy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    RG="rg-surf-dev"
+    echo "Validating Bicep template..."
+    az deployment group validate \
+      --resource-group "$RG" \
+      --template-file infra/main.bicep \
+      --parameters infra/environments/dev.bicepparam \
+      --parameters anthropicApiKey="${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY in .env}"
+    echo "Deploying infrastructure..."
+    az deployment group create \
+      --resource-group "$RG" \
+      --template-file infra/main.bicep \
+      --parameters infra/environments/dev.bicepparam \
+      --parameters anthropicApiKey="${ANTHROPIC_API_KEY}" \
+      --name "surf-dev-$(date +%Y%m%d%H%M%S)"
+    echo "Infrastructure deployed."
+
+# Deploy ingestion container to Azure Container Apps
+ingestion-deploy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    TAG=$(git rev-parse --short HEAD)
+    ACR_SERVER=$(az acr show --name acrsurfdev --resource-group rg-surf-dev --query loginServer -o tsv)
+    IMAGE="${ACR_SERVER}/surf-ingestion:${TAG}"
+    echo "Logging in to ACR..."
+    az acr login --name acrsurfdev
+    echo "Building ${IMAGE}..."
+    docker build --platform linux/amd64 -t "${IMAGE}" -f ingestion/Dockerfile ingestion/
+    echo "Pushing ${IMAGE}..."
+    docker push "${IMAGE}"
+    echo "Updating Container App..."
+    az containerapp update --name ca-ingestion-surf-dev --resource-group rg-surf-dev --image "${IMAGE}" --output none
+    echo "Ingestion deployed: ${IMAGE}"
 
 # Deploy both API and web frontend
 deploy: api-deploy web-deploy
+
+# Deploy everything (infra + all containers)
+deploy-all: infra-deploy api-deploy web-deploy ingestion-deploy
 
 # Sync files and pages from SharePoint to blob storage
 sync-sharepoint *ARGS:
@@ -237,6 +335,18 @@ upload-sharepoint FILE *ARGS:
 # Full end-to-end: sync -> setup indexer -> run indexer -> validate
 test-sharepoint-e2e *ARGS:
     cd ingestion && uv run python -m scripts.test_e2e_sharepoint {{ARGS}}
+
+# Ingest local PDF files with manifest metadata
+ingest *ARGS:
+    cd ingestion && uv run python -m src ingest {{ARGS}}
+
+# Deploy/update search index schema
+init-index *ARGS:
+    cd ingestion && uv run python -m src init-index {{ARGS}}
+
+# Show search index statistics
+index-status *ARGS:
+    cd ingestion && uv run python -m src status {{ARGS}}
 
 # Delete both dev resource groups and all their resources
 teardown-dev:

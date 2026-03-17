@@ -30,15 +30,20 @@ class GraphService:
     def __init__(self) -> None:
         settings = get_settings()
         self._app: msal.ConfidentialClientApplication | None = None
+        self._http = httpx.AsyncClient(timeout=10)
         if settings.entra_client_id and settings.entra_client_secret and settings.entra_tenant_id:
             self._app = msal.ConfidentialClientApplication(
                 client_id=settings.entra_client_id,
                 client_credential=settings.entra_client_secret,
-                authority=f"https://login.microsoftonline.com/{settings.entra_tenant_id}",
+                authority="https://login.microsoftonline.com/common",
             )
             logger.info("GraphService initialised with OBO capability")
         else:
             logger.warning("GraphService: missing Entra credentials — OBO disabled")
+
+    async def close(self) -> None:
+        """Close the shared HTTP client."""
+        await self._http.aclose()
 
     @property
     def available(self) -> bool:
@@ -65,25 +70,21 @@ class GraphService:
     async def get_user_profile(self, graph_token: str) -> UserProfile | None:
         """Fetch the signed-in user's profile from Graph."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    f"{_GRAPH_BASE}/me",
-                    params={
-                        "$select": "displayName,givenName,department,jobTitle,officeLocation,mail"
-                    },
-                    headers={"Authorization": f"Bearer {graph_token}"},
-                    timeout=10,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                return UserProfile(
-                    display_name=data.get("displayName", ""),
-                    given_name=data.get("givenName"),
-                    department=data.get("department"),
-                    job_title=data.get("jobTitle"),
-                    office_location=data.get("officeLocation"),
-                    mail=data.get("mail"),
-                )
+            resp = await self._http.get(
+                f"{_GRAPH_BASE}/me",
+                params={"$select": "displayName,givenName,department,jobTitle,officeLocation,mail"},
+                headers={"Authorization": f"Bearer {graph_token}"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return UserProfile(
+                display_name=data.get("displayName", ""),
+                given_name=data.get("givenName"),
+                department=data.get("department"),
+                job_title=data.get("jobTitle"),
+                office_location=data.get("officeLocation"),
+                mail=data.get("mail"),
+            )
         except Exception:
             logger.warning("Failed to fetch user profile from Graph", exc_info=True)
             return None
@@ -91,19 +92,17 @@ class GraphService:
     async def get_user_photo(self, graph_token: str) -> bytes | None:
         """Fetch the signed-in user's photo from Graph. Returns JPEG bytes or None."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    f"{_GRAPH_BASE}/me/photo/$value",
-                    headers={
-                        "Authorization": f"Bearer {graph_token}",
-                        "Accept": "image/jpeg",
-                    },
-                    timeout=10,
-                )
-                if resp.status_code == 404:
-                    return None
-                resp.raise_for_status()
-                return resp.content
+            resp = await self._http.get(
+                f"{_GRAPH_BASE}/me/photo/$value",
+                headers={
+                    "Authorization": f"Bearer {graph_token}",
+                    "Accept": "image/jpeg",
+                },
+            )
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+            return resp.content
         except Exception:
             logger.warning("Failed to fetch user photo from Graph", exc_info=True)
             return None
@@ -111,16 +110,14 @@ class GraphService:
     async def get_user_groups(self, graph_token: str) -> list[str]:
         """Fetch the signed-in user's group display names."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    f"{_GRAPH_BASE}/me/memberOf",
-                    params={"$select": "displayName,id", "$top": "100"},
-                    headers={"Authorization": f"Bearer {graph_token}"},
-                    timeout=10,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                return [g["displayName"] for g in data.get("value", []) if g.get("displayName")]
+            resp = await self._http.get(
+                f"{_GRAPH_BASE}/me/memberOf",
+                params={"$select": "displayName,id", "$top": "100"},
+                headers={"Authorization": f"Bearer {graph_token}"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return [g["displayName"] for g in data.get("value", []) if g.get("displayName")]
         except Exception:
             logger.warning("Failed to fetch user groups from Graph", exc_info=True)
             return []

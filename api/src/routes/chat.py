@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 if TYPE_CHECKING:
     from agent_framework import Workflow, WorkflowEvent
+import asyncpg
 from anthropic import BadRequestError as AnthropicBadRequestError
 from fastapi.responses import JSONResponse, StreamingResponse
 from openai import RateLimitError as OpenAIRateLimitError
@@ -20,8 +21,11 @@ from src.agents._output import (
     extract_sources,
     parse_agent_output,
     sanitize_agent_response,
+    strip_source_urls,
 )
-from src.middleware.auth import get_current_user
+from src.agents._proofread import proofread_message
+from src.config.settings import get_settings
+from src.middleware.auth import UserContext, get_current_user
 from src.middleware.error_handler import LLM_TIMEOUT_SECONDS, LLMTimeoutError
 from src.middleware.input_validation import validate_message
 from src.middleware.rate_limit import limiter
@@ -34,9 +38,67 @@ from src.models.chat import ChatRequest, ChatResponse
 from src.models.conversation import AttachmentRecord, FeedbackRecord, MessageRecord
 from src.orchestrator.builder import current_attachments
 from src.orchestrator.history import current_conversation_id, current_user_id, reset_history_cache
+from src.rag.quality_gate import run_quality_gate
 from src.rag.tools import rag_results_collector
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_workflow_factory(
+    body: ChatRequest,
+    request: Request,
+    user: "UserContext",
+) -> object:
+    """Return the workflow factory for the request, applying direct agent targeting.
+
+    When ``body.agent`` is set to a domain agent name (not "coordinator"), this
+    builds a single-agent workflow that bypasses the coordinator.  Auth-level
+    checks ensure the caller has sufficient permissions for the targeted agent.
+
+    Raises HTTPException (404/403/503) on validation failures.
+    """
+    from src.agents._base import AuthLevel
+    from src.agents._registry import AgentRegistry
+    from src.routes.agents import _can_access, _resolve_caller_auth_level
+
+    caller_level = _resolve_caller_auth_level(user)
+
+    if body.agent and body.agent != "coordinator":
+        agent_graph = request.app.state.agent_graph
+        if agent_graph is None:
+            raise HTTPException(status_code=503, detail="AI workflow not available.")
+
+        # Check agent exists in the registry
+        agent_cls = AgentRegistry.get(body.agent)
+        if agent_cls is None:
+            raise HTTPException(status_code=404, detail=f"Agent '{body.agent}' not found")
+
+        # Check auth level
+        agent_def = agent_cls()
+        if not _can_access(agent_def.auth_level, caller_level):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Insufficient permissions to access {agent_def.display_name} agent",
+            )
+
+        def _factory() -> "Workflow":
+            wf = agent_graph.build_single_agent_workflow(body.agent)
+            if wf is None:
+                raise HTTPException(
+                    status_code=404, detail=f"Agent '{body.agent}' not found in workflow graph"
+                )
+            return wf
+
+        return _factory
+
+    # Default path: select the auth-filtered graph for the caller's level.
+    agent_graphs = getattr(request.app.state, "agent_graphs", None)
+    if agent_graphs is not None:
+        graph = agent_graphs.get(caller_level, agent_graphs[AuthLevel.PUBLIC])
+        return graph.build_workflow
+
+    return request.app.state.workflow
+
 
 # Number of heartbeat ticks (5s each) before emitting phase(waiting).
 _HEARTBEAT_WAIT_TICKS = 2  # 10 seconds
@@ -59,18 +121,20 @@ router = APIRouter(prefix="/api/v1", tags=["chat"])
 
 
 async def _update_last_active_agent(
-    conversation_service: object,
+    conversation_service: object | None,
     conversation_id: str,
     user_id: str,
     agent_name: str,
 ) -> None:
     """Update metadata.last_active_agent on the conversation document."""
+    if conversation_service is None:
+        return
     try:
         await conversation_service.update_last_active_agent(  # type: ignore[union-attr]
             conversation_id, user_id, agent_name
         )
-    except Exception:
-        # Cosmos can raise various exceptions (CosmosHttpResponseError, network errors, etc.)
+    except (asyncpg.PostgresError, ConnectionError, TimeoutError, OSError, ValueError):
+        # Database can raise various exceptions (connection errors, etc.)
         # — never let a metadata update failure break the request.
         logger.warning(
             "Could not update last_active_agent for conversation %s",
@@ -80,19 +144,21 @@ async def _update_last_active_agent(
 
 
 async def _persist_message(
-    conversation_service: object,
+    conversation_service: object | None,
     conversation_id: str,
     user_id: str,
     message: MessageRecord,
 ) -> bool:
-    """Attempt to persist a message, returning False on Cosmos failure."""
+    """Attempt to persist a message, returning False on database failure."""
+    if conversation_service is None:
+        return False
     try:
         await conversation_service.add_message(conversation_id, user_id, message)  # type: ignore[union-attr]
         return True
-    except Exception:
-        # Cosmos can raise various exceptions — never let persistence failure break the request.
+    except (asyncpg.PostgresError, ConnectionError, TimeoutError, OSError, ValueError):
+        # Database can raise various exceptions — never let persistence failure break the request.
         logger.error(
-            "Cosmos DB unavailable — could not persist message %s for conversation %s",
+            "Database unavailable — could not persist message %s for conversation %s",
             message.id,
             conversation_id,
             exc_info=True,
@@ -117,13 +183,23 @@ def _build_attachment_records(body: ChatRequest) -> list[AttachmentRecord]:
     return records
 
 
+async def _proofread_response(agent_response: AgentResponseModel) -> AgentResponseModel:
+    """Run the proofread step on the agent response message if enabled."""
+    settings = get_settings()
+    if not settings.proofread_enabled:
+        return agent_response
+    corrected = await proofread_message(agent_response.message, settings)
+    if corrected != agent_response.message:
+        return agent_response.model_copy(update={"message": corrected})
+    return agent_response
+
+
 def _set_attachments_context(body: ChatRequest) -> None:
     """Set the current_attachments context variable from request attachments."""
     if body.attachments:
-        current_attachments.set([
-            {"content_type": att.content_type, "data": att.data}
-            for att in body.attachments
-        ])
+        current_attachments.set(
+            [{"content_type": att.content_type, "data": att.data} for att in body.attachments]
+        )
     else:
         current_attachments.set(None)
 
@@ -134,6 +210,7 @@ async def _run_workflow(
     *,
     conversation_id: str,
     user_id: str,
+    target_agent: str | None = None,
 ) -> tuple[str, AgentResponseModel | None, str, list[str]]:
     """Run the AI workflow with a timeout.
 
@@ -155,7 +232,7 @@ async def _run_workflow(
     async def _execute() -> tuple[str, AgentResponseModel | None, str]:
         response_text = ""
         structured_result: AgentResponseModel | None = None
-        routed_agent = "coordinator"
+        routed_agent = target_agent if target_agent else "coordinator"
         async for _event in workflow.run(  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
             message,
             stream=True,
@@ -183,11 +260,11 @@ async def _run_workflow(
 @limiter.limit("10/minute")  # pyright: ignore[reportUnknownMemberType,reportUntypedFunctionDecorator]
 async def chat(body: ChatRequest, request: Request) -> JSONResponse:
     """Send a message and receive an AI response."""
-    workflow = request.app.state.workflow
     conversation_service = request.app.state.conversation_service
     user = await get_current_user(request)
     user_id = user.user_id
 
+    workflow = _resolve_workflow_factory(body, request, user)
     if workflow is None:
         raise HTTPException(
             status_code=503,
@@ -197,30 +274,31 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
     # Validate & sanitise input
     sanitised_message = validate_message(body.message)
 
-    # Create or load conversation — handle Cosmos unavailability
-    cosmos_available = True
+    # Create or load conversation — handle database unavailability
+    db_available = conversation_service is not None
     conversation_id = body.conversation_id or str(uuid.uuid4())
 
-    try:
-        if body.conversation_id:
-            conversation = await conversation_service.get_conversation(
-                body.conversation_id, user_id
+    if db_available:
+        try:
+            if body.conversation_id:
+                conversation = await conversation_service.get_conversation(
+                    body.conversation_id, user_id
+                )
+                if conversation is None:
+                    raise HTTPException(status_code=404, detail="Conversation not found")
+                conversation_id = body.conversation_id
+            else:
+                conversation = await conversation_service.create_conversation(user_id)
+                conversation_id = conversation.id
+        except HTTPException:
+            raise
+        except Exception:
+            # Database can raise various exceptions — degrade gracefully.
+            logger.warning(
+                "Database unavailable — continuing without persistence",
+                exc_info=True,
             )
-            if conversation is None:
-                raise HTTPException(status_code=404, detail="Conversation not found")
-            conversation_id = body.conversation_id
-        else:
-            conversation = await conversation_service.create_conversation(user_id)
-            conversation_id = conversation.id
-    except HTTPException:
-        raise
-    except Exception:
-        # Cosmos can raise various exceptions — degrade gracefully.
-        logger.warning(
-            "Cosmos DB unavailable — continuing without persistence",
-            exc_info=True,
-        )
-        cosmos_available = False
+            db_available = False
 
     # Set attachment context for multimodal LLM calls
     _set_attachments_context(body)
@@ -233,6 +311,7 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
             sanitised_message,
             conversation_id=conversation_id,
             user_id=user_id,
+            target_agent=body.agent if body.agent and body.agent != "coordinator" else None,
         )
     except LLMTimeoutError:
         raise
@@ -273,12 +352,33 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
         fallback_text = response_text or "I'm sorry, I couldn't generate a response."
         agent_response = parse_agent_output(fallback_text, routed_agent)
 
+    # Quality gate — catch search-skipped or results-ignored failures
+    gate_result = run_quality_gate(agent_response, rag_outputs, routed_agent)
+    agent_response = gate_result.remediated
+    if gate_result.check != "passed":
+        logger.warning(
+            "quality_gate_triggered check=%s agent=%s rag_count=%d source_count=%d confidence=%s",
+            gate_result.check,
+            routed_agent,
+            len(rag_outputs),
+            len(agent_response.sources),
+            agent_response.confidence,
+        )
+
     # Inject sources recovered from the RAG tool output if the agent didn't populate them.
     if not agent_response.sources and rag_outputs:
         rag_text = "\n\n".join(rag_outputs)
         recovered = deduplicate_sources(extract_sources(rag_text))
         if recovered:
             agent_response = agent_response.model_copy(update={"sources": recovered})
+
+    # Proofread — fix generation artefacts (dropped chars, broken markdown)
+    agent_response = await _proofread_response(agent_response)
+
+    # Strip source URLs for agents backed by internal document stores
+    # (e.g. SharePoint) to avoid exposing infrastructure details.
+    if routed_agent == "hr_agent":
+        agent_response = strip_source_urls(agent_response)
 
     routing = RoutingMetadata(
         routed_by="coordinator",
@@ -301,7 +401,7 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
         response=agent_response,
         timestamp=datetime.now(UTC),
     )
-    if cosmos_available:
+    if db_available:
         ok = await _persist_message(conversation_service, conversation_id, user_id, user_message)
         if ok:
             ok = await _persist_message(
@@ -312,7 +412,7 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
                 conversation_service, conversation_id, user_id, routed_agent
             )
         else:
-            cosmos_available = False
+            db_available = False
 
     chat_response = ChatResponse(
         conversation_id=conversation_id,
@@ -326,8 +426,8 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
     response = JSONResponse(
         content=chat_response.model_dump(mode="json"),
     )
-    if not cosmos_available:
-        response.headers["X-Surf-Warning"] = "cosmos-unavailable"
+    if not db_available:
+        response.headers["X-Surf-Warning"] = "db-unavailable"
     return response
 
 
@@ -365,6 +465,8 @@ class _MessageFieldExtractor:
         self._done = False
         self._guard_buf = ""  # buffer first N chars for pollution check
         self._suppressed = False  # True once pollution is detected
+        self._unicode_remaining = 0  # hex digits still expected for \uXXXX
+        self._unicode_hex = ""  # accumulated hex digits
 
     def feed(self, chunk: str) -> str:
         """Feed a token chunk. Returns any message content ready to stream."""
@@ -388,16 +490,20 @@ class _MessageFieldExtractor:
         if self._suppressed:
             return ""
 
-        # Still buffering the guard window.
+        # Still buffering the guard window.  Process the full input through
+        # _read_string (escape sequences like \uXXXX consume multiple input
+        # chars per output char, so we cannot split by input length).
         if len(self._guard_buf) < self._GUARD_LEN:
-            needed = self._GUARD_LEN - len(self._guard_buf)
-            chars, remaining = s[:needed], s[needed:]
-
-            out_inner, done = self._read_string(chars)
+            out_inner, done = self._read_string(s)
             self._guard_buf += out_inner
             if done:
                 self._done = True
-                # Short message that ended before guard window — not pollution.
+                if self._guard_buf.startswith(self._SOURCE_POLLUTION_PREFIX):
+                    self._suppressed = True
+                    logger.warning(
+                        "_MessageFieldExtractor: source pollution detected — suppressing stream"
+                    )
+                    return ""
                 return self._guard_buf
 
             if len(self._guard_buf) >= self._GUARD_LEN:
@@ -407,13 +513,10 @@ class _MessageFieldExtractor:
                         "_MessageFieldExtractor: source pollution detected — suppressing stream"
                     )
                     return ""
-                # Guard passed — emit buffered chars then continue with remainder.
+                # Guard passed — emit all buffered chars.
                 flushed = self._guard_buf
                 self._guard_buf = ""
-                out_rest, done = self._read_string(remaining)
-                if done:
-                    self._done = True
-                return flushed + out_rest
+                return flushed
 
             return ""  # guard window not yet full
 
@@ -427,20 +530,36 @@ class _MessageFieldExtractor:
         """Read characters from inside a JSON string value until the closing quote."""
         out: list[str] = []
         for ch in s:
+            # Accumulating hex digits for a \uXXXX escape
+            if self._unicode_remaining > 0:
+                self._unicode_hex += ch
+                self._unicode_remaining -= 1
+                if self._unicode_remaining == 0:
+                    try:
+                        out.append(chr(int(self._unicode_hex, 16)))
+                    except ValueError:
+                        out.append(self._unicode_hex)
+                    self._unicode_hex = ""
+                continue
+
             if self._escape:
-                out.append(
-                    {
-                        "n": "\n",
-                        "t": "\t",
-                        "r": "\r",
-                        '"': '"',
-                        "\\": "\\",
-                        "/": "/",
-                        "b": "\b",
-                        "f": "\f",
-                        "u": "",
-                    }.get(ch, ch)
-                )
+                if ch == "u":
+                    # Start \uXXXX — need 4 hex digits (may span chunks)
+                    self._unicode_remaining = 4
+                    self._unicode_hex = ""
+                else:
+                    out.append(
+                        {
+                            "n": "\n",
+                            "t": "\t",
+                            "r": "\r",
+                            '"': '"',
+                            "\\": "\\",
+                            "/": "/",
+                            "b": "\b",
+                            "f": "\f",
+                        }.get(ch, ch)
+                    )
                 self._escape = False
             elif ch == "\\":
                 self._escape = True
@@ -466,11 +585,11 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
     forwarded directly.  The final 'done' event carries the full enriched
     response (confidence breakdown, verification, sources, follow-ups).
     """
-    workflow = request.app.state.workflow
     conversation_service = request.app.state.conversation_service
     user = await get_current_user(request)
     user_id = user.user_id
 
+    workflow = _resolve_workflow_factory(body, request, user)
     if workflow is None:
 
         async def _no_workflow() -> AsyncGenerator[str, None]:
@@ -488,43 +607,44 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         return StreamingResponse(_no_workflow(), media_type="text/event-stream")
 
     sanitised_message = validate_message(body.message)
-    cosmos_available = True
+    db_available = conversation_service is not None
     conversation_id = body.conversation_id or str(uuid.uuid4())
 
-    try:
-        if body.conversation_id:
-            conversation = await conversation_service.get_conversation(
-                body.conversation_id, user_id
-            )
-            if conversation is None:
+    if db_available:
+        try:
+            if body.conversation_id:
+                conversation = await conversation_service.get_conversation(
+                    body.conversation_id, user_id
+                )
+                if conversation is None:
 
-                async def _not_found() -> AsyncGenerator[str, None]:
-                    yield _sse(
-                        {
-                            "type": "error",
-                            "error": {
-                                "code": "API_ERROR",
-                                "message": "Conversation not found",
-                                "retryable": False,
-                            },
-                        }
-                    )
+                    async def _not_found() -> AsyncGenerator[str, None]:
+                        yield _sse(
+                            {
+                                "type": "error",
+                                "error": {
+                                    "code": "API_ERROR",
+                                    "message": "Conversation not found",
+                                    "retryable": False,
+                                },
+                            }
+                        )
 
-                return StreamingResponse(_not_found(), media_type="text/event-stream")
-            conversation_id = body.conversation_id
-        else:
-            conversation = await conversation_service.create_conversation(user_id)
-            conversation_id = conversation.id
-    except (ConnectionError, TimeoutError, OSError):
-        logger.warning("Cosmos DB unavailable — continuing without persistence", exc_info=True)
-        cosmos_available = False
+                    return StreamingResponse(_not_found(), media_type="text/event-stream")
+                conversation_id = body.conversation_id
+            else:
+                conversation = await conversation_service.create_conversation(user_id)
+                conversation_id = conversation.id
+        except (ConnectionError, TimeoutError, OSError):
+            logger.warning("Database unavailable — continuing without persistence", exc_info=True)
+            db_available = False
 
     # Set attachment context for multimodal LLM calls (must be set before generate())
     _set_attachments_context(body)
     attachment_records = _build_attachment_records(body)
 
     async def generate() -> AsyncGenerator[str, None]:
-        nonlocal cosmos_available
+        nonlocal db_available
 
         current_conversation_id.set(conversation_id)
         current_user_id.set(user_id)
@@ -538,7 +658,11 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         yield _sse({"type": "phase", "phase": "thinking"})
 
         wf: Workflow = workflow()  # type: ignore[operator]
-        routed_agent = "coordinator"
+        # When directly targeting an agent (no coordinator), initialise
+        # routed_agent to the target so output is processed as domain-agent
+        # JSON rather than buffered as coordinator plain text.
+        is_direct = bool(body.agent and body.agent != "coordinator")
+        routed_agent = body.agent if is_direct else "coordinator"
         structured_result: AgentResponseModel | None = None
         response_text = ""
         coordinator_buf = ""  # buffer coordinator tokens; discard on handoff
@@ -673,6 +797,27 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                         structured_result = sanitize_agent_response(data.value)
                         continue
 
+                    # Detect tool-use output (function_call content blocks).
+                    # When a domain agent calls a tool (e.g. search_knowledge_base),
+                    # the first LLM turn may have emitted preliminary text that
+                    # the extractor already processed.  Reset the extractor and
+                    # tell the client to discard streamed deltas so the real
+                    # answer (from the post-tool-use turn) streams cleanly.
+                    if (
+                        routed_agent != "coordinator"
+                        and hasattr(data, "contents")
+                        and any(getattr(c, "type", None) == "function_call" for c in data.contents)
+                    ):
+                        if extractor._in_value or extractor._done:
+                            logger.debug(
+                                "Tool use detected after partial stream — "
+                                "resetting extractor and emitting delta_reset"
+                            )
+                            extractor = _MessageFieldExtractor()
+                            domain_agent_json_buf = ""
+                            yield _sse({"type": "delta_reset"})
+                        yield _sse({"type": "phase", "phase": "retrieving"})
+
                     # Streaming token chunk (AgentResponseUpdate).
                     chunk = data.text if hasattr(data, "text") else None
                     if not chunk:
@@ -691,6 +836,9 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                         domain_agent_json_buf += chunk
                         extracted = extractor.feed(chunk)
                         if extracted:
+                            if not generating_announced:
+                                yield _sse({"type": "phase", "phase": "generating"})
+                                generating_announced = True
                             yield _sse({"type": "delta", "content": extracted})
 
                 elif event.type == "failed":
@@ -783,6 +931,20 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                 ],
             )
 
+        # Quality gate — catch search-skipped or results-ignored failures
+        gate_result = run_quality_gate(agent_response, rag_collector, routed_agent)
+        agent_response = gate_result.remediated
+        if gate_result.check != "passed":
+            logger.warning(
+                "quality_gate_triggered check=%s agent=%s "
+                "rag_count=%d source_count=%d confidence=%s",
+                gate_result.check,
+                routed_agent,
+                len(rag_collector),
+                len(agent_response.sources),
+                agent_response.confidence,
+            )
+
         # Inject recovered sources if the agent didn't populate them.
         if not agent_response.sources and rag_collector:
             rag_text = "\n\n".join(rag_collector)
@@ -791,13 +953,21 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                 agent_response = agent_response.model_copy(update={"sources": recovered_sources})
                 logger.info("injected %d recovered sources into response", len(recovered_sources))
 
+        # Proofread — fix generation artefacts (dropped chars, broken markdown)
+        agent_response = await _proofread_response(agent_response)
+
+        # Strip source URLs for agents backed by internal document stores
+        # (e.g. SharePoint) to avoid exposing infrastructure details.
+        if routed_agent == "hr_agent":
+            agent_response = strip_source_urls(agent_response)
+
         enriched = enrich_agent_response(agent_response)
 
         # Persist BEFORE final SSE events so messages are saved even if the
         # client disconnects after receiving [DONE] (which would stop the
         # generator and skip any code after the last yield).
         # Messages are saved sequentially (user then assistant) to guarantee
-        # correct ordering in the Cosmos array — parallel patches could
+        # correct ordering — parallel inserts could
         # interleave and produce assistant-before-user order.
         user_message = MessageRecord(
             id=str(uuid.uuid4()),
@@ -814,7 +984,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             response=agent_response,
             timestamp=datetime.now(UTC),
         )
-        if cosmos_available:
+        if db_available:
             ok = await _persist_message(
                 conversation_service, conversation_id, user_id, user_message
             )
@@ -827,17 +997,17 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                     conversation_service, conversation_id, user_id, routed_agent
                 )
             else:
-                cosmos_available = False
+                db_available = False
 
         yield _sse({"type": "phase", "phase": "verifying"})
         yield _sse({"type": "confidence", "breakdown": enriched.confidence.model_dump()})
         yield _sse({"type": "verification", "result": enriched.verification.model_dump()})
 
-        if not cosmos_available:
+        if not db_available:
             yield _sse(
                 {
                     "type": "warning",
-                    "code": "cosmos-unavailable",
+                    "code": "db-unavailable",
                     "message": (
                         "Your message may not have been saved."
                         " Conversation history could be incomplete."
@@ -866,6 +1036,8 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 async def get_conversation(conversation_id: str, request: Request) -> dict[str, object]:
     """Load a conversation by ID."""
     conversation_service = request.app.state.conversation_service
+    if conversation_service is None:
+        raise HTTPException(status_code=503, detail="Conversation history not available")
     user = await get_current_user(request)
     user_id = user.user_id
 
@@ -881,6 +1053,8 @@ async def get_conversation(conversation_id: str, request: Request) -> dict[str, 
 async def delete_conversation(conversation_id: str, request: Request) -> dict[str, object]:
     """Delete a conversation."""
     conversation_service = request.app.state.conversation_service
+    if conversation_service is None:
+        raise HTTPException(status_code=503, detail="Conversation history not available")
     user = await get_current_user(request)
     user_id = user.user_id
 
@@ -900,6 +1074,8 @@ async def submit_feedback(
 ) -> dict[str, object]:
     """Submit feedback for a message in a conversation."""
     conversation_service = request.app.state.conversation_service
+    if conversation_service is None:
+        raise HTTPException(status_code=503, detail="Conversation history not available")
     user = await get_current_user(request)
     user_id = user.user_id
 

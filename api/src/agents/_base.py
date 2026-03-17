@@ -1,8 +1,26 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import StrEnum
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+
+@lru_cache
+def get_organisation_name() -> str:
+    """Return the configured organisation name, falling back to a generic label."""
+    from src.config.settings import get_settings
+
+    return get_settings().organisation_name or "the organisation"
+
+
+class AuthLevel(StrEnum):
+    """Minimum authentication level required to access an agent."""
+
+    PUBLIC = "public"
+    MICROSOFT_ACCOUNT = "microsoft"
+    ORGANISATIONAL = "organisational"
 
 
 @dataclass
@@ -60,6 +78,26 @@ class DomainAgent(ABC):
     def tools(self) -> list[Callable[..., Any]]:
         """Domain-specific tools beyond shared RAG. Override to add tools."""
         return []
+
+    @property
+    def model_id(self) -> str | None:
+        """Model override for this agent. None = use settings default."""
+        return None
+
+    @property
+    def auth_level(self) -> AuthLevel:
+        """Minimum auth level required to access this agent."""
+        return AuthLevel.PUBLIC
+
+    @property
+    def display_name(self) -> str:
+        """Human-friendly name for the frontend."""
+        return self.name.replace("_", " ").title()
+
+    @property
+    def image(self) -> str:
+        """Icon identifier for the frontend."""
+        return "default"
 
     @property
     def default_ui_hint(self) -> str:

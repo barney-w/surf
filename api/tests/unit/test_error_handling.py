@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -28,22 +28,30 @@ def _make_app(
     add_error_handlers(app)
     app.include_router(chat_router)
 
-    settings = Settings()
     if conversation_service is None:
-        conversation_service = ConversationService(settings)
-        conversation_service._container = AsyncMock()  # pyright: ignore[reportPrivateUsage]
-        conversation_service._client = AsyncMock()  # pyright: ignore[reportPrivateUsage]
+        conversation_service = _make_conversation_service()
     app.state.workflow = workflow
     app.state.conversation_service = conversation_service
     return app
 
 
 def _make_conversation_service() -> ConversationService:
-    """Create a ConversationService with mocked Cosmos internals."""
+    """Create a ConversationService with mocked PostgreSQL pool."""
     settings = Settings()
     svc = ConversationService(settings)
-    svc._container = AsyncMock()  # pyright: ignore[reportPrivateUsage]
-    svc._client = AsyncMock()  # pyright: ignore[reportPrivateUsage]
+    mock_conn = AsyncMock()
+    # asyncpg's conn.transaction() is a regular method returning an async
+    # context manager — use MagicMock so it isn't wrapped as a coroutine.
+    txn_cm = MagicMock()
+    txn_cm.__aenter__ = AsyncMock(return_value=None)
+    txn_cm.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.transaction = MagicMock(return_value=txn_cm)
+    mock_pool = MagicMock()
+    cm = AsyncMock()
+    cm.__aenter__.return_value = mock_conn
+    cm.__aexit__.return_value = None
+    mock_pool.acquire.return_value = cm
+    svc._pool = mock_pool
     return svc
 
 
@@ -116,13 +124,13 @@ class TestRAGFailure:
 
 
 # ---------------------------------------------------------------------------
-# Test 3 — Cosmos unavailability doesn't crash the chat endpoint
+# Test 3 — Database unavailability doesn't crash the chat endpoint
 # ---------------------------------------------------------------------------
 
 
-class TestCosmosUnavailability:
-    def test_cosmos_down_still_returns_response(self):
-        """When Cosmos throws, the chat endpoint should still work
+class TestDatabaseUnavailability:
+    def test_database_down_still_returns_response(self):
+        """When the database throws, the chat endpoint should still work
         and return a warning header instead of crashing."""
 
         async def _ok_run(
@@ -136,19 +144,12 @@ class TestCosmosUnavailability:
         workflow_obj = AsyncMock()
         workflow_obj.run = _ok_run
 
-        # Make every Cosmos call explode
+        # Make every database call explode
         svc = _make_conversation_service()
-        cosmos_err = Exception("Cosmos down")
-        container = svc._container  # pyright: ignore[reportPrivateUsage]
-        container.create_item = AsyncMock(  # type: ignore[union-attr]
-            side_effect=cosmos_err,
-        )
-        container.read_item = AsyncMock(  # type: ignore[union-attr]
-            side_effect=cosmos_err,
-        )
-        container.patch_item = AsyncMock(  # type: ignore[union-attr]
-            side_effect=cosmos_err,
-        )
+        db_err = Exception("Database down")
+        svc.create_conversation = AsyncMock(side_effect=db_err)
+        svc.get_conversation = AsyncMock(side_effect=db_err)
+        svc.add_message = AsyncMock(side_effect=db_err)
 
         app = _make_app(workflow=lambda: workflow_obj, conversation_service=svc)
         client = TestClient(app)
@@ -156,7 +157,7 @@ class TestCosmosUnavailability:
         resp = client.post("/api/v1/chat", json={"message": "Hi there"})
 
         assert resp.status_code == 200
-        assert resp.headers.get("X-Surf-Warning") == "cosmos-unavailable"
+        assert resp.headers.get("X-Surf-Warning") == "db-unavailable"
         body = resp.json()
         # The AI response should still be present
         assert "All good" in body["response"]["message"]

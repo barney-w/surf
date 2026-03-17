@@ -1,11 +1,10 @@
 const clientId = process.env.EXPO_PUBLIC_ENTRA_CLIENT_ID ?? "";
-const tenantId = process.env.EXPO_PUBLIC_ENTRA_TENANT_ID ?? "";
 
-// Entra ID OAuth 2.0 endpoints
+// Entra ID OAuth 2.0 endpoints (multi-tenant)
 export const discovery = {
-  authorizationEndpoint: `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize`,
-  tokenEndpoint: `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-  revocationEndpoint: `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/logout`,
+  authorizationEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+  tokenEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+  revocationEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/logout",
 };
 
 export { clientId };
