@@ -48,32 +48,6 @@ ensure_venv()
 
 import iterm2  # noqa: E402
 import asyncio  # noqa: E402
-import shutil  # noqa: E402
-import time  # noqa: E402
-
-
-def ensure_docker():
-    """Start Docker Desktop if it isn't running, and wait until the daemon is ready."""
-    if subprocess.run(["docker", "info"], capture_output=True).returncode == 0:
-        return
-
-    print("Starting Docker Desktop …")
-    subprocess.Popen(
-        ["open", "-a", "Docker"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    for _ in range(60):
-        time.sleep(2)
-        if subprocess.run(["docker", "info"], capture_output=True).returncode == 0:
-            print("Docker is ready.")
-            return
-
-    print("WARNING: Docker did not become ready within 120 s — continuing anyway.")
-
-
-ensure_docker()
 
 PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 
@@ -177,10 +151,6 @@ async def main(connection):
     await set_badge(sk_right, "Claude 7", small=True)
     await sk_right.async_send_text(f"cd {SURF_KIT_ROOT}\n")
     await sk_right.async_send_text(CCV_CMD)
-
-    # Open GitHub Desktop and VS Code
-    await s_right.async_send_text("open -a 'GitHub Desktop'\n")
-    await s_right.async_send_text("code .\n")
 
     # Focus services tab
     await tab1.async_select()

@@ -78,6 +78,7 @@ $Outputs = $OutputsJson | ConvertFrom-Json
 
 $OpenAiEndpoint  = $AiOutputs.openAiEndpoint.value
 $SearchEndpoint  = $Outputs.searchEndpoint.value
+$CosmosEndpoint  = $Outputs.cosmosEndpoint.value
 $StorageEndpoint = $Outputs.storageBlobEndpoint.value
 
 Write-Host 'Writing .env file...'
@@ -95,6 +96,11 @@ AZURE_OPENAI_API_VERSION=2024-12-01-preview
 # Azure AI Search
 AZURE_SEARCH_ENDPOINT=$SearchEndpoint
 AZURE_SEARCH_INDEX_NAME=surf-index
+
+# Cosmos DB
+COSMOS_ENDPOINT=$CosmosEndpoint
+COSMOS_DATABASE_NAME=surf
+COSMOS_CONTAINER_NAME=conversations
 
 # Azure Storage
 AZURE_STORAGE_ACCOUNT_URL=$StorageEndpoint

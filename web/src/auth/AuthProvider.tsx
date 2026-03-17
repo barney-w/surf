@@ -5,7 +5,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import {
@@ -29,30 +28,24 @@ interface UserProfile {
 
 interface AuthState {
   isLoading: boolean;
-  isGuestLoading: boolean;
   isAuthenticated: boolean;
-  isGuest: boolean;
   account: AccountInfo | null;
   profile: UserProfile | null;
   photoUrl: string | null;
   error: string | null;
   login: () => void;
-  loginAsGuest: () => void;
   logout: () => void;
   getApiToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthState>({
   isLoading: true,
-  isGuestLoading: false,
   isAuthenticated: false,
-  isGuest: false,
   account: null,
   profile: null,
   photoUrl: null,
   error: null,
   login: () => {},
-  loginAsGuest: () => {},
   logout: () => {},
   getApiToken: async () => null,
 });
@@ -79,81 +72,12 @@ function getMsalInstance(): Promise<PublicClientApplication | null> {
   return msalReady;
 }
 
-let tokenPromise: Promise<string | null> | null = null;
-
-/** Decode the `exp` claim from a JWT without verifying the signature. */
-function getTokenExpiry(token: string): number | null {
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return typeof payload.exp === "number" ? payload.exp : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Returns true if the token expires within the given buffer (seconds). */
-function isTokenExpiringSoon(token: string, bufferSeconds = 120): boolean {
-  const exp = getTokenExpiry(token);
-  if (exp === null) return true;
-  return Date.now() / 1000 >= exp - bufferSeconds;
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(!!clientId);
-  const [isGuestLoading, setIsGuestLoading] = useState(false);
-  const [isGuest, setIsGuest] = useState(false);
-  const [guestToken, setGuestToken] = useState<string | null>(null);
-  const guestTokenRef = useRef<string | null>(null);
-  const guestRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const guestRefreshPromise = useRef<Promise<string | null> | null>(null);
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const photoUrlRef = useRef<string | null>(null);
-
-  // Clean up timers on unmount
-  useEffect(() => {
-    return () => {
-      if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
-      if (guestRefreshTimer.current) clearTimeout(guestRefreshTimer.current);
-    };
-  }, []);
-
-  // Silently fetch a new guest token from the API and schedule the next refresh.
-  const refreshGuestToken = useCallback(async (): Promise<string | null> => {
-    const apiBase = getApiBase();
-    try {
-      const resp = await fetch(`${apiBase}/auth/guest`, { method: "POST" });
-      if (!resp.ok) return null;
-      const data = await resp.json() as { token: string; guest_id: string; expires_in: number };
-      guestTokenRef.current = data.token;
-      setGuestToken(data.token);
-      // Schedule next refresh inline to avoid circular dependency
-      if (guestRefreshTimer.current) clearTimeout(guestRefreshTimer.current);
-      const exp = getTokenExpiry(data.token);
-      if (exp !== null) {
-        const msUntilRefresh = Math.max((exp - 120) * 1000 - Date.now(), 10_000);
-        guestRefreshTimer.current = setTimeout(() => {
-          void refreshGuestToken();
-        }, msUntilRefresh);
-      }
-      return data.token;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  // Schedule a silent refresh ~2 minutes before the token expires.
-  const scheduleGuestRefresh = useCallback((token: string) => {
-    if (guestRefreshTimer.current) clearTimeout(guestRefreshTimer.current);
-    const exp = getTokenExpiry(token);
-    if (exp === null) return;
-    const msUntilRefresh = Math.max((exp - 120) * 1000 - Date.now(), 10_000);
-    guestRefreshTimer.current = setTimeout(() => {
-      void refreshGuestToken();
-    }, msUntilRefresh);
-  }, [refreshGuestToken]);
 
   // Fetch user profile from our backend
   const fetchProfile = useCallback(async (token: string) => {
@@ -173,10 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         if (photoResp.ok) {
           const blob = await photoResp.blob();
-          if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
-          const url = URL.createObjectURL(blob);
-          photoUrlRef.current = url;
-          setPhotoUrl(url);
+          setPhotoUrl(URL.createObjectURL(blob));
         }
       } catch {
         // No photo — fine
@@ -217,16 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             void persistMsalCache();
             void fetchProfile(tokenResult.accessToken);
           } catch {
-            // API scope token failed (e.g. personal accounts) — try login scopes
-            try {
-              const fallback = await msal.acquireTokenSilent({
-                scopes: loginScopes,
-                account: redirectResult.account,
-              });
-              void fetchProfile(fallback.accessToken);
-            } catch {
-              // Both failed — profile won't load but user is still authenticated
-            }
+            // Silent token acquisition failed — profile won't load
           }
           return;
         }
@@ -247,50 +159,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             void persistMsalCache();
             void fetchProfile(tokenResult.accessToken);
           } catch {
-            // API scope failed — try login scopes as fallback
-            try {
-              const fallback = await msal.acquireTokenSilent({
-                scopes: loginScopes,
-                account: accounts[0],
-              });
-              void fetchProfile(fallback.accessToken);
-            } catch {
-              // Both failed — user is still "authenticated" from cache
-            }
+            // Token refresh failed — user is still "authenticated" from cache
           }
           return;
         }
 
-        // No cached account — show sign-in page immediately
-        setIsLoading(false);
-
-        // Try ssoSilent in the background (hidden iframe checks for existing
-        // Entra session). If it succeeds, the user is silently signed in
-        // without ever needing to click. Skip in Tauri — iframe-based SSO
-        // is blocked by WebView policies.
+        // Try ssoSilent (hidden iframe checks for existing Entra session)
+        // Skip in Tauri — iframe-based SSO is blocked by WebView policies
         if (!isTauri()) {
-          void (async () => {
-            try {
-              const ssoResult = await msal.ssoSilent({
-                scopes: loginScopes,
+          try {
+            const ssoResult = await msal.ssoSilent({
+              scopes: loginScopes,
+            });
+            if (ssoResult.account) {
+              setAccount(ssoResult.account);
+              msal.setActiveAccount(ssoResult.account);
+              setIsLoading(false);
+
+              const tokenResult = await msal.acquireTokenSilent({
+                scopes: [apiScope],
+                account: ssoResult.account,
               });
-              if (ssoResult.account) {
-                setAccount(ssoResult.account);
-                msal.setActiveAccount(ssoResult.account);
-                const tokenResult = await msal.acquireTokenSilent({
-                  scopes: [apiScope],
-                  account: ssoResult.account,
-                });
-                void fetchProfile(tokenResult.accessToken);
-              }
-            } catch {
-              // ssoSilent failed — user already has the sign-in page
+              void fetchProfile(tokenResult.accessToken);
+              return;
             }
-          })();
+          } catch {
+            // ssoSilent failed — user will see the "Sign in" button
+          }
         }
+
+        // No silent auth possible
+        setIsLoading(false);
       } catch (err) {
-        console.error('Auth error:', err);
-        setError('Login failed. Please try again.');
+        setError(err instanceof Error ? err.message : "Authentication failed");
         setIsLoading(false);
       }
     };
@@ -314,159 +215,77 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           void fetchProfile(tokenResult.accessToken);
         }
       } catch (err) {
-        console.error('Auth error:', err);
-        setError('Login failed. Please try again.');
+        setError(err instanceof Error ? err.message : 'Login failed');
       }
     } else {
       void msalInstance.loginRedirect({ scopes: loginScopes });
     }
   }, [fetchProfile]);
 
-  const loginAsGuest = useCallback(async () => {
-    if (isGuestLoading) return;
-    setIsGuestLoading(true);
-    setError(null);
-    const apiBase = getApiBase();
-    try {
-      const resp = await fetch(`${apiBase}/auth/guest`, { method: "POST" });
-      if (!resp.ok) {
-        setError("Something went wrong. Please try again.");
-        return;
-      }
-      const data = await resp.json() as { token: string; guest_id: string };
-      guestTokenRef.current = data.token;
-      setGuestToken(data.token);
-      setIsGuest(true);
-      scheduleGuestRefresh(data.token);
-    } catch {
-      setError("Couldn't reach the server. Please check your connection and try again.");
-    } finally {
-      setIsGuestLoading(false);
-    }
-  }, [isGuestLoading, scheduleGuestRefresh]);
-
   const logout = useCallback(async () => {
-    const clearLocalState = () => {
-      setAccount(null);
-      setProfile(null);
-      setIsGuest(false);
-      guestTokenRef.current = null;
-      setGuestToken(null);
-      if (guestRefreshTimer.current) {
-        clearTimeout(guestRefreshTimer.current);
-        guestRefreshTimer.current = null;
-      }
-      if (photoUrl) URL.revokeObjectURL(photoUrl);
-      setPhotoUrl(null);
-      void clearMsalCache();
-    };
-
-    if (!msalInstance) {
-      // Guest-only session — just clear local state
-      clearLocalState();
-      return;
-    }
-
+    if (!msalInstance) return;
+    setAccount(null);
+    setProfile(null);
+    if (photoUrl) URL.revokeObjectURL(photoUrl);
+    setPhotoUrl(null);
+    void clearMsalCache();
     if (needsPopupAuth()) {
-      // Popup: sign out of Microsoft first, then clear local state
       await msalInstance.logoutPopup();
-      clearLocalState();
     } else {
-      // Redirect: browser will navigate away, so clear cache but don't
-      // reset React state — that causes a flash of the sign-in page
-      // before the redirect fires. State resets on page reload.
-      void clearMsalCache();
       void msalInstance.logoutRedirect();
     }
   }, [photoUrl]);
 
   const getApiToken = useCallback(async (): Promise<string | null> => {
-    if (guestTokenRef.current) {
-      // If the guest token is still fresh, return it directly
-      if (!isTokenExpiringSoon(guestTokenRef.current)) {
-        return guestTokenRef.current;
-      }
-      // Token is expired or expiring soon — refresh it.
-      // Deduplicate concurrent refresh calls.
-      if (!guestRefreshPromise.current) {
-        guestRefreshPromise.current = refreshGuestToken().finally(() => {
-          guestRefreshPromise.current = null;
-        });
-      }
-      const refreshed = await guestRefreshPromise.current;
-      return refreshed ?? guestTokenRef.current;
-    }
     if (!msalInstance || !account) return null;
-    if (tokenPromise) return tokenPromise;
-    tokenPromise = (async () => {
-      try {
-        const result = await msalInstance.acquireTokenSilent({
-          scopes: [apiScope],
-          account,
-        });
-        void persistMsalCache();
-        return result.accessToken;
-      } catch (err) {
-        // API scope failed — try login scopes as fallback (personal accounts)
-        try {
-          const fallback = await msalInstance.acquireTokenSilent({
-            scopes: loginScopes,
-            account,
-          });
-          return fallback.accessToken;
-        } catch {
-          // Login scopes also failed
-        }
-
-        // In Tauri, any token failure should attempt popup re-auth before
-        // giving up — silent renewal often fails due to WebView limitations.
-        if (err instanceof InteractionRequiredAuthError || needsPopupAuth()) {
-          if (needsPopupAuth()) {
-            try {
-              const result = await msalInstance.acquireTokenPopup({ scopes: [apiScope] });
-              void persistMsalCache();
-              return result.accessToken;
-            } catch {
-              // Popup was closed or failed — clear auth state so UI shows login
-              setAccount(null);
-              setProfile(null);
-              void clearMsalCache();
-              return null;
-            }
+    try {
+      const result = await msalInstance.acquireTokenSilent({
+        scopes: [apiScope],
+        account,
+      });
+      void persistMsalCache();
+      return result.accessToken;
+    } catch (err) {
+      // In Tauri, any token failure should attempt popup re-auth before
+      // giving up — silent renewal often fails due to WebView limitations.
+      if (err instanceof InteractionRequiredAuthError || needsPopupAuth()) {
+        if (needsPopupAuth()) {
+          try {
+            const result = await msalInstance.acquireTokenPopup({ scopes: [apiScope] });
+            void persistMsalCache();
+            return result.accessToken;
+          } catch {
+            // Popup was closed or failed — clear auth state so UI shows login
+            setAccount(null);
+            setProfile(null);
+            void clearMsalCache();
+            return null;
           }
-          void msalInstance.acquireTokenRedirect({ scopes: [apiScope] });
-          return null;
         }
-        // Non-interaction error (e.g. network failure, cache cleared) —
-        // clear auth state so the user can re-login
-        setAccount(null);
-        setProfile(null);
+        void msalInstance.acquireTokenRedirect({ scopes: [apiScope] });
         return null;
       }
-    })();
-    try {
-      return await tokenPromise;
-    } finally {
-      tokenPromise = null;
+      // Non-interaction error (e.g. network failure, cache cleared) —
+      // clear auth state so the user can re-login
+      setAccount(null);
+      setProfile(null);
+      return null;
     }
-  }, [account, guestToken, refreshGuestToken]);
+  }, [account]);
 
   const value = useMemo<AuthState>(
     () => ({
       isLoading,
-      isGuestLoading,
       isAuthenticated: !!account,
-      isGuest,
       account,
       profile,
       photoUrl,
       error,
       login,
-      loginAsGuest,
       logout,
       getApiToken,
     }),
-    [isLoading, isGuestLoading, account, isGuest, profile, photoUrl, error, login, loginAsGuest, logout, getApiToken],
+    [isLoading, account, profile, photoUrl, error, login, logout, getApiToken],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

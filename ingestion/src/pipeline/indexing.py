@@ -31,10 +31,7 @@ INDEX_FIELDS = [
     SimpleField(name="domain", type=SearchFieldDataType.String, filterable=True, facetable=True),
     SimpleField(name="document_type", type=SearchFieldDataType.String, filterable=True),
     SimpleField(
-        name="content_source",
-        type=SearchFieldDataType.String,
-        filterable=True,
-        facetable=True,
+        name="content_source", type=SearchFieldDataType.String, filterable=True, facetable=True,
     ),
     SearchableField(name="section_path", type=SearchFieldDataType.String),
     SearchableField(name="title", type=SearchFieldDataType.String),

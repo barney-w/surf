@@ -19,7 +19,9 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         content_length = request.headers.get("content-length")
         if content_length:
-            limit = MAX_UPLOAD_BODY_BYTES if request.url.path in _UPLOAD_PATHS else MAX_BODY_BYTES
+            limit = (
+                MAX_UPLOAD_BODY_BYTES if request.url.path in _UPLOAD_PATHS else MAX_BODY_BYTES
+            )
             if int(content_length) > limit:
                 logger.warning(
                     "Request body too large: %s bytes (max %d) for %s",

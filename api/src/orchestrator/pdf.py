@@ -12,9 +12,6 @@ import pymupdf
 
 logger = logging.getLogger(__name__)
 
-# Maximum raw (decoded) PDF size to prevent decompression bombs.
-MAX_PDF_BYTES = 100 * 1024 * 1024  # 100 MB
-
 # PDFs at or below this page count are sent directly to the LLM as document blocks.
 MAX_DIRECT_PAGES = 30
 
@@ -25,8 +22,6 @@ _MAX_TEXT_CHARS = 80_000 * 4  # ~80K tokens
 def count_pages(data_b64: str) -> int:
     """Return the number of pages in a base64-encoded PDF."""
     raw = base64.b64decode(data_b64, validate=True)
-    if len(raw) > MAX_PDF_BYTES:
-        raise ValueError(f"PDF exceeds {MAX_PDF_BYTES // (1024 * 1024)}MB size limit")
     with pymupdf.open(stream=raw, filetype="pdf") as doc:
         return len(doc)
 
@@ -38,8 +33,6 @@ def extract_text(data_b64: str, *, max_chars: int = _MAX_TEXT_CHARS) -> str:
     A truncation notice is appended if the text was cut short.
     """
     raw = base64.b64decode(data_b64, validate=True)
-    if len(raw) > MAX_PDF_BYTES:
-        raise ValueError(f"PDF exceeds {MAX_PDF_BYTES // (1024 * 1024)}MB size limit")
     parts: list[str] = []
     total = 0
     truncated = False

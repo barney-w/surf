@@ -1,7 +1,4 @@
-FROM nginx:alpine@sha256:f46cb72c7df02710e693e863a983ac42f6a9579058a59a35f1ae36c9958e4ce0
-
-# Patch base image packages to resolve CVEs
-RUN apk update && apk upgrade --no-cache
+FROM nginx:1.27-alpine
 
 # Copy nginx config as template (envsubst replaces API_INTERNAL_FQDN at startup)
 COPY nginx.conf /etc/nginx/nginx.conf.template

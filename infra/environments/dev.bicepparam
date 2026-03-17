@@ -30,7 +30,7 @@ param logAnalyticsPublicNetworkAccess = 'Enabled'
 param acrSku = 'Basic'
 param containerAppsCpu = '0.25'
 param containerAppsMemory = '0.5Gi'
-param apiMinReplicas = 1
+param apiMinReplicas = 0
 param apiMaxReplicas = 1
 param ingestionMinReplicas = 0
 param ingestionMaxReplicas = 1
@@ -43,18 +43,12 @@ param acrPublicNetworkAccess = 'Enabled'
 
 // Auth — enabled (SSO via Entra ID)
 param authEnabled = true
-param entraTenantId = '<your-entra-tenant-id>'
-param entraClientId = '<your-entra-client-id>'
-
-// Guest auth — anonymous access tokens (stored in Key Vault)
-param guestTokenSecretInKv = true
+param entraTenantId = '799af2de-e455-499c-babe-71a7929442ca'
+param entraClientId = '08ff7e73-6758-4c55-bdb1-cc4f124de8ac'
 
 // CORS — allow localhost origins
-param apiCorsOrigins = '["http://localhost:3000","https://tauri.localhost","https://chatwith.surf"]'
+param apiCorsOrigins = '["http://localhost:3000","https://tauri.localhost"]'
 
-// Web container — always on (temporary, revert after 2026-03-20)
-param webMinReplicas = 1
+// Web container — scale to zero in dev
+param webMinReplicas = 0
 param webMaxReplicas = 1
-
-// Custom domain
-param webCustomDomain = 'chatwith.surf'
