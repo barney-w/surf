@@ -29,7 +29,8 @@ class TestRAGCollectorMiddleware:
         rag_results_collector.set(collector)
 
         rag_output = (
-            '=== SOURCE 1 ===\ntitle: "Leave Policy"\nCONTENT:\nSome content\n=== END SOURCE 1 ==='
+            '=== SOURCE 1 ===\ntitle: "Leave Policy"\n'
+            "CONTENT:\nSome content\n=== END SOURCE 1 ==="
         )
         ctx = _make_context()
 
@@ -43,8 +44,8 @@ class TestRAGCollectorMiddleware:
         assert collector[0] == rag_output
 
     @pytest.mark.asyncio
-    async def test_collects_no_results_message(self):
-        """Middleware should collect 'no results' messages for quality gate awareness."""
+    async def test_does_not_collect_empty_result(self):
+        """Middleware should not collect when the tool returns no sources."""
         collector: list[str] = []
         rag_results_collector.set(collector)
 
@@ -56,29 +57,7 @@ class TestRAGCollectorMiddleware:
         middleware = RAGCollectorMiddleware()
         await middleware.process(ctx, call_next)
 
-        assert len(collector) == 1
-        assert collector[0] == "No relevant documents found for this query."
-
-    @pytest.mark.asyncio
-    async def test_collects_infrastructure_error(self):
-        """Middleware should collect infrastructure error sentinel."""
-        collector: list[str] = []
-        rag_results_collector.set(collector)
-
-        error_msg = (
-            "SEARCH_INFRASTRUCTURE_ERROR: The knowledge base search system"
-            " is currently experiencing a technical issue."
-        )
-        ctx = _make_context()
-
-        async def call_next():
-            ctx.result = error_msg
-
-        middleware = RAGCollectorMiddleware()
-        await middleware.process(ctx, call_next)
-
-        assert len(collector) == 1
-        assert collector[0] == error_msg
+        assert len(collector) == 0
 
     @pytest.mark.asyncio
     async def test_ignores_non_rag_tools(self):

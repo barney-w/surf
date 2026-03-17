@@ -39,7 +39,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3020,
+    port: 3000,
     strictPort: true,
     host: host || false,
     open: !process.env.TAURI_ENV_PLATFORM,
@@ -53,5 +53,5 @@ export default defineConfig({
     // only resolves at runtime inside the Tauri WebView.
     exclude: ['@tauri-apps/plugin-store'],
   },
-  build: { outDir: 'dist', sourcemap: process.env.NODE_ENV !== 'production', target: 'es2022' },
+  build: { outDir: 'dist', sourcemap: true, target: 'es2022' },
 })

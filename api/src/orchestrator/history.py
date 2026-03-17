@@ -20,7 +20,7 @@ current_user_id: ContextVar[str | None] = ContextVar("current_user_id", default=
 
 # Per-request cache for conversation history messages.  Set to a fresh dict
 # before each workflow run so that the second before_run call (domain agent)
-# reuses the database result from the first call (coordinator).
+# reuses the Cosmos result from the first call (coordinator).
 _history_cache: ContextVar[dict[str, list[Message]]] = ContextVar("_history_cache")
 
 
@@ -30,7 +30,7 @@ def reset_history_cache() -> None:
 
 
 class ConversationHistoryProvider(BaseContextProvider):
-    """Loads conversation history from the database and injects as prior messages."""
+    """Loads conversation history from Cosmos DB and injects as prior messages."""
 
     def __init__(self, conversation_service: ConversationService, max_messages: int = 20):
         super().__init__(source_id="conversation_history")

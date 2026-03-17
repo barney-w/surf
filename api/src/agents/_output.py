@@ -202,20 +202,6 @@ def sanitize_agent_response(model: AgentResponseModel) -> AgentResponseModel:
     return normalise_structured_data(result)
 
 
-def strip_source_urls(model: AgentResponseModel) -> AgentResponseModel:
-    """Remove URLs from all sources in the response.
-
-    Used for agents whose backing documents are on internal systems where
-    the raw URL would expose infrastructure details (e.g. SharePoint tenant
-    names).  The source title, section, and snippet are preserved so the UI
-    still renders useful source cards — just without clickable links.
-    """
-    if not model.sources:
-        return model
-    stripped = [s.model_copy(update={"url": None}) for s in model.sources]
-    return model.model_copy(update={"sources": stripped})
-
-
 def extract_json_object(text: str) -> str | None:
     """Find the first top-level JSON object in text using bracket matching.
 

@@ -69,12 +69,5 @@ Thumbs.db
 Desktop.ini
 .claude
 .local/
-# Eval reports
-api/tests/eval/reports/*.json
-
-# Playwright
-web/test-results/
-web/playwright-report/
-
 # Source documents
 *.pdf

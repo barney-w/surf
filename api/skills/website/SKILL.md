@@ -61,29 +61,3 @@ replicate in text:
 - **Complex tables or tools** — calculators, comparison tools, search filters
 
 Provide the page URL and a brief description of what they will find there.
-
-## Search Query Formulation
-
-When searching the knowledge base, follow these rules:
-
-### Extract Core Topics
-Strip conversational framing and extract the public information topic:
-- "What goes in my green bin?" → search: "green bin waste recycling"
-- "When is the library open?" → search: "library opening hours"
-- "Are there any programs for teenagers?" → search: "youth programs teenagers"
-
-### Use Multiple Searches
-If your first search returns few results, try:
-1. Broader terms: "waste" instead of "green organics bin collection schedule"
-2. Related terms: "recycling" if "waste collection" returns nothing
-3. Service area: "libraries" if searching for specific branch details
-
-### Common Website Topics
-These topics are frequently asked about — use these terms in searches:
-- Waste and Recycling / Bin Collection
-- Libraries / Opening Hours
-- Parks / Facilities / Bookings
-- Events / What's On
-- Development Applications / Planning
-- Rates / Payments
-- Community Programs / Youth / Seniors

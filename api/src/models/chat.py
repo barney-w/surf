@@ -5,18 +5,16 @@ from pydantic import BaseModel, Field, field_validator
 
 from .agent import AgentResponseModel, RoutingMetadata
 
-ALLOWED_ATTACHMENT_TYPES = frozenset(
-    {
-        "image/png",
-        "image/jpeg",
-        "image/gif",
-        "image/webp",
-        "application/pdf",
-    }
-)
+ALLOWED_ATTACHMENT_TYPES = frozenset({
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+})
 
-MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024  # 5 MB per file
-MAX_ATTACHMENTS = 3
+MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10 MB per file
+MAX_ATTACHMENTS = 5
 
 
 class Attachment(BaseModel):
@@ -48,7 +46,6 @@ class Attachment(BaseModel):
 class ChatRequest(BaseModel):
     conversation_id: str | None = None
     message: str = Field(min_length=1, max_length=10000)
-    agent: str | None = None  # Optional direct agent targeting
     attachments: list[Attachment] = Field(default_factory=list)  # pyright: ignore[reportUnknownVariableType]
 
     @field_validator("attachments")

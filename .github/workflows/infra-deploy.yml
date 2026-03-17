@@ -50,12 +50,7 @@ jobs:
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --template-file infra/main.bicep \
             --parameters infra/environments/dev.bicepparam \
-            --parameters entraTenantId="${{ vars.ENTRA_TENANT_ID }}" \
-            --parameters entraClientId="${{ vars.ENTRA_CLIENT_ID }}" \
-            --parameters anthropicApiKey="${{ secrets.ANTHROPIC_API_KEY }}" \
-            --parameters guestTokenSecret="${{ secrets.GUEST_TOKEN_SECRET }}" \
-            --parameters organisationName="${{ vars.ORGANISATION_NAME }}" \
-            --parameters aiSearchEndpointOverride="${{ vars.AI_SEARCH_ENDPOINT_OVERRIDE }}"
+            --parameters anthropicApiKey="${{ secrets.ANTHROPIC_API_KEY }}"
 
   # ---------------------------------------------------------------------------
   # Deploy infrastructure
@@ -86,10 +81,5 @@ jobs:
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --template-file infra/main.bicep \
             --parameters infra/environments/dev.bicepparam \
-            --parameters entraTenantId="${{ vars.ENTRA_TENANT_ID }}" \
-            --parameters entraClientId="${{ vars.ENTRA_CLIENT_ID }}" \
             --parameters anthropicApiKey="${{ secrets.ANTHROPIC_API_KEY }}" \
-            --parameters guestTokenSecret="${{ secrets.GUEST_TOKEN_SECRET }}" \
-            --parameters organisationName="${{ vars.ORGANISATION_NAME }}" \
-            --parameters aiSearchEndpointOverride="${{ vars.AI_SEARCH_ENDPOINT_OVERRIDE }}" \
             --name "surf-dev-$(date +%Y%m%d%H%M%S)"
