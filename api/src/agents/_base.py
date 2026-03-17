@@ -103,6 +103,11 @@ class DomainAgent(ABC):
     def default_ui_hint(self) -> str:
         return "text"
 
+    @property
+    def strip_source_urls(self) -> bool:
+        """Whether to strip URLs from sources in responses."""
+        return False
+
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         if not getattr(cls, "__abstract__", False) and cls is not DomainAgent:

@@ -81,24 +81,79 @@ function getMsalInstance(): Promise<PublicClientApplication | null> {
 
 let tokenPromise: Promise<string | null> | null = null;
 
+/** Decode the `exp` claim from a JWT without verifying the signature. */
+function getTokenExpiry(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return typeof payload.exp === "number" ? payload.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Returns true if the token expires within the given buffer (seconds). */
+function isTokenExpiringSoon(token: string, bufferSeconds = 120): boolean {
+  const exp = getTokenExpiry(token);
+  if (exp === null) return true;
+  return Date.now() / 1000 >= exp - bufferSeconds;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(!!clientId);
   const [isGuestLoading, setIsGuestLoading] = useState(false);
   const [isGuest, setIsGuest] = useState(false);
   const [guestToken, setGuestToken] = useState<string | null>(null);
   const guestTokenRef = useRef<string | null>(null);
+  const guestRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const guestRefreshPromise = useRef<Promise<string | null> | null>(null);
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const photoUrlRef = useRef<string | null>(null);
 
-  // Revoke blob URL on unmount
+  // Clean up timers on unmount
   useEffect(() => {
     return () => {
       if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
+      if (guestRefreshTimer.current) clearTimeout(guestRefreshTimer.current);
     };
   }, []);
+
+  // Silently fetch a new guest token from the API and schedule the next refresh.
+  const refreshGuestToken = useCallback(async (): Promise<string | null> => {
+    const apiBase = getApiBase();
+    try {
+      const resp = await fetch(`${apiBase}/auth/guest`, { method: "POST" });
+      if (!resp.ok) return null;
+      const data = await resp.json() as { token: string; guest_id: string; expires_in: number };
+      guestTokenRef.current = data.token;
+      setGuestToken(data.token);
+      // Schedule next refresh inline to avoid circular dependency
+      if (guestRefreshTimer.current) clearTimeout(guestRefreshTimer.current);
+      const exp = getTokenExpiry(data.token);
+      if (exp !== null) {
+        const msUntilRefresh = Math.max((exp - 120) * 1000 - Date.now(), 10_000);
+        guestRefreshTimer.current = setTimeout(() => {
+          void refreshGuestToken();
+        }, msUntilRefresh);
+      }
+      return data.token;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Schedule a silent refresh ~2 minutes before the token expires.
+  const scheduleGuestRefresh = useCallback((token: string) => {
+    if (guestRefreshTimer.current) clearTimeout(guestRefreshTimer.current);
+    const exp = getTokenExpiry(token);
+    if (exp === null) return;
+    const msUntilRefresh = Math.max((exp - 120) * 1000 - Date.now(), 10_000);
+    guestRefreshTimer.current = setTimeout(() => {
+      void refreshGuestToken();
+    }, msUntilRefresh);
+  }, [refreshGuestToken]);
 
   // Fetch user profile from our backend
   const fetchProfile = useCallback(async (token: string) => {
@@ -282,12 +337,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       guestTokenRef.current = data.token;
       setGuestToken(data.token);
       setIsGuest(true);
+      scheduleGuestRefresh(data.token);
     } catch {
       setError("Couldn't reach the server. Please check your connection and try again.");
     } finally {
       setIsGuestLoading(false);
     }
-  }, [isGuestLoading]);
+  }, [isGuestLoading, scheduleGuestRefresh]);
 
   const logout = useCallback(async () => {
     const clearLocalState = () => {
@@ -296,6 +352,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsGuest(false);
       guestTokenRef.current = null;
       setGuestToken(null);
+      if (guestRefreshTimer.current) {
+        clearTimeout(guestRefreshTimer.current);
+        guestRefreshTimer.current = null;
+      }
       if (photoUrl) URL.revokeObjectURL(photoUrl);
       setPhotoUrl(null);
       void clearMsalCache();
@@ -321,7 +381,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [photoUrl]);
 
   const getApiToken = useCallback(async (): Promise<string | null> => {
-    if (guestTokenRef.current) return guestTokenRef.current;
+    if (guestTokenRef.current) {
+      // If the guest token is still fresh, return it directly
+      if (!isTokenExpiringSoon(guestTokenRef.current)) {
+        return guestTokenRef.current;
+      }
+      // Token is expired or expiring soon — refresh it.
+      // Deduplicate concurrent refresh calls.
+      if (!guestRefreshPromise.current) {
+        guestRefreshPromise.current = refreshGuestToken().finally(() => {
+          guestRefreshPromise.current = null;
+        });
+      }
+      const refreshed = await guestRefreshPromise.current;
+      return refreshed ?? guestTokenRef.current;
+    }
     if (!msalInstance || !account) return null;
     if (tokenPromise) return tokenPromise;
     tokenPromise = (async () => {
@@ -375,7 +449,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       tokenPromise = null;
     }
-  }, [account, guestToken]);
+  }, [account, guestToken, refreshGuestToken]);
 
   const value = useMemo<AuthState>(
     () => ({

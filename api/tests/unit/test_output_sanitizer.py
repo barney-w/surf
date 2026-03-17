@@ -356,9 +356,9 @@ class TestExtractSources:
 
 class TestMessageFieldExtractorGuard:
     def _extractor(self) -> Any:
-        from src.routes.chat import _MessageFieldExtractor  # pyright: ignore[reportPrivateUsage]
+        from src.services.streaming import MessageFieldExtractor
 
-        return _MessageFieldExtractor()
+        return MessageFieldExtractor()
 
     def _feed_all(self, extractor: Any, tokens: list[str]) -> str:
         return "".join(extractor.feed(t) for t in tokens)

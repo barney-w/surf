@@ -44,11 +44,12 @@ def _build_rs256_token(  # pyright: ignore[reportUnusedFunction]
     return jwt.encode(payload, private_key, algorithm="RS256")
 
 
-def _mock_settings() -> MagicMock:
+def _mock_settings(*, guest_token_secret: str | None = None) -> MagicMock:
     settings = MagicMock()
     settings.auth_enabled = True
     settings.entra_tenant_id = TENANT_ID
     settings.entra_client_id = CLIENT_ID
+    settings.guest_token_secret = guest_token_secret
     return settings
 
 
@@ -119,10 +120,11 @@ class TestJwtBypass:
     async def test_wrong_algorithm_returns_401(self):
         """A token signed with HS256 (symmetric) instead of RS256 must be rejected.
 
-        The auth middleware only accepts RS256. An HS256 token should fail
-        because jwt.decode() enforces algorithms=["RS256"].
+        When guest tokens are disabled (no guest_token_secret), an HS256 token
+        falls through to the Entra path and is rejected because the JWKS client
+        cannot resolve a signing key for it.
         """
-        secret = "supersecret"
+        secret = "supersecret-long-enough-for-hs256"
         now = datetime.datetime.now(datetime.UTC)
         hs256_payload = {
             "oid": "attacker",
@@ -137,8 +139,9 @@ class TestJwtBypass:
 
         request = _mock_request(authorization=f"Bearer {hs256_token}")
 
-        # The JWKS client mock returns a public key — jwt.decode will then reject
-        # the HS256 token because the algorithm doesn't match RS256.
+        # Guest tokens are disabled (guest_token_secret=None), so the HS256
+        # token skips guest routing and reaches the Entra path, where the JWKS
+        # client rejects it.
         private_key = _make_rsa_key()
         mock_signing_key = MagicMock()
         mock_signing_key.key = private_key.public_key()
@@ -148,6 +151,43 @@ class TestJwtBypass:
         with (
             patch("src.middleware.auth.get_settings", return_value=_mock_settings()),
             patch("src.middleware.auth._get_jwks_client", return_value=mock_jwks),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await get_current_user(request)
+
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_hs256_wrong_secret_returns_401_when_guest_enabled(self):
+        """An HS256 token signed with the wrong secret must be rejected.
+
+        When guest tokens are enabled, an HS256 token is routed to guest
+        validation but must still be rejected if the signature is invalid.
+        """
+        now = datetime.datetime.now(datetime.UTC)
+        hs256_payload = {
+            "oid": "attacker",
+            "name": "Bad Actor",
+            "preferred_username": "bad@evil.com",
+            "iss": "surf-api",
+            "sub": "attacker-id",
+            "iat": now - datetime.timedelta(minutes=1),
+            "exp": now + datetime.timedelta(hours=1),
+        }
+        # Sign with a different secret than the server knows
+        hs256_token = jwt.encode(
+            hs256_payload, "wrong-secret-long-enough-for-hs256", algorithm="HS256"
+        )
+
+        request = _mock_request(authorization=f"Bearer {hs256_token}")
+
+        with (
+            patch(
+                "src.middleware.auth.get_settings",
+                return_value=_mock_settings(
+                    guest_token_secret="correct-secret-long-enough-for-hs256"
+                ),
+            ),
             pytest.raises(HTTPException) as exc_info,
         ):
             await get_current_user(request)

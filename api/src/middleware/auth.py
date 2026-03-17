@@ -54,10 +54,10 @@ def _validate_guest_token(token: str, secret: str) -> UserContext:
 
 
 def _is_guest_token(token: str) -> bool:
-    """Check if a JWT is a guest token by inspecting the unverified header/payload."""
+    """Check if a JWT is a guest token by inspecting the unverified header."""
     try:
-        unverified = jwt.decode(token, options={"verify_signature": False})
-        return unverified.get("iss") == GUEST_ISSUER
+        header = jwt.get_unverified_header(token)
+        return header.get("alg") == "HS256"
     except jwt.InvalidTokenError:
         return False
 

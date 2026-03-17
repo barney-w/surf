@@ -64,6 +64,7 @@ class Settings(BaseSettings):
 
     # Conversation
     max_history_messages: int = 20
+    conversation_ttl_days: int = 90
 
     model_config = {"env_prefix": "", "env_file": ("../.env", ".env"), "extra": "ignore"}
 

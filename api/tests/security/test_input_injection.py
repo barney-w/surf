@@ -26,12 +26,11 @@ class TestInputInjection:
         result = validate_message(message)
         assert result == message
 
-    def test_xss_script_tag_blocked(self):
-        """XSS script tags are blocked as a prompt-injection vector."""
+    def test_xss_script_tag_passes_through(self):
+        """Script tags are not blocked — prompt-injection regex was removed."""
         message = "<script>alert(1)</script>"
-        with pytest.raises(HTTPException) as exc_info:
-            validate_message(message)
-        assert exc_info.value.status_code == 422
+        result = validate_message(message)
+        assert result == message
 
     def test_extremely_long_message_rejected(self):
         """Messages longer than MAX_MESSAGE_LENGTH (10,000 chars) raise HTTP 422."""

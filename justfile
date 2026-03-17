@@ -16,6 +16,21 @@ db-shell:
 db-reset:
     docker compose exec postgres psql -U surf -d surf -c "TRUNCATE conversations, messages, feedback CASCADE;"
 
+# Clean up expired conversations (default: 90 days)
+db-cleanup:
+    cd api && uv run python -c "\
+    import asyncio;\
+    from src.config.settings import get_settings;\
+    from src.services.conversation import ConversationService;\
+    async def main():\
+        s = get_settings();\
+        svc = ConversationService(s);\
+        await svc.initialize();\
+        count = await svc.cleanup_expired_conversations(s.conversation_ttl_days);\
+        print(f'Deleted {count} expired conversations');\
+        await svc.close();\
+    asyncio.run(main())"
+
 # Full teardown (remove volume — clean slate)
 db-destroy:
     docker compose down -v
@@ -24,8 +39,12 @@ db-destroy:
 admin:
     open http://localhost:8090/api/v1/admin/
 
+# Run database migrations
+db-migrate:
+    cd api && uv run alembic upgrade head
+
 # Run API in development mode with hot reload
-dev: db db-wait
+dev: db db-wait db-migrate
     cd api && uv run uvicorn src.main:app --reload --port 8090
 
 # Launch the DevUI (interactive chat UI for testing agents)
@@ -35,6 +54,12 @@ devui:
 # Run API tests (unit, security, integration — excludes eval)
 test:
     cd api && uv run pytest
+
+# Run integration tests against real Postgres (requires Docker)
+test-integration:
+    docker compose -f docker-compose.test.yml up -d --wait
+    cd api && TEST_DATABASE_URL=postgresql://surf:test@localhost:5433/surf_test uv run pytest tests/integration/ -v --no-cov -m "integration or not integration" || true
+    docker compose -f docker-compose.test.yml down
 
 # Run E2E chat evaluation suite (requires running API on :8090)
 eval:
@@ -47,6 +72,14 @@ smoke:
 # Run ingestion tests
 test-ingestion:
     cd ingestion && uv run pytest
+
+# Run all tests (unit, security, integration)
+test-all: test test-integration
+
+# Run security audits (pip-audit)
+audit:
+    cd api && uv run pip-audit
+    cd ingestion && uv run pip-audit
 
 # Lint all Python code
 lint:
@@ -270,14 +303,12 @@ infra-deploy:
     az deployment group validate \
       --resource-group "$RG" \
       --template-file infra/main.bicep \
-      --parameters infra/environments/dev.bicepparam \
-      --parameters anthropicApiKey="${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY in .env}"
+      --parameters infra/environments/dev.bicepparam
     echo "Deploying infrastructure..."
     az deployment group create \
       --resource-group "$RG" \
       --template-file infra/main.bicep \
       --parameters infra/environments/dev.bicepparam \
-      --parameters anthropicApiKey="${ANTHROPIC_API_KEY}" \
       --name "surf-dev-$(date +%Y%m%d%H%M%S)"
     echo "Infrastructure deployed."
 

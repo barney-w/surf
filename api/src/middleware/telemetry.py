@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
-from opentelemetry import trace
+from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import (  # pyright: ignore[reportMissingTypeStubs]
     FastAPIInstrumentor,
@@ -23,6 +24,50 @@ logger = logging.getLogger(__name__)
 
 # Module-level tracer for creating custom spans
 tracer = trace.get_tracer("surf-api")
+
+# ---------------------------------------------------------------------------
+# Metrics instruments
+# ---------------------------------------------------------------------------
+meter = metrics.get_meter("surf-api")
+
+# Histograms
+chat_duration = meter.create_histogram(
+    "surf.chat.duration_seconds",
+    description="Chat request duration",
+    unit="s",
+)
+
+rag_search_duration = meter.create_histogram(
+    "surf.rag.search_duration_seconds",
+    description="RAG search duration",
+    unit="s",
+)
+
+rag_results_count = meter.create_histogram(
+    "surf.rag.results_count",
+    description="Number of RAG results returned",
+)
+
+# Counters
+chat_tokens = meter.create_counter(
+    "surf.chat.tokens_total",
+    description="Token count by agent and direction",
+)
+
+quality_gate_triggers = meter.create_counter(
+    "surf.quality_gate.triggers_total",
+    description="Quality gate trigger count",
+)
+
+rate_limit_hits = meter.create_counter(
+    "surf.rate_limit.hits_total",
+    description="Rate limit hit count",
+)
+
+workflow_timeouts = meter.create_counter(
+    "surf.workflow.timeout_total",
+    description="Workflow timeout count",
+)
 
 
 def setup_telemetry(app: FastAPI, settings: Settings) -> None:
@@ -61,6 +106,18 @@ def setup_telemetry(app: FastAPI, settings: Settings) -> None:
         "OpenTelemetry initialised (service.name=surf-api, env=%s)",
         settings.environment,
     )
+
+    if not os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
+        if settings.environment == "dev":
+            logger.info(
+                "OTEL_EXPORTER_OTLP_ENDPOINT not set"
+                " — telemetry data will be discarded (expected in dev)"
+            )
+        else:
+            logger.error(
+                "OTEL_EXPORTER_OTLP_ENDPOINT not set"
+                " — telemetry data will be discarded"
+            )
 
 
 def span_conversation_persistence(conversation_id: str) -> trace.Span:

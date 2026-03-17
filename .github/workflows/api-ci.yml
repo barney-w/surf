@@ -198,3 +198,21 @@ jobs:
           containerAppName: ca-${{ env.SERVICE_NAME }}-surf-dev
           resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}
           imageToDeploy: ${{ needs.build-push.outputs.image-tag }}
+
+      - name: Smoke test
+        run: |
+          FQDN=$(az containerapp show \
+            --name ca-${{ env.SERVICE_NAME }}-surf-dev \
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          for i in $(seq 1 30); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/api/v1/health")
+            if [ "$status" = "200" ]; then
+              echo "API is healthy"
+              exit 0
+            fi
+            echo "Attempt $i: status=$status, retrying..."
+            sleep 5
+          done
+          echo "ERROR: Health check failed after 150 seconds"
+          exit 1

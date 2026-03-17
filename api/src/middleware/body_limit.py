@@ -17,23 +17,31 @@ _UPLOAD_PATHS = frozenset({"/api/v1/chat", "/api/v1/chat/stream"})
 
 class BodySizeLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        limit = MAX_UPLOAD_BODY_BYTES if request.url.path in _UPLOAD_PATHS else MAX_BODY_BYTES
+
+        # Check Content-Length header first (fast reject)
         content_length = request.headers.get("content-length")
-        if content_length:
-            limit = MAX_UPLOAD_BODY_BYTES if request.url.path in _UPLOAD_PATHS else MAX_BODY_BYTES
-            if int(content_length) > limit:
+        if content_length and int(content_length) > limit:
+            logger.warning(
+                "Request body too large: %s bytes (max %d) for %s",
+                content_length, limit, request.url.path,
+            )
+            return JSONResponse(
+                status_code=413,
+                content={"error": {"type": "payload_too_large", "message": f"Request body exceeds {limit} byte limit"}},
+            )
+
+        # Also enforce on actual body (Content-Length can be omitted or spoofed)
+        if request.method in ("POST", "PUT", "PATCH"):
+            body = await request.body()
+            if len(body) > limit:
                 logger.warning(
-                    "Request body too large: %s bytes (max %d) for %s",
-                    content_length,
-                    limit,
-                    request.url.path,
+                    "Request body too large: %d bytes (max %d) for %s",
+                    len(body), limit, request.url.path,
                 )
                 return JSONResponse(
                     status_code=413,
-                    content={
-                        "error": {
-                            "type": "payload_too_large",
-                            "message": f"Request body exceeds {limit} byte limit",
-                        }
-                    },
+                    content={"error": {"type": "payload_too_large", "message": f"Request body exceeds {limit} byte limit"}},
                 )
+
         return await call_next(request)
