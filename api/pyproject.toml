@@ -30,6 +30,7 @@ dependencies = [
     "slowapi>=0.1.9",
     "msal>=1.28",
     "pymupdf>=1.25",
+    "anthropic",
 ]
 
 [tool.uv]
@@ -45,7 +46,6 @@ dev = [
     "pre-commit",
     "locust",
     "pip-audit",
-    "anthropic",
 ]
 
 [tool.ruff]
@@ -57,9 +57,11 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/security", "tests/integration"]
-addopts = "--cov=src --cov-report=term-missing:skip-covered --cov-fail-under=60"
+addopts = "--cov=src --cov-report=term-missing:skip-covered --cov-fail-under=78"
+markers = [
+    "integration: tests that require a real database connection",
+]
 
 [tool.pyright]
 typeCheckingMode = "basic"
 pythonVersion = "3.12"
-exclude = ["tests/"]

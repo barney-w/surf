@@ -1,6 +1,6 @@
 import logging
-import os
 import time
+import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
@@ -44,21 +44,32 @@ logger = logging.getLogger(__name__)
 # framework ships a fix.
 # ---------------------------------------------------------------------------
 try:
-    from agent_framework.anthropic import AnthropicClient as _AnthropicClient
+    from importlib.metadata import version as _pkg_version
 
-    _orig_prepare = _AnthropicClient._prepare_options  # pyright: ignore[reportPrivateUsage]
+    from packaging.version import Version
 
-    def _patched_prepare(  # type: ignore[override]
-        self: object,
-        messages: object,
-        options: object,
-        **kwargs: object,
-    ) -> dict[str, object]:
-        result = _orig_prepare(self, messages, options, **kwargs)  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType,reportArgumentType]
-        result.pop("store", None)  # pyright: ignore[reportUnknownMemberType]
-        return result  # pyright: ignore[reportReturnType]
+    _fw_version = Version(_pkg_version("agent-framework"))
+    # Only patch pre-release versions (e.g. 1.0.0rc2) where the fix hasn't shipped.
+    # Remove this entire block once agent-framework >= 1.1.0 is the minimum.
+    if _fw_version.is_prerelease or _fw_version < Version("1.1.0"):
+        from agent_framework.anthropic import AnthropicClient as _AnthropicClient
 
-    _AnthropicClient._prepare_options = _patched_prepare  # type: ignore[assignment]  # pyright: ignore[reportPrivateUsage]
+        _orig_prepare = _AnthropicClient._prepare_options  # pyright: ignore[reportPrivateUsage]
+
+        def _patched_prepare(  # type: ignore[override]
+            self: object,
+            messages: object,
+            options: object,
+            **kwargs: object,
+        ) -> dict[str, object]:
+            result = _orig_prepare(self, messages, options, **kwargs)  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType,reportArgumentType]
+            result.pop("store", None)  # pyright: ignore[reportUnknownMemberType]
+            return result  # pyright: ignore[reportReturnType]
+
+        _AnthropicClient._prepare_options = _patched_prepare  # type: ignore[assignment]  # pyright: ignore[reportPrivateUsage]
+        logger.info(
+            "Applied AnthropicClient monkey-patch for agent-framework %s", _fw_version
+        )
 except (ImportError, ModuleNotFoundError, AttributeError):
     pass  # framework not installed or API changed — nothing to patch
 
@@ -196,30 +207,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.postgres_enabled:
         conversation_service = ConversationService(settings)
         await conversation_service.initialize()
-
-        # Run Alembic migrations
-        import subprocess
-        from pathlib import Path
-
-        api_dir = Path(__file__).resolve().parent.parent  # api/src -> api/
-        ssl_param = "?ssl=require" if settings.postgres_ssl else ""
-        db_url = (
-            f"postgresql+asyncpg://{settings.postgres_user}:{settings.postgres_password}"
-            f"@{settings.postgres_host}:{settings.postgres_port}"
-            f"/{settings.postgres_database}{ssl_param}"
-        )
-        migration_env = {**os.environ, "DATABASE_URL": db_url}
-        result = subprocess.run(
-            ["alembic", "upgrade", "head"],
-            cwd=str(api_dir),
-            capture_output=True,
-            text=True,
-            env=migration_env,
-        )
-        if result.returncode != 0:
-            logger.error("Alembic migration failed: %s", result.stderr)
-            raise SystemExit(1)
-        logger.info("Database migrations applied")
         logger.info("ConversationService initialised")
     else:
         logger.warning("PostgreSQL disabled — conversation history will not persist")
@@ -296,7 +283,8 @@ app.add_middleware(
     allow_origins=settings.api_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Conversation-ID", "X-User-ID"],
+    allow_headers=["Content-Type", "Authorization", "X-Conversation-ID", "X-User-ID", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
 )
 app.add_middleware(BodySizeLimitMiddleware)
 
@@ -334,8 +322,12 @@ async def request_logging_middleware(
     """Log every request/response with timing and contextual IDs."""
     start = time.perf_counter()
 
+    # Generate or adopt an incoming request ID for end-to-end correlation
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+
     # Extract contextual IDs from headers (set by the frontend / gateway)
     set_logging_context(
+        request_id=request_id,
         conversation_id=request.headers.get("x-conversation-id"),
         user_id=request.headers.get("x-user-id"),
         action=f"{request.method} {request.url.path}",
@@ -344,6 +336,8 @@ async def request_logging_middleware(
     logger.info("Request started: %s %s", request.method, request.url.path)
 
     response: Response = await call_next(request)
+
+    response.headers["X-Request-ID"] = request_id
 
     duration_ms = (time.perf_counter() - start) * 1000
     logger.info(

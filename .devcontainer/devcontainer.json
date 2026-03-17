@@ -15,7 +15,7 @@
         "charliermarsh.ruff"
       ],
       "settings": {
-        "python.defaultInterpreterPath": "/workspaces/surf-lab/api/.venv/bin/python",
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/api/.venv/bin/python",
         "[python]": {
           "editor.defaultFormatter": "charliermarsh.ruff",
           "editor.formatOnSave": true

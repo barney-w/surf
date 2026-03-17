@@ -41,6 +41,7 @@ class ConversationService:
             ssl=ssl_ctx,
             min_size=1,
             max_size=5,
+            command_timeout=10,
         )
         logger.info("PostgreSQL connection pool created")
 
@@ -167,7 +168,7 @@ class ConversationService:
             async with conn.transaction():
                 # Verify ownership
                 owner = await conn.fetchval(
-                    "SELECT user_id FROM conversations WHERE id = $1",
+                    "SELECT user_id FROM conversations WHERE id = $1 FOR UPDATE",
                     conv_uuid,
                 )
                 if owner != user_id:
@@ -239,6 +240,21 @@ class ConversationService:
                 user_id,
             )
             return result == "DELETE 1"
+
+    async def cleanup_expired_conversations(self, ttl_days: int) -> int:
+        """Delete conversations older than ttl_days. Returns count deleted."""
+        async with self._get_pool().acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM conversations WHERE updated_at < now() - make_interval(days => $1)",
+                ttl_days,
+            )
+            # result is like "DELETE 42"
+            count = int(result.split()[-1])
+            if count > 0:
+                logger.info(
+                    "Cleaned up %d expired conversations (ttl=%d days)", count, ttl_days
+                )
+            return count
 
     async def add_feedback(
         self, conversation_id: str, user_id: str, feedback: FeedbackRecord

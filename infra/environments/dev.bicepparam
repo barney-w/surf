@@ -30,7 +30,7 @@ param logAnalyticsPublicNetworkAccess = 'Enabled'
 param acrSku = 'Basic'
 param containerAppsCpu = '0.25'
 param containerAppsMemory = '0.5Gi'
-param apiMinReplicas = 0
+param apiMinReplicas = 1
 param apiMaxReplicas = 1
 param ingestionMinReplicas = 0
 param ingestionMaxReplicas = 1
@@ -55,6 +55,3 @@ param apiCorsOrigins = '["http://localhost:3000","https://tauri.localhost","http
 // Web container — always on (temporary, revert after 2026-03-20)
 param webMinReplicas = 1
 param webMaxReplicas = 1
-
-// Custom domain
-param webCustomDomain = 'chatwith.surf'

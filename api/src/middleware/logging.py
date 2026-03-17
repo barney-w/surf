@@ -18,10 +18,12 @@ ctx_message_id: ContextVar[str | None] = ContextVar("ctx_message_id", default=No
 ctx_user_id: ContextVar[str | None] = ContextVar("ctx_user_id", default=None)
 ctx_agent_name: ContextVar[str | None] = ContextVar("ctx_agent_name", default=None)
 ctx_action: ContextVar[str | None] = ContextVar("ctx_action", default=None)
+ctx_request_id: ContextVar[str | None] = ContextVar("ctx_request_id", default=None)
 
 
 def set_logging_context(
     *,
+    request_id: str | None = None,
     conversation_id: str | None = None,
     message_id: str | None = None,
     user_id: str | None = None,
@@ -29,6 +31,8 @@ def set_logging_context(
     action: str | None = None,
 ) -> None:
     """Convenience helper to set multiple context variables at once."""
+    if request_id is not None:
+        ctx_request_id.set(request_id)
     if conversation_id is not None:
         ctx_conversation_id.set(conversation_id)
     if message_id is not None:
@@ -43,6 +47,7 @@ def set_logging_context(
 
 def reset_logging_context() -> None:
     """Reset all context variables (typically at the end of a request)."""
+    ctx_request_id.set(None)
     ctx_conversation_id.set(None)
     ctx_message_id.set(None)
     ctx_user_id.set(None)
@@ -68,6 +73,7 @@ class JSONFormatter(logging.Formatter):
 
         # Inject request-scoped context when available
         context_fields: dict[str, str | None] = {
+            "request_id": ctx_request_id.get(),
             "conversation_id": ctx_conversation_id.get(),
             "message_id": ctx_message_id.get(),
             "user_id": ctx_user_id.get(),

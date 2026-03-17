@@ -47,3 +47,7 @@ class HRAgent(DomainAgent):
     @property
     def default_ui_hint(self) -> str:
         return "text"
+
+    @property
+    def strip_source_urls(self) -> bool:
+        return True
