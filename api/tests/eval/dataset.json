@@ -1,0 +1,142 @@
+[
+  {
+    "id": "coord_greeting",
+    "query": "Hello, good morning!",
+    "category": "coordinator",
+    "expected_agent": "coordinator",
+    "notes": "Should greet and offer help"
+  },
+  {
+    "id": "coord_farewell",
+    "query": "Thanks for your help, bye!",
+    "category": "coordinator",
+    "expected_agent": "coordinator",
+    "notes": "Graceful farewell"
+  },
+  {
+    "id": "coord_ambiguous",
+    "query": "I need help with my account",
+    "category": "coordinator",
+    "expected_agent": "coordinator",
+    "notes": "Should ask clarifying question (IT login vs HR payroll?)"
+  },
+  {
+    "id": "hr_annual_leave",
+    "query": "How much annual leave am I entitled to?",
+    "category": "hr",
+    "expected_agent": "hr_agent",
+    "notes": "Leave policy/agreement"
+  },
+  {
+    "id": "hr_code_of_conduct",
+    "query": "What does the code of conduct say about conflicts of interest?",
+    "category": "hr",
+    "expected_agent": "hr_agent",
+    "notes": "CoC document"
+  },
+  {
+    "id": "hr_procurement",
+    "query": "What is the procurement policy for purchases over $100,000?",
+    "category": "hr",
+    "expected_agent": "hr_agent",
+    "notes": "Procurement thresholds"
+  },
+  {
+    "id": "hr_whs",
+    "query": "What are my obligations under the workplace health and safety policy?",
+    "category": "hr",
+    "expected_agent": "hr_agent",
+    "notes": "WHS docs"
+  },
+  {
+    "id": "hr_benefits",
+    "query": "What employee benefits are available for part-time staff?",
+    "category": "hr",
+    "expected_agent": "hr_agent",
+    "notes": "Benefits/entitlements"
+  },
+  {
+    "id": "hr_overtime",
+    "query": "What does the enterprise agreement say about overtime rates?",
+    "category": "hr",
+    "expected_agent": "hr_agent",
+    "notes": "EA clauses"
+  },
+  {
+    "id": "it_vpn",
+    "query": "My VPN keeps disconnecting when I work from home",
+    "category": "it",
+    "expected_agent": "it_agent",
+    "notes": "Troubleshooting steps"
+  },
+  {
+    "id": "it_password",
+    "query": "How do I reset my password?",
+    "category": "it",
+    "expected_agent": "it_agent",
+    "notes": "Step-by-step process"
+  },
+  {
+    "id": "it_software",
+    "query": "I need to install Adobe Acrobat on my work laptop",
+    "category": "it",
+    "expected_agent": "it_agent",
+    "notes": "Software request process"
+  },
+  {
+    "id": "it_security",
+    "query": "What does the information security policy say about USB drives?",
+    "category": "it",
+    "expected_agent": "it_agent",
+    "notes": "Security policy"
+  },
+  {
+    "id": "it_outlook",
+    "query": "My Outlook keeps crashing, what should I do?",
+    "category": "it",
+    "expected_agent": "it_agent",
+    "notes": "Troubleshooting guidance"
+  },
+  {
+    "id": "web_recycling",
+    "query": "What goes in my green bin?",
+    "category": "website",
+    "expected_agent": "website_agent",
+    "notes": "Waste/recycling info"
+  },
+  {
+    "id": "web_programs",
+    "query": "What programs are available for young people?",
+    "category": "website",
+    "expected_agent": "website_agent",
+    "notes": "Community programs"
+  },
+  {
+    "id": "web_library",
+    "query": "Where is the nearest library?",
+    "category": "website",
+    "expected_agent": "website_agent",
+    "notes": "Facility/location info"
+  },
+  {
+    "id": "web_permit",
+    "query": "How do I apply for a development permit?",
+    "category": "website",
+    "expected_agent": "website_agent",
+    "notes": "Public services info"
+  },
+  {
+    "id": "edge_cross_domain",
+    "query": "I need a laptop set up for a new starter joining Monday",
+    "category": "edge",
+    "expected_agent": "it_agent",
+    "notes": "Should route to IT (equipment is primary need)"
+  },
+  {
+    "id": "edge_out_of_scope",
+    "query": "What's the weather like today?",
+    "category": "edge",
+    "expected_agent": "coordinator",
+    "notes": "Should politely decline, redirect to workplace topics"
+  }
+]

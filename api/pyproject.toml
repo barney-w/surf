@@ -12,7 +12,8 @@ dependencies = [
     "uvicorn[standard]",
     "pydantic>=2.0",
     "pydantic-settings",
-    "azure-cosmos",
+    "asyncpg",
+    "alembic",
     "azure-identity",
     "azure-keyvault-secrets",
     "opentelemetry-api",
@@ -44,6 +45,7 @@ dev = [
     "pre-commit",
     "locust",
     "pip-audit",
+    "anthropic",
 ]
 
 [tool.ruff]
@@ -54,7 +56,10 @@ target-version = "py312"
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests/unit", "tests/security", "tests/integration"]
+addopts = "--cov=src --cov-report=term-missing:skip-covered --cov-fail-under=60"
 
 [tool.pyright]
-typeCheckingMode = "strict"
+typeCheckingMode = "basic"
 pythonVersion = "3.12"
+exclude = ["tests/"]

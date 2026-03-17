@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.search.documents.aio import SearchClient
 from azure.search.documents.models import VectorizedQuery, VectorQuery
 
@@ -13,6 +13,15 @@ logger = logging.getLogger(__name__)
 
 class SearchIndexNotFoundError(RuntimeError):
     """Raised when the configured Azure AI Search index does not exist."""
+
+
+class SearchInfrastructureError(RuntimeError):
+    """Raised when search fails due to infrastructure issues (auth, network, etc).
+
+    Distinguished from SearchIndexNotFoundError (misconfiguration) and empty
+    results (legitimate). Callers should NOT swallow this — it indicates the
+    RAG pipeline is non-functional.
+    """
 
 
 @dataclass
@@ -159,7 +168,7 @@ async def search_index(
             first = failures[0]
             if isinstance(first, ResourceNotFoundError):
                 raise SearchIndexNotFoundError(str(first)) from first
-            raise first
+            raise SearchInfrastructureError(str(first)) from first
 
         merged.sort(key=lambda r: r.score, reverse=True)
         return merged[:top_k]
@@ -170,10 +179,27 @@ async def search_index(
             query[:200] if query else query,
         )
         raise SearchIndexNotFoundError(str(exc)) from exc
-    except Exception:
-        logger.warning(
-            "Search query failed for query=%r — returning empty results",
-            query[:200] if query else query,
+    except HttpResponseError as exc:
+        logger.error(
+            "Search infrastructure error",
+            extra={
+                "event": "rag_infrastructure_error",
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+                "query": query[:200] if query else query,
+            },
             exc_info=True,
         )
-        return []
+        raise SearchInfrastructureError(str(exc)) from exc
+    except Exception as exc:
+        logger.error(
+            "Unexpected search error",
+            extra={
+                "event": "rag_infrastructure_error",
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+                "query": query[:200] if query else query,
+            },
+            exc_info=True,
+        )
+        raise SearchInfrastructureError(str(exc)) from exc

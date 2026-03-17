@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Checkout surf-kit (shared UI packages)
-        run: git clone --depth 1 https://github.com/barney-w/surf-kit.git ../../surf-kit
+        run: git clone --depth 1 https://github.com/${{ vars.SURF_KIT_REPO || 'anthropics/surf-kit' }}.git ../../surf-kit
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -46,6 +46,13 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
+
+      - name: Build surf-kit packages
+        run: |
+          cd ../../surf-kit
+          corepack enable pnpm
+          pnpm install --frozen-lockfile
+          pnpm build
 
       - name: Install dependencies
         run: npm ci
@@ -64,13 +71,16 @@ jobs:
       contents: read
       id-token: write
     environment: dev
+    defaults:
+      run:
+        working-directory: web
     outputs:
       image-tag: ${{ steps.meta.outputs.image-tag }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Checkout surf-kit (shared UI packages)
-        run: git clone --depth 1 https://github.com/barney-w/surf-kit.git ../../surf-kit
+        run: git clone --depth 1 https://github.com/${{ vars.SURF_KIT_REPO || 'anthropics/surf-kit' }}.git ../../surf-kit
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -79,13 +89,18 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      - name: Build surf-kit packages
+        run: |
+          cd ../../surf-kit
+          corepack enable pnpm
+          pnpm install --frozen-lockfile
+          pnpm build
+
       - name: Install dependencies
         run: npm ci
-        working-directory: web
 
       - name: Build SPA
         run: npm run build
-        working-directory: web
         env:
           VITE_ENTRA_CLIENT_ID: ${{ vars.VITE_ENTRA_CLIENT_ID }}
           VITE_ENTRA_TENANT_ID: ${{ vars.VITE_ENTRA_TENANT_ID }}
@@ -116,8 +131,8 @@ jobs:
         run: |
           docker build \
             -t "${{ steps.meta.outputs.image-tag }}" \
-            -f web/Dockerfile \
-            web
+            -f Dockerfile \
+            .
           docker push "${{ steps.meta.outputs.image-tag }}"
 
       - name: Scan container image with Trivy

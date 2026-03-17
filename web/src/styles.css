@@ -110,9 +110,16 @@
     --radius-lg: 0.5rem;
     --radius-xl: 0.75rem;
     --radius-2xl: 1rem;
+
+    /* Override agent accents */
+    --surf-agent-coordinator-accent: #006673;
+    --surf-agent-hr-accent: #714151;
   }
 
-  html, body, #root { height: 100%; }
+  html, body, #root {
+    height: 100dvh;
+    overflow: hidden;
+  }
 
   body {
     margin: 0;
@@ -185,6 +192,13 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 .anim-fade-up { animation: fadeUp 0.5s ease-out both; }
+
+/* Fade up with blur materialisation (#11) */
+@keyframes fadeUpBlur {
+  from { opacity: 0; transform: translateY(12px); filter: blur(8px); }
+  to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+.anim-fade-up-blur { animation: fadeUpBlur 0.55s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .anim-fade-in { animation: fadeUp 0.3s ease-out both; }
 .anim-fade-slide-up { animation: fadeUp 0.4s ease-out both; }
 
@@ -209,6 +223,77 @@
 }
 .pulse-glow { animation: pulseGlow 2s ease-in-out infinite; }
 
+/* Scale pop (checkmark, badges) */
+@keyframes scalePop {
+  0%   { opacity: 0; transform: scale(0.3); }
+  60%  { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.anim-scale-pop { animation: scalePop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* Agent card base styling — light cards on dark canvas */
+.agent-card {
+  background: #F0FAFB;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.agent-card:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Disabled card desaturation */
+.agent-card[aria-disabled] {
+  filter: grayscale(0.5);
+  opacity: 0.7;
+}
+
+/* Card click micro-interaction — subtle press */
+@keyframes cardTap {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(0.975); }
+  100% { transform: scale(1); }
+}
+.agent-card-tap {
+  animation: cardTap 0.3s ease-out;
+}
+
+/* ── Agent modal — Apple-style frosted glass ── */
+.agent-modal-backdrop-in {
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+}
+.agent-modal-backdrop-out {
+  background: rgba(0, 0, 0, 0);
+  backdrop-filter: saturate(100%) blur(0px);
+  -webkit-backdrop-filter: saturate(100%) blur(0px);
+}
+
+.agent-modal-panel {
+  background: rgba(20, 20, 20, 0.92);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.35),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: saturate(120%) blur(60px);
+  -webkit-backdrop-filter: saturate(120%) blur(60px);
+}
+
+/* Selected card — bold accent background */
+.agent-card-selected {
+  border-color: transparent;
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--agent-accent) 35%, transparent);
+}
+
+/* Hide scrollbar but keep scrolling */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
 
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 4px; }
@@ -216,6 +301,16 @@
 ::-webkit-scrollbar-thumb {
   background: rgba(225, 185, 137, 0.2);
   border-radius: 2px;
+}
+
+/* Background slideshow opacity — slightly more transparent on mobile */
+.bg-slideshow[data-active] {
+  opacity: 0.06;
+}
+@media (min-width: 640px) {
+  .bg-slideshow[data-active] {
+    opacity: 0.09;
+  }
 }
 
 /* Reduced motion */

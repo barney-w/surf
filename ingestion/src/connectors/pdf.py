@@ -85,6 +85,8 @@ def create_document_from_pdf(file_path: Path, manifest_entry: dict[str, Any]) ->
             - document_type (str): e.g. "policy", "procedure", "agreement"
             - title (str, optional): Document title. Defaults to file stem.
             - raw_path (str, optional): Blob storage path. Defaults to str(file_path).
+            - content_source (str, optional): e.g. "website", "sharepoint". Defaults to "".
+            - section_path (str, optional): URL/folder path. Defaults to "".
             - version, effective_date, expiry_date, author, source_url, tags (optional)
 
     Returns:
@@ -102,6 +104,8 @@ def create_document_from_pdf(file_path: Path, manifest_entry: dict[str, Any]) ->
         author=manifest_entry.get("author"),
         source_url=_validate_source_url(manifest_entry.get("source_url")),
         tags=manifest_entry.get("tags", []),
+        content_source=manifest_entry.get("content_source", ""),
+        section_path=manifest_entry.get("section_path", ""),
     )
 
     return IngestedDocument(

@@ -1,7 +1,11 @@
-def build_coordinator_prompt(agent_descriptions: list[dict[str, str]]) -> str:
+def build_coordinator_prompt(
+    agent_descriptions: list[dict[str, str]],
+    organisation_name: str = "",
+) -> str:
     agent_list = "\n".join(f"- **{a['name']}**: {a['description']}" for a in agent_descriptions)
+    org_label = f"{organisation_name}'s " if organisation_name else ""
 
-    return f"""You are Surf — a multi-agent workplace assistant.
+    return f"""You are Surf — {org_label}multi-agent workplace assistant.
 
 Your role is to understand what the staff member needs and route their
 question to the correct specialist agent. You also handle general questions

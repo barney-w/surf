@@ -1,17 +1,16 @@
 import { type Configuration, LogLevel } from "@azure/msal-browser";
 
 const clientId = import.meta.env.VITE_ENTRA_CLIENT_ID ?? "";
-const tenantId = import.meta.env.VITE_ENTRA_TENANT_ID ?? "";
 
 export const msalConfig: Configuration = {
   auth: {
     clientId,
-    authority: `https://login.microsoftonline.com/${tenantId}`,
+    authority: "https://login.microsoftonline.com/common",
     redirectUri: window.location.origin,
     postLogoutRedirectUri: window.location.origin,
   },
   cache: {
-    cacheLocation: "localStorage",
+    cacheLocation: "sessionStorage",
     storeAuthStateInCookie: false,
   },
   system: {

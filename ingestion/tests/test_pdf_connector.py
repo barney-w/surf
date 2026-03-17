@@ -137,3 +137,32 @@ class TestCreateDocumentFromPdf:
         assert doc.metadata.document_type == "procedure"
         assert doc.metadata.author == "Test Author"
         assert doc.metadata.tags == ["test"]
+
+    def test_with_content_source_and_section_path(self, sample_pdf: Path) -> None:
+        manifest = {
+            "domain": "governance",
+            "document_type": "policy",
+            "content_source": "website",
+            "section_path": "Governance/Policies",
+            "title": "Test Policy",
+        }
+        doc = create_document_from_pdf(sample_pdf, manifest)
+        assert doc.metadata.content_source == "website"
+        assert doc.metadata.section_path == "Governance/Policies"
+        assert doc.metadata.domain == "governance"
+        assert doc.metadata.document_type == "policy"
+
+    def test_defaults_content_source_and_section_path(self, sample_pdf: Path) -> None:
+        manifest = {"domain": "hr", "document_type": "policy"}
+        doc = create_document_from_pdf(sample_pdf, manifest)
+        assert doc.metadata.content_source == ""
+        assert doc.metadata.section_path == ""
+
+    def test_with_source_url(self, sample_pdf: Path) -> None:
+        manifest = {
+            "domain": "it",
+            "document_type": "procedure",
+            "source_url": "https://example.com/doc.pdf",
+        }
+        doc = create_document_from_pdf(sample_pdf, manifest)
+        assert doc.metadata.source_url == "https://example.com/doc.pdf"
