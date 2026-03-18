@@ -1,3 +1,13 @@
+# ---------------------------------------------------------------------------
+# HR Agent — handles human resources, policy, and governance queries.
+#
+# Notable differences from the IT agent:
+#   - auth_level is MICROSOFT_ACCOUNT (not ORGANISATIONAL) — any Microsoft
+#     user can access HR info, not just org-tenant users.
+#   - strip_source_urls is True — HR documents come from SharePoint and
+#     their URLs shouldn't be exposed to users.
+# ---------------------------------------------------------------------------
+
 from src.agents._base import AuthLevel, DomainAgent, RAGScope, get_organisation_name
 from src.agents.hr.prompts import HR_SYSTEM_PROMPT_TEMPLATE
 
@@ -9,6 +19,8 @@ class HRAgent(DomainAgent):
 
     @property
     def description(self) -> str:
+        # Broad description — HR covers many policy areas, so list them
+        # explicitly so the coordinator routes correctly.
         return (
             "Handles all human resources, organisational policy, and governance queries "
             "including leave entitlements, employment agreements, onboarding, performance "
@@ -27,6 +39,9 @@ class HRAgent(DomainAgent):
 
     @property
     def auth_level(self) -> AuthLevel:
+        # MICROSOFT_ACCOUNT — any signed-in Microsoft user (any tenant).
+        # Less restrictive than ORGANISATIONAL because HR policies are
+        # accessible to contractors and partner-org users too.
         return AuthLevel.MICROSOFT_ACCOUNT
 
     @property
@@ -50,4 +65,6 @@ class HRAgent(DomainAgent):
 
     @property
     def strip_source_urls(self) -> bool:
+        # True — HR documents are sourced from SharePoint. Their internal
+        # URLs are meaningless to end users and may expose internal paths.
         return True
