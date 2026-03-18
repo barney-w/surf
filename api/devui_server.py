@@ -19,7 +19,7 @@ class DevUIStatelessWorkflow:
     def __init__(self) -> None:
         self._settings = get_settings()
         self._client = create_model_client(self._settings)
-        self._graph = build_agent_graph(self._client)
+        self._graph = build_agent_graph(self._client, self._settings)
         self._template = self._graph.build_workflow()
         self.name = getattr(self._template, "name", "surf")
         self.description = "Surf workflow (stateless DevUI wrapper)"
