@@ -326,6 +326,7 @@ class TestCreateModelClient:
             _env_file=None,  # pyright: ignore[reportCallIssue]
             anthropic_api_key="sk-ant-test",
             anthropic_model_id="claude-sonnet-4-6",
+            postgres_password="test",
         )
         client = create_model_client(settings)
         base_url = str(client.anthropic_client.base_url)
@@ -340,6 +341,7 @@ class TestCreateModelClient:
             anthropic_foundry_base_url="https://test-resource.services.ai.azure.com/anthropic/",
             anthropic_foundry_api_key="foundry-test-key",
             anthropic_model_id="claude-sonnet-4-6",
+            postgres_password="test",
         )
         client = create_model_client(settings)
         base_url = str(client.anthropic_client.base_url)
@@ -355,6 +357,7 @@ class TestCreateModelClient:
             anthropic_foundry_base_url="https://test-resource.services.ai.azure.com/anthropic/",
             anthropic_foundry_api_key="foundry-test-key",
             anthropic_model_id="claude-sonnet-4-6",
+            postgres_password="test",
         )
         client = create_model_client(settings)
         base_url = str(client.anthropic_client.base_url)
@@ -492,6 +495,7 @@ class TestPerAgentModel:
             "anthropic_api_key": "sk-ant-test",
             "anthropic_model_id": "claude-sonnet-4-6",
             "anthropic_domain_model_id": "",
+            "postgres_password": "test",
         }
         defaults.update(overrides)
         return Settings(_env_file=None, **defaults)  # pyright: ignore[reportCallIssue]

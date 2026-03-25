@@ -12,7 +12,10 @@ class TestSettingsDefaults:
         # Clear CI-injected env vars that override defaults
         for var in ("ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ORGANISATION_NAME"):
             monkeypatch.delenv(var, raising=False)
-        settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+        settings = Settings(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            postgres_password="localdev",
+        )
 
         assert settings.environment == "dev"
         assert settings.log_level == "INFO"
@@ -44,6 +47,21 @@ class TestSettingsDefaults:
         ]
         assert settings.max_history_messages == 20
 
+    def test_empty_password_rejected_when_postgres_enabled(self, monkeypatch):
+        """Settings with postgres_enabled=True and no password must raise ValueError."""
+        monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+        with pytest.raises(ValueError, match="POSTGRES_PASSWORD is required"):
+            Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+
+    def test_empty_password_allowed_when_postgres_disabled(self, monkeypatch):
+        """Settings with postgres_enabled=False and no password should pass."""
+        monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+        settings = Settings(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            postgres_enabled=False,
+        )
+        assert settings.postgres_password == ""
+
     def test_get_settings_returns_settings_instance(self):
         get_settings.cache_clear()
         settings = get_settings()
@@ -55,7 +73,10 @@ class TestProductionKeyValidator:
 
     def test_dev_allows_no_keys(self):
         """Dev environment should not require any Anthropic keys."""
-        settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+        settings = Settings(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            postgres_password="localdev",
+        )
         assert settings.environment == "dev"
         assert settings.anthropic_api_key == ""
         assert settings.anthropic_foundry_api_key == ""
@@ -66,6 +87,7 @@ class TestProductionKeyValidator:
             Settings(
                 _env_file=None,  # pyright: ignore[reportCallIssue]
                 environment="production",
+                postgres_password="test-secret",
             )
 
     def test_non_dev_accepts_api_key(self):
@@ -93,12 +115,18 @@ class TestDomainModelId:
     """Test the anthropic_domain_model_id setting."""
 
     def test_domain_model_id_defaults_to_sonnet(self):
-        settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+        settings = Settings(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            postgres_password="localdev",
+        )
         assert settings.anthropic_domain_model_id == "claude-sonnet-4-6"
 
     def test_domain_model_id_from_env(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("ANTHROPIC_DOMAIN_MODEL_ID", "claude-haiku-4-5")
-        settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+        settings = Settings(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            postgres_password="localdev",
+        )
         assert settings.anthropic_domain_model_id == "claude-haiku-4-5"
 
 
@@ -209,6 +237,7 @@ class TestLifespanProductionGuards:
             _env_file=None,  # pyright: ignore[reportCallIssue]
             environment="dev",
             auth_enabled=False,
+            postgres_password="localdev",
         )
 
         # The lifespan may fail later (no Azure creds in CI) but it must NOT

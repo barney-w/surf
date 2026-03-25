@@ -37,7 +37,7 @@ def _make_app(
 
 def _make_conversation_service() -> ConversationService:
     """Create a ConversationService with mocked PostgreSQL pool."""
-    settings = Settings()
+    settings = Settings(_env_file=None, postgres_password="test")  # pyright: ignore[reportCallIssue]
     svc = ConversationService(settings)
     mock_conn = AsyncMock()
     # asyncpg's conn.transaction() is a regular method returning an async

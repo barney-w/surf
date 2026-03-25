@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     postgres_port: int = 5432
     postgres_database: str = "surf"
     postgres_user: str = "surf"
-    postgres_password: str = "localdev"
+    postgres_password: str = ""
     postgres_ssl: bool = True
 
     # Azure Storage
@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     conversation_ttl_days: int = 90
 
     model_config = {"env_prefix": "", "env_file": ("../.env", ".env"), "extra": "ignore"}
+
+    @model_validator(mode="after")
+    def _validate_postgres_password(self) -> "Settings":
+        if self.postgres_enabled and not self.postgres_password:
+            raise ValueError("POSTGRES_PASSWORD is required when PostgreSQL is enabled")
+        return self
 
     @model_validator(mode="after")
     def _validate_production_keys(self) -> "Settings":

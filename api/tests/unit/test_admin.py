@@ -15,7 +15,7 @@ def _make_admin_app() -> FastAPI:
     app = FastAPI()
     app.include_router(admin_router)
 
-    settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+    settings = Settings(_env_file=None, postgres_password="test")  # pyright: ignore[reportCallIssue]
     svc = ConversationService(settings)
     mock_conn = AsyncMock()
     mock_conn.fetchval.return_value = 0
