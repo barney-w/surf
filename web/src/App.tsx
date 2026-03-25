@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useEffect, useRef, useState } from "react";
 import { ThemeProvider } from "@surf-kit/theme";
 import type { ColorMode } from "@surf-kit/theme";
-import { Button, Drawer, DropdownMenu } from "@surf-kit/core";
+import { Button, Drawer, DropdownMenu, IconButton } from "@surf-kit/core";
 import { WaveLoader } from "@surf-kit/core";
 import { ConversationList } from "@surf-kit/agent/chat";
 import type { ChatMessage } from "@surf-kit/agent";
@@ -301,32 +301,31 @@ function AppContent() {
     <div className="flex flex-col h-full bg-canvas">
       <OfflineBanner />
       <header className="relative flex flex-wrap items-center gap-2 sm:gap-3 px-3 sm:px-6 py-2 sm:py-3 border-b border-border shrink-0">
-        <h1 className="font-display text-lg font-semibold text-text-primary tracking-tight flex-1">
-          Surf
-        </h1>
-        <h4 className="absolute inset-x-0 text-center font-display text-xs font-semibold text-text-primary tracking-tight pointer-events-none hidden sm:block">
-          Responses are AI-generated.
-        </h4>
-        <Button
-          intent="secondary"
+        <IconButton
+          intent="ghost"
           size="sm"
           aria-label="Conversation history"
           onPress={() => {
             void refreshConversations();
             setDrawerOpen(true);
           }}
-          className="gap-1.5 transition-colors duration-150 border-accent/40 text-accent hover:border-accent hover:bg-accent-subtle active:scale-[0.98]"
         >
-          <History size={16} />
-          <span className="hidden sm:inline text-sm font-medium">History</span>
-        </Button>
+          <History size={18} />
+        </IconButton>
+        <h1 className="font-display text-lg font-semibold text-text-primary tracking-tight">
+          Surf
+        </h1>
+        <h4 className="absolute inset-x-0 text-center font-display text-xs font-semibold text-text-primary tracking-tight pointer-events-none hidden sm:block">
+          Responses are AI-generated.
+        </h4>
+        <div className="flex-1" />
         <Button
-          intent="secondary"
+          intent="ghost"
           size="sm"
           aria-label="New chat"
           isDisabled={!hasMessages}
           onPress={handleNewChat}
-          className={`gap-1.5 ${hasMessages ? "transition-colors duration-150 border-accent/40 text-accent hover:border-accent hover:bg-accent-subtle active:scale-[0.98]" : "border-transparent text-text-muted cursor-default"}`}
+          className="gap-1.5"
         >
           <NewChatIcon />
           <span className="hidden sm:inline text-sm font-medium">New chat</span>
@@ -352,13 +351,14 @@ function AppContent() {
         onClose={() => setDrawerOpen(false)}
         side="left"
         title="Conversation history"
+        className="flex flex-col px-0 pb-0"
       >
         <ConversationList
           conversations={conversations}
           activeId={activeConversationId ?? undefined}
           onSelect={(id) => void handleSelectConversation(id)}
           onDelete={(id) => void handleDeleteConversation(id)}
-          onNew={handleNewChat}
+          className="-mt-1"
         />
       </Drawer>
       {isDevMode && (
