@@ -6,11 +6,11 @@ They are skipped automatically when the database is unavailable.
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 import pytest
 
 from src.models.conversation import FeedbackRecord, MessageRecord
-
 
 pytestmark = pytest.mark.integration
 
@@ -19,10 +19,11 @@ def _user_id() -> str:
     return f"test-user-{uuid.uuid4()}"
 
 
-from typing import Literal
-
-
-def _message(role: Literal["user", "assistant"] = "user", content: str = "hello", agent: str | None = None) -> MessageRecord:
+def _message(
+    role: Literal["user", "assistant"] = "user",
+    content: str = "hello",
+    agent: str | None = None,
+) -> MessageRecord:
     return MessageRecord(
         id=str(uuid.uuid4()),
         role=role,
@@ -73,7 +74,9 @@ async def test_add_message_and_retrieve(conversation_service):
     conv = await svc.create_conversation(user_id)
 
     user_msg = _message("user", "What is the refund policy?")
-    assistant_msg = _message("assistant", "Our refund policy allows returns within 30 days.", agent="support_agent")
+    assistant_msg = _message(
+        "assistant", "Our refund policy allows returns within 30 days.", agent="support_agent"
+    )
 
     await svc.add_message(conv.id, user_id, user_msg)
     await svc.add_message(conv.id, user_id, assistant_msg)

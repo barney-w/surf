@@ -76,5 +76,10 @@ api/tests/eval/reports/*.json
 web/test-results/
 web/playwright-report/
 
+# Vite dev cache
+web/.vite/
+
 # Source documents
 *.pdf
+tools/
+docs/plans/

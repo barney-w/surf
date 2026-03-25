@@ -50,8 +50,14 @@ param entraClientId = '<your-entra-client-id>'
 param guestTokenSecretInKv = true
 
 // CORS — allow localhost origins
-param apiCorsOrigins = '["http://localhost:3000","https://tauri.localhost","https://chatwith.surf"]'
+param apiCorsOrigins = '["http://localhost:3000","http://localhost:3020","https://tauri.localhost","https://chatwith.surf"]'
 
 // Web container — always on (temporary, revert after 2026-03-20)
 param webMinReplicas = 1
 param webMaxReplicas = 1
+
+// GitLab CI/CD — Workload Identity Federation
+// Uncomment and set to create a CI managed identity with OIDC federated credential.
+// After deployment, set the output ciIdentityClientId as AZURE_CI_CLIENT_ID in GitLab.
+// param gitlabOidcIssuer = 'https://gitlab.example.com'
+// param gitlabProjectPath = 'group/surf'

@@ -1,14 +1,19 @@
+import asyncio
 import logging
 import re
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
+from dataclasses import dataclass, field
 from typing import Annotated
+
+from anthropic import AsyncAnthropic
 
 from agent_framework import FunctionTool, tool
 from azure.search.documents.aio import SearchClient
 from pydantic import Field
 
 from src.agents._base import RAGScope
+from src.config.settings import get_settings
 from src.rag.search import (
     SearchIndexNotFoundError,
     SearchInfrastructureError,
@@ -18,7 +23,127 @@ from src.rag.search import (
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Debug override dataclass and ContextVar
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SearchOverrides:
+    """Optional overrides for RAG search parameters, populated from debug headers."""
+
+    top_k: int | None = None
+    strong_threshold: float | None = None
+    partial_threshold: float | None = None
+    enable_vector: bool | None = None
+    enable_stitching: bool | None = None
+    enable_broadened: bool | None = None
+    enable_keyword: bool | None = None
+    enable_rewrite: bool | None = None
+    enable_proofread: bool | None = None
+
+
+_search_overrides: ContextVar[SearchOverrides | None] = ContextVar(
+    "search_overrides", default=None
+)
+
+
+# ---------------------------------------------------------------------------
+# Debug info dataclass and ContextVar
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SearchDebugInfo:
+    """Structured debug information captured during a search_knowledge_base() call."""
+
+    original_query: str = ""
+    rewritten_query: str | None = None
+    strategies_used: list[str] = field(default_factory=list)
+    results_per_strategy: dict[str, int] = field(default_factory=dict)
+    total_results: int = 0
+    tier_counts: dict[str, int] = field(default_factory=dict)
+
+
+search_debug_info: ContextVar[SearchDebugInfo | None] = ContextVar(
+    "search_debug", default=None
+)
+
+
+# ---------------------------------------------------------------------------
+# Header parsing helpers
+# ---------------------------------------------------------------------------
+
+
+def _int_or_none(value: str | None) -> int | None:
+    """Parse an integer from a header value, returning None on failure."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _float_or_none(value: str | None) -> float | None:
+    """Parse a float from a header value, returning None on failure."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _bool_or_none(value: str | None) -> bool | None:
+    """Parse a boolean from a header value, returning None on failure.
+
+    Accepts ``"true"``/``"1"`` as truthy and ``"false"``/``"0"`` as falsy.
+    """
+    if value is None:
+        return None
+    lower = value.strip().lower()
+    if lower in ("true", "1"):
+        return True
+    if lower in ("false", "0"):
+        return False
+    return None
+
+
+def parse_debug_overrides(headers: dict[str, str]) -> SearchOverrides | None:
+    """Parse ``X-Surf-Debug-*`` headers into a :class:`SearchOverrides` instance.
+
+    Returns ``None`` when no debug headers are present.
+    """
+    prefix = "x-surf-debug-"
+    debug_headers = {k.lower(): v for k, v in headers.items() if k.lower().startswith(prefix)}
+    if not debug_headers:
+        return None
+    return SearchOverrides(
+        top_k=_int_or_none(debug_headers.get(f"{prefix}topk")),
+        strong_threshold=_float_or_none(debug_headers.get(f"{prefix}strongthreshold")),
+        partial_threshold=_float_or_none(debug_headers.get(f"{prefix}partialthreshold")),
+        enable_vector=_bool_or_none(debug_headers.get(f"{prefix}enablevector")),
+        enable_stitching=_bool_or_none(debug_headers.get(f"{prefix}enablestitching")),
+        enable_broadened=_bool_or_none(debug_headers.get(f"{prefix}enablebroadened")),
+        enable_keyword=_bool_or_none(debug_headers.get(f"{prefix}enablekeyword")),
+        enable_rewrite=_bool_or_none(debug_headers.get(f"{prefix}enablerewrite")),
+        enable_proofread=_bool_or_none(debug_headers.get(f"{prefix}enableproofread")),
+    )
+
 _search_clients: list[SearchClient] = []
+
+_rewrite_client: AsyncAnthropic | None = None
+_rewrite_model_id: str = "claude-haiku-4-5-20251001"
+
+
+def set_rewrite_client(client: AsyncAnthropic, model_id: str) -> None:
+    """Configure the LLM client used for query rewriting."""
+    global _rewrite_client, _rewrite_model_id  # noqa: PLW0603
+    _rewrite_client = client
+    _rewrite_model_id = model_id
+
 
 # Mutable collector for RAG tool output text during a request.
 # The chat endpoint sets this to a fresh list before running the workflow;
@@ -208,6 +333,72 @@ def _extract_keywords(query: str) -> str:
     return result if result else query
 
 
+async def rewrite_query_with_llm(query: str) -> str:
+    """Rewrite a conversational query into an optimised search query using an LLM.
+
+    Returns the original query unchanged if:
+    - The rewrite client is not configured
+    - The LLM call fails or times out (>2s)
+    - The rewritten query is empty
+    """
+    if _rewrite_client is None:
+        return query
+
+    system_prompt = (
+        "You are a search query optimiser. Rewrite the user's conversational "
+        "question into a concise, keyword-rich search query optimised for "
+        "hybrid search (BM25 + vector) against an enterprise knowledge base. "
+        "Rules:\n"
+        "- Extract the core information need\n"
+        "- Use domain-specific terminology where possible\n"
+        "- Remove conversational filler, pronouns, and pleasantries\n"
+        "- Output ONLY the rewritten query — no explanation, no quotes\n"
+        "- If the query is already well-formed for search, return it unchanged"
+    )
+
+    try:
+        response = await asyncio.wait_for(
+            _rewrite_client.messages.create(
+                model=_rewrite_model_id,
+                max_tokens=100,
+                system=system_prompt,
+                messages=[{"role": "user", "content": query}],
+            ),
+            timeout=2.0,
+        )
+        # Capture token usage from the query rewrite call.
+        try:
+            from src.orchestrator.builder import TokenUsage, token_usage_collector
+
+            usage = TokenUsage(
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                model_id=_rewrite_model_id,
+            )
+            try:
+                token_usage_collector.get().append(usage)
+            except LookupError:
+                pass
+        except Exception:
+            pass  # Never let usage capture break the rewrite path
+
+        rewritten = getattr(response.content[0], "text", "").strip()
+        if rewritten:
+            if get_settings().trace_prompt_content:
+                logger.info(
+                    "query_rewrite: %r -> %r",
+                    query[:100],
+                    rewritten[:100],
+                )
+            else:
+                logger.info("query_rewrite: rewrote query (%d chars -> %d chars)", len(query), len(rewritten))
+            return rewritten
+        return query
+    except Exception:
+        logger.warning("query_rewrite failed, using original query", exc_info=True)
+        return query
+
+
 def _merge_and_deduplicate(
     primary: list[SearchResult],
     secondary: list[SearchResult],
@@ -320,25 +511,59 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
         if document_type:
             filters["document_type"] = document_type
 
-        min_confident_results = 3
-        top_k = 15
+        # Read debug overrides from the ContextVar (set per-request from headers).
+        overrides = _search_overrides.get()
 
-        logger.info(
-            "search_knowledge_base called: query=%r document_type=%r filters=%r",
-            query,
-            document_type,
-            filters,
-        )
+        min_confident_results = 3
+        top_k = overrides.top_k if overrides and overrides.top_k is not None else 15
+
+        # Determine whether to use hybrid (vector) search.
+        use_hybrid = overrides.enable_vector if overrides and overrides.enable_vector is not None else True
+
+        if get_settings().trace_prompt_content:
+            logger.info(
+                "search_knowledge_base called: query=%r document_type=%r filters=%r overrides=%r",
+                query,
+                document_type,
+                filters,
+                overrides,
+            )
+        else:
+            logger.info(
+                "search_knowledge_base called: query_len=%d document_type=%r filters=%r",
+                len(query),
+                document_type,
+                filters,
+            )
+
+        # Initialise debug info for this search invocation.
+        debug = SearchDebugInfo(original_query=query)
         try:
+            search_debug_info.set(debug)
+        except LookupError:
+            pass  # ContextVar not initialised for this context; debug will still accumulate locally
+
+        try:
+            # Strategy 0: LLM query rewrite (before primary search)
+            search_query = query
+            run_rewrite = overrides.enable_rewrite if overrides and overrides.enable_rewrite is not None else True
+            if run_rewrite:
+                rewritten_query = await rewrite_query_with_llm(query)
+                if rewritten_query != query:
+                    search_query = rewritten_query
+                    debug.rewritten_query = rewritten_query
+
             # Strategy 1: Primary hybrid search (current behaviour)
             results = await search_index(
-                query=query,
+                query=search_query,
                 search_client=_get_search_clients(),
                 filters=filters,
                 top_k=top_k,
-                use_hybrid=True,
+                use_hybrid=use_hybrid,
                 embed_query=_embed_func,
             )
+            debug.strategies_used.append("primary_hybrid")
+            debug.results_per_strategy["primary_hybrid"] = len(results)
 
             # Strategy 2: Broadened filters — keep identity filters (domain
             # and content_source) but drop document_type constraints.
@@ -348,7 +573,8 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
                 k: v for k, v in filters.items() if k in identity_keys
             }
 
-            if len(results) < min_confident_results:
+            run_broadened = overrides.enable_broadened if overrides and overrides.enable_broadened is not None else True
+            if run_broadened and len(results) < min_confident_results:
                 logger.info(
                     "search_knowledge_base: strategy 1 returned %d results (< %d), "
                     "broadening filters to %r",
@@ -361,31 +587,44 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
                     search_client=_get_search_clients(),
                     filters=broadened_filters or None,
                     top_k=top_k,
-                    use_hybrid=True,
+                    use_hybrid=use_hybrid,
                     embed_query=_embed_func,
                 )
+                debug.strategies_used.append("broadened_filters")
+                debug.results_per_strategy["broadened_filters"] = len(broad_results)
                 results = _merge_and_deduplicate(results, broad_results, top_k)
 
             # Strategy 3: Keyword extraction fallback — strip conversational
             # phrasing and search with extracted keywords
-            if len(results) < min_confident_results:
+            run_keyword = overrides.enable_keyword if overrides and overrides.enable_keyword is not None else True
+            if run_keyword and len(results) < min_confident_results:
                 keywords = _extract_keywords(query)
                 if keywords != query.lower().strip():
-                    logger.info(
-                        "search_knowledge_base: strategies 1+2 returned %d results "
-                        "(< %d), trying keyword extraction: %r",
-                        len(results),
-                        min_confident_results,
-                        keywords,
-                    )
+                    if get_settings().trace_prompt_content:
+                        logger.info(
+                            "search_knowledge_base: strategies 1+2 returned %d results "
+                            "(< %d), trying keyword extraction: %r",
+                            len(results),
+                            min_confident_results,
+                            keywords,
+                        )
+                    else:
+                        logger.info(
+                            "search_knowledge_base: strategies 1+2 returned %d results "
+                            "(< %d), trying keyword extraction",
+                            len(results),
+                            min_confident_results,
+                        )
                     kw_results = await search_index(
                         query=keywords,
                         search_client=_get_search_clients(),
                         filters=broadened_filters or None,
                         top_k=top_k,
-                        use_hybrid=True,
+                        use_hybrid=use_hybrid,
                         embed_query=_embed_func,
                     )
+                    debug.strategies_used.append("keyword_extraction")
+                    debug.results_per_strategy["keyword_extraction"] = len(kw_results)
                     results = _merge_and_deduplicate(results, kw_results, top_k)
 
         except SearchIndexNotFoundError as exc:
@@ -404,7 +643,14 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
         if not results:
             return "No relevant documents found for this query."
 
-        results = stitch_adjacent_chunks(results)
+        # Chunk stitching (can be disabled via override).
+        run_stitching = overrides.enable_stitching if overrides and overrides.enable_stitching is not None else True
+        if run_stitching:
+            results = stitch_adjacent_chunks(results)
+
+        # Resolve threshold values, applying overrides when present.
+        strong_threshold = overrides.strong_threshold if overrides and overrides.strong_threshold is not None else 0.7
+        partial_threshold = overrides.partial_threshold if overrides and overrides.partial_threshold is not None else 0.4
 
         # Normalise scores within the result set so the top result is always 1.0.
         # This is robust to both keyword (BM25, scores ~0-10) and hybrid search
@@ -414,10 +660,10 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
         tier_counts = {"strong": 0, "partial": 0, "weak": 0}
         for i, r in enumerate(results, 1):
             relevance = round(r.score / max_score, 2)
-            if relevance >= 0.7:
+            if relevance >= strong_threshold:
                 tier = "STRONG MATCH"
                 tier_counts["strong"] += 1
-            elif relevance >= 0.4:
+            elif relevance >= partial_threshold:
                 tier = "PARTIAL MATCH"
                 tier_counts["partial"] += 1
             else:
@@ -447,6 +693,10 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
                 f"CONTENT:\n{r.content}\n\n"
                 f"=== END SOURCE {i} ==="
             )
+        # Record final debug statistics after tier classification.
+        debug.total_results = len(results)
+        debug.tier_counts = dict(tier_counts)
+
         summary = (
             f"Found {len(results)} results "
             f"({tier_counts['strong']} strong, {tier_counts['partial']} partial, "
@@ -454,11 +704,14 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
             f"Base your answer on the strong and partial matches."
         )
         output = summary + "\n\n" + "\n\n".join(formatted)
-        logger.info(
-            "search_knowledge_base returning %d results, first 200 chars: %r",
-            len(results),
-            output[:200],
-        )
+        if get_settings().trace_prompt_content:
+            logger.info(
+                "search_knowledge_base returning %d results, first 200 chars: %r",
+                len(results),
+                output[:200],
+            )
+        else:
+            logger.info("search_knowledge_base returning %d results", len(results))
         return output
 
     return search_knowledge_base

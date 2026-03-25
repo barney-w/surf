@@ -13,6 +13,8 @@ Thank you for your interest in contributing to surf! This guide covers the devel
 - **[just](https://github.com/casey/just)** for task running
 - **[Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)** for deployment
 
+> **Windows:** Use [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) (Ubuntu). All commands run inside WSL. See [docs/wsl-setup.md](./docs/wsl-setup.md).
+
 ### Getting Started
 
 ```bash
@@ -21,6 +23,17 @@ cd surf
 cd api && uv sync && cd ../ingestion && uv sync && cd ..
 just dev
 ```
+
+### Ask the Dev Agent
+
+New to the codebase? The dev agent can answer questions about the architecture, patterns, and how things work:
+
+```bash
+just ask "How do I add a new domain agent?"
+just ask-repl  # Interactive mode
+```
+
+Requires GitHub Copilot CLI. See [tools/dev-agent/README.md](./tools/dev-agent/README.md) for setup.
 
 ### Common Commands
 

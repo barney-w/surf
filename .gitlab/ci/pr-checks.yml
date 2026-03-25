@@ -1,0 +1,208 @@
+# ---------------------------------------------------------------------------
+# Merge Request Checks — quality gates for all code changes
+# ---------------------------------------------------------------------------
+# Mirrors: .github/workflows/pr-checks.yml
+# Trigger: merge request events + push to main + manual
+#
+# IMPORTANT differences from CI/CD pipelines:
+#   - api-test here has NO Postgres service — integration tests auto-skip
+#   - Ruff runs both check AND format --check (CI pipelines only run check)
+#   - In PR checks, ingestion uses --frozen (no --prerelease) while API uses
+#     --prerelease=allow. The CI pipelines both use --prerelease=allow.
+# ---------------------------------------------------------------------------
+
+# --- Shared rules for all MR check jobs ---
+.mr-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+
+# --- Python + uv setup (shared) ---
+.python-uv:
+  image: python:3.12-slim
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+    - curl -LsSf https://astral.sh/uv/0.7.2/install.sh -o /tmp/uv-install.sh
+    - echo "dc5cab9ace3988b5b37d7780ba27ac259b4194d5f6435ea8fcfd81e2962a01f6  /tmp/uv-install.sh" | sha256sum -c -
+    - sh /tmp/uv-install.sh
+    - export PATH="$HOME/.local/bin:$PATH"
+
+# ==========================================================================
+# API checks
+# ==========================================================================
+
+pr-api-lint:
+  extends: [.python-uv, .mr-rules]
+  stage: lint
+  script:
+    - cd api
+    - uv sync --frozen --prerelease=allow
+    - uv run ruff check .
+    - uv run ruff format --check .
+
+pr-api-test:
+  extends: [.python-uv, .mr-rules]
+  stage: test
+  needs: []
+  script:
+    - cd api
+    - uv sync --frozen --prerelease=allow
+    # No Postgres service here — integration tests will auto-skip
+    - uv run pytest --tb=short
+
+# ==========================================================================
+# Ingestion checks
+# ==========================================================================
+
+pr-ingestion-lint:
+  extends: [.python-uv, .mr-rules]
+  stage: lint
+  script:
+    - cd ingestion
+    # NOTE: No --prerelease flag (ingestion doesn't use prerelease deps)
+    - uv sync --frozen
+    - uv run ruff check .
+    - uv run ruff format --check .
+
+pr-ingestion-test:
+  extends: [.python-uv, .mr-rules]
+  stage: test
+  needs: []
+  script:
+    - cd ingestion
+    - uv sync --frozen
+    - uv run pytest --tb=short -q
+
+# ==========================================================================
+# Web checks
+# ==========================================================================
+
+# surf-kit setup for web jobs
+.web-setup:
+  image: node:22
+  before_script:
+    # Clone surf-kit to the path that package.json file: protocol expects
+    - git clone --depth 1 "${SURF_KIT_CLONE_URL}" "$CI_PROJECT_DIR/../surf-kit"
+    - |
+      if [ ! -f "$CI_PROJECT_DIR/../surf-kit/packages/theme/package.json" ]; then
+        echo "ERROR: surf-kit not found at expected relative path"; exit 1
+      fi
+    - cd "$CI_PROJECT_DIR/../surf-kit"
+    - corepack enable pnpm || npm install -g pnpm
+    - pnpm install --frozen-lockfile
+    - pnpm build
+    - cd "$CI_PROJECT_DIR/web"
+
+pr-web-lint:
+  extends: [.web-setup, .mr-rules]
+  stage: lint
+  script:
+    - npm ci
+    # typecheck = tsc -b (tsconfig.json has path aliases into surf-kit)
+    - npm run typecheck
+
+pr-web-build:
+  extends: [.web-setup, .mr-rules]
+  stage: test
+  needs: [pr-web-lint]
+  script:
+    - npm ci
+    # build = tsc -b && vite build (outputs to dist/)
+    - npm run build
+
+# ==========================================================================
+# Desktop (Rust / Tauri) checks
+# ==========================================================================
+
+.rust-setup:
+  image: rust:latest
+  cache:
+    key:
+      files: [web/src-tauri/Cargo.lock]
+    paths:
+      - web/src-tauri/target/
+    policy: pull-push
+
+pr-desktop-fmt:
+  extends: [.rust-setup, .mr-rules]
+  stage: lint
+  script:
+    - cd web/src-tauri
+    - cargo fmt --check
+
+pr-desktop-clippy:
+  extends: [.rust-setup, .mr-rules]
+  stage: lint
+  before_script:
+    # System libraries required by Tauri / webkit2gtk
+    - apt-get update
+    - apt-get install -y --no-install-recommends
+        libwebkit2gtk-4.1-dev
+        libappindicator3-dev
+        librsvg2-dev
+        patchelf
+  script:
+    - cd web/src-tauri
+    - cargo clippy -- -D warnings
+
+pr-desktop-audit:
+  extends: [.rust-setup, .mr-rules]
+  stage: lint
+  script:
+    - cargo install cargo-audit
+    - cd web/src-tauri
+    - cargo audit
+
+# ==========================================================================
+# Security scanning
+# ==========================================================================
+
+pr-secret-scan:
+  extends: .mr-rules
+  stage: security
+  needs: []
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: 0
+  script:
+    # Do NOT use --verbose (prints detected secret content to job logs).
+    # Output results to a JSON report artifact instead.
+    - gitleaks detect --source . --config .gitleaks.toml --report-format json --report-path gitleaks-report.json
+  artifacts:
+    when: on_failure
+    paths:
+      - gitleaks-report.json
+    expire_in: 7 days
+
+pr-dependency-audit:
+  extends: [.python-uv, .mr-rules]
+  stage: security
+  needs: []
+  parallel:
+    matrix:
+      - SERVICE: api
+        PRERELEASE: "--prerelease=allow"
+      - SERVICE: ingestion
+        PRERELEASE: ""
+  script:
+    - cd "$SERVICE"
+    - uv sync --frozen $PRERELEASE
+    - uv run pip-audit
+
+pr-sast:
+  extends: [.python-uv, .mr-rules]
+  stage: security
+  needs: []
+  parallel:
+    matrix:
+      - SERVICE: api
+        SRC: src/
+      - SERVICE: ingestion
+        SRC: src/
+  script:
+    - cd "$SERVICE"
+    - uv tool install bandit
+    - bandit -r "$SRC" --severity-level medium

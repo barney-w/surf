@@ -20,7 +20,11 @@ load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 from src.connectors.pdf import create_document_from_pdf  # noqa: E402
 from src.pipeline.chunking import ChunkingConfig, chunk_document  # noqa: E402
 from src.pipeline.embedding import generate_embeddings  # noqa: E402
-from src.pipeline.indexing import create_or_update_index, upload_chunks  # noqa: E402
+from src.pipeline.indexing import (  # noqa: E402
+    INDEX_REGISTRY,
+    create_or_update_index,
+    upload_chunks,
+)
 
 if TYPE_CHECKING:
     from src.models import Chunk, IngestedDocument
@@ -372,14 +376,24 @@ def ingest(
             click.echo(f"  - {err}")
 
 
-@cli.command()
+@cli.command("init-index")
 @click.option(
     "--index-name",
     default=None,
     help="Override index name (defaults to AZURE_SEARCH_INDEX_NAME/AZURE_SEARCH_INDEX/surf-index).",
 )
-def init_index(index_name: str | None) -> None:
-    """Create or update the Azure AI Search index schema."""
+@click.option(
+    "--all",
+    "init_all",
+    is_flag=True,
+    help="Create all registered indexes (surf-index + surf-sharepoint-index).",
+)
+def init_index(index_name: str | None, init_all: bool) -> None:
+    """Create or update Azure AI Search index schemas.
+
+    By default creates only the main RAG index.  Use ``--all`` to create every
+    index defined in the registry — required for a fresh environment.
+    """
     try:
         from azure.identity import DefaultAzureCredential
         from azure.search.documents.indexes import SearchIndexClient
@@ -392,13 +406,19 @@ def init_index(index_name: str | None) -> None:
             endpoint=search_endpoint,
             credential=credential,
         )
-        resolved_index_name = _resolve_index_name(index_name)
-        create_or_update_index(index_client, resolved_index_name)
-        click.echo(f"Index ready: {resolved_index_name}")
+
+        if init_all:
+            for name, fields in INDEX_REGISTRY.items():
+                create_or_update_index(index_client, name, fields)
+                click.echo(f"Index ready: {name}")
+        else:
+            resolved_index_name = _resolve_index_name(index_name)
+            create_or_update_index(index_client, resolved_index_name)
+            click.echo(f"Index ready: {resolved_index_name}")
     except click.ClickException:
         raise
     except Exception as exc:  # noqa: BLE001
-        click.echo(f"Failed to initialize index: {exc}", err=True)
+        click.echo(f"Failed to initialise index: {exc}", err=True)
         sys.exit(1)
 
 
@@ -436,6 +456,120 @@ def reindex(domain: str) -> None:
     """Re-index all documents for a domain."""
     click.echo(f"Re-indexing domain: {domain}")
     click.echo("Not yet implemented -- requires document store integration.")
+
+
+@cli.command("migrate-index")
+@click.option("--source-endpoint", required=True, help="Source search service endpoint URL.")
+@click.option(
+    "--index-name",
+    default=None,
+    help="Index to migrate (default: surf-index). Use --all for all registered indexes.",
+)
+@click.option("--all", "migrate_all", is_flag=True, help="Migrate all registered indexes.")
+@click.option("--batch-size", default=100, show_default=True, help="Upload batch size.")
+@click.option("--dry-run", is_flag=True, help="Count documents without migrating.")
+def migrate_index(
+    source_endpoint: str,
+    index_name: str | None,
+    migrate_all: bool,
+    batch_size: int,
+    dry_run: bool,
+) -> None:
+    """Migrate documents between Azure AI Search services.
+
+    Copies all documents from a source search service to the destination
+    (AZURE_SEARCH_ENDPOINT).  Preserves existing embeddings — no re-embedding
+    required.  Both services must be accessible from the current network.
+
+    Intended for running inside the VNet (e.g. via ``az containerapp exec``)
+    so the private destination service is reachable without opening public
+    access.
+    """
+    from azure.identity import DefaultAzureCredential
+    from azure.search.documents import SearchClient
+    from azure.search.documents.indexes import SearchIndexClient
+
+    credential = DefaultAzureCredential()
+    dest_endpoint = os.environ.get("AZURE_SEARCH_ENDPOINT")
+    if not dest_endpoint:
+        raise click.ClickException("AZURE_SEARCH_ENDPOINT environment variable is not set")
+
+    indexes_to_migrate: list[str]
+    if migrate_all:
+        indexes_to_migrate = list(INDEX_REGISTRY.keys())
+    else:
+        indexes_to_migrate = [_resolve_index_name(index_name)]
+
+    # Ensure destination indexes exist
+    dest_index_client = SearchIndexClient(endpoint=dest_endpoint, credential=credential)
+    for name in indexes_to_migrate:
+        fields = INDEX_REGISTRY.get(name)
+        if fields:
+            create_or_update_index(dest_index_client, name, fields)
+            click.echo(f"Destination index ensured: {name}")
+        else:
+            click.echo(f"WARNING: '{name}' not in registry — destination index must already exist.")
+
+    for name in indexes_to_migrate:
+        click.echo(f"\nMigrating index: {name}")
+
+        source_client = SearchClient(
+            endpoint=source_endpoint, index_name=name, credential=credential
+        )
+        dest_client = SearchClient(endpoint=dest_endpoint, index_name=name, credential=credential)
+
+        # Count source documents
+        result = source_client.search("*", include_total_count=True, top=0)  # pyright: ignore[reportUnknownMemberType]
+        total = result.get_count()  # pyright: ignore[reportUnknownMemberType]
+        click.echo(f"  Source documents: {total}")
+
+        if dry_run:
+            click.echo("  Dry-run mode: skipping migration.")
+            continue
+
+        # Paginate through all documents and upload in batches
+        migrated = 0
+        failed = 0
+        batch: list[dict[str, Any]] = []
+        results = source_client.search("*", select=["*"], top=1000)  # pyright: ignore[reportUnknownMemberType]
+
+        for doc in results:
+            # Remove search metadata fields
+            clean_doc = {
+                k: v
+                for k, v in doc.items()  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+                if not k.startswith("@search.")
+            }
+            batch.append(clean_doc)
+
+            if len(batch) >= batch_size:
+                upload_result = dest_client.upload_documents(batch)  # pyright: ignore[reportUnknownMemberType]
+                succeeded = sum(1 for r in upload_result if r.succeeded)
+                migrated += succeeded
+                failed += len(batch) - succeeded
+                click.echo(f"  Migrated {migrated} documents...", nl=False)
+                click.echo("\r", nl=False)
+                batch = []
+
+        # Upload remaining
+        if batch:
+            upload_result = dest_client.upload_documents(batch)  # pyright: ignore[reportUnknownMemberType]
+            succeeded = sum(1 for r in upload_result if r.succeeded)
+            migrated += succeeded
+            failed += len(batch) - succeeded
+
+        click.echo(f"  Completed: {migrated} migrated, {failed} failed")
+
+        # Verify counts
+        dest_result = dest_client.search("*", include_total_count=True, top=0)  # pyright: ignore[reportUnknownMemberType]
+        dest_count = dest_result.get_count()  # pyright: ignore[reportUnknownMemberType]
+        click.echo(f"  Verification: source={total}, destination={dest_count}")
+        if dest_count != total:
+            click.echo(
+                f"  WARNING: Count mismatch — expected {total}, got {dest_count}. "
+                "Some documents may have failed or the index is still processing.",
+                err=True,
+            )
 
 
 @cli.command("sync-sharepoint")

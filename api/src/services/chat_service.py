@@ -21,14 +21,15 @@ from src.agents._output import sanitize_agent_response
 from src.middleware.error_handler import LLM_TIMEOUT_SECONDS, LLMTimeoutError
 from src.middleware.input_validation import validate_message
 from src.models.agent import AgentResponseModel
-from src.models.chat import ChatRequest
 from src.models.conversation import AttachmentRecord, MessageRecord
-from src.orchestrator.builder import current_attachments
+from src.orchestrator.builder import current_attachments, token_usage_collector
 from src.orchestrator.history import current_conversation_id, current_user_id, reset_history_cache
-from src.rag.tools import rag_results_collector
+from src.rag.tools import rag_results_collector, search_debug_info
 
 if TYPE_CHECKING:
     from agent_framework import Workflow, WorkflowEvent
+
+    from src.models.chat import ChatRequest
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,8 @@ def setup_context_vars(ctx: ChatContext) -> list[str]:
     """Set context variables for the AI workflow.
 
     Sets ``current_conversation_id``, ``current_user_id``, resets the history
-    cache, and initialises a fresh RAG results collector.
+    cache, initialises a fresh RAG results collector, and prepares the token
+    usage collector for the request.
 
     Returns the RAG collector list so callers can read collected outputs after
     the workflow completes.
@@ -140,6 +142,8 @@ def setup_context_vars(ctx: ChatContext) -> list[str]:
     reset_history_cache()
     rag_collector: list[str] = []
     rag_results_collector.set(rag_collector)
+    token_usage_collector.set([])
+    search_debug_info.set(None)
     return rag_collector
 
 

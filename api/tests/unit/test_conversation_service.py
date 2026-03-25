@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.config.settings import Settings
-from src.models.conversation import FeedbackRecord, MessageRecord
+from src.models.conversation import ConversationSummary, FeedbackRecord, MessageRecord
 from src.services.conversation import ConversationService
 
 
@@ -292,6 +292,166 @@ class TestUpdateLastActiveAgent:
 
         with pytest.raises(ValueError, match="not found or access denied"):
             await service.update_last_active_agent(conv_id, "user-1", "weather-agent")
+
+
+class TestListConversations:
+    @pytest.mark.asyncio
+    async def test_returns_summaries_ordered_by_updated_at(
+        self,
+        service: ConversationService,
+        mock_conn: AsyncMock,
+    ):
+        now = datetime.now(UTC)
+        conv_id = uuid.uuid4()
+
+        mock_conn.fetch.return_value = [
+            {
+                "id": conv_id,
+                "updated_at": now,
+                "last_active_agent": "weather-agent",
+                "first_user_message": "What is the weather today?",
+                "last_message": "It is sunny and warm.",
+                "message_count": 4,
+            },
+        ]
+
+        result = await service.list_conversations("user-1", limit=20, offset=0)
+
+        assert len(result) == 1
+        assert isinstance(result[0], ConversationSummary)
+        assert result[0].id == str(conv_id)
+        assert result[0].title == "What is the weather today?"
+        assert result[0].last_message_preview == "It is sunny and warm."
+        assert result[0].last_active_agent == "weather-agent"
+        assert result[0].message_count == 4
+        assert result[0].updated_at == now
+
+        # Verify query includes ORDER BY updated_at DESC
+        call_args = mock_conn.fetch.call_args
+        assert "ORDER BY c.updated_at DESC" in call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_list_when_no_conversations(
+        self,
+        service: ConversationService,
+        mock_conn: AsyncMock,
+    ):
+        mock_conn.fetch.return_value = []
+
+        result = await service.list_conversations("user-no-convos")
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_pagination_params_passed_to_query(
+        self,
+        service: ConversationService,
+        mock_conn: AsyncMock,
+    ):
+        mock_conn.fetch.return_value = []
+
+        await service.list_conversations("user-1", limit=10, offset=5)
+
+        call_args = mock_conn.fetch.call_args
+        assert call_args[0][1] == "user-1"  # $1 = user_id
+        assert call_args[0][2] == 10  # $2 = limit
+        assert call_args[0][3] == 5  # $3 = offset
+
+    @pytest.mark.asyncio
+    async def test_title_defaults_to_new_conversation_when_no_user_message(
+        self,
+        service: ConversationService,
+        mock_conn: AsyncMock,
+    ):
+        now = datetime.now(UTC)
+        conv_id = uuid.uuid4()
+
+        mock_conn.fetch.return_value = [
+            {
+                "id": conv_id,
+                "updated_at": now,
+                "last_active_agent": None,
+                "first_user_message": None,
+                "last_message": None,
+                "message_count": 0,
+            },
+        ]
+
+        result = await service.list_conversations("user-1")
+
+        assert result[0].title == "New conversation"
+        assert result[0].last_message_preview is None
+
+    @pytest.mark.asyncio
+    async def test_title_truncated_to_80_chars(
+        self,
+        service: ConversationService,
+        mock_conn: AsyncMock,
+    ):
+        now = datetime.now(UTC)
+        conv_id = uuid.uuid4()
+        long_message = "A" * 120
+
+        mock_conn.fetch.return_value = [
+            {
+                "id": conv_id,
+                "updated_at": now,
+                "last_active_agent": None,
+                "first_user_message": long_message,
+                "last_message": "short",
+                "message_count": 1,
+            },
+        ]
+
+        result = await service.list_conversations("user-1")
+
+        assert len(result[0].title) == 80
+        assert result[0].title == "A" * 80
+
+    @pytest.mark.asyncio
+    async def test_last_message_preview_truncated_to_120_chars(
+        self,
+        service: ConversationService,
+        mock_conn: AsyncMock,
+    ):
+        now = datetime.now(UTC)
+        conv_id = uuid.uuid4()
+        long_preview = "B" * 200
+
+        mock_conn.fetch.return_value = [
+            {
+                "id": conv_id,
+                "updated_at": now,
+                "last_active_agent": None,
+                "first_user_message": "Hello",
+                "last_message": long_preview,
+                "message_count": 2,
+            },
+        ]
+
+        result = await service.list_conversations("user-1")
+
+        assert result[0].last_message_preview is not None
+        assert len(result[0].last_message_preview) == 120
+        assert result[0].last_message_preview == "B" * 120
+
+    @pytest.mark.asyncio
+    async def test_user_isolation_query_filters_by_user_id(
+        self,
+        service: ConversationService,
+        mock_conn: AsyncMock,
+    ):
+        """User A's query only passes user A's ID — the WHERE clause ensures isolation."""
+        mock_conn.fetch.return_value = []
+
+        await service.list_conversations("user-a")
+
+        call_args = mock_conn.fetch.call_args
+        query = call_args[0][0]
+        # Query must filter by user_id
+        assert "WHERE c.user_id = $1" in query
+        # The bound parameter must be user-a
+        assert call_args[0][1] == "user-a"
 
 
 class TestHealthCheck:

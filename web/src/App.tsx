@@ -1,13 +1,20 @@
-import React, { createContext, useCallback, useEffect, useState } from "react";
+import React, { createContext, useCallback, useEffect, useRef, useState } from "react";
 import { ThemeProvider } from "@surf-kit/theme";
 import type { ColorMode } from "@surf-kit/theme";
-import { Button, DropdownMenu } from "@surf-kit/core";
+import { Button, Drawer, DropdownMenu } from "@surf-kit/core";
 import { WaveLoader } from "@surf-kit/core";
+import { ConversationList } from "@surf-kit/agent/chat";
+import type { ChatMessage } from "@surf-kit/agent";
+import { History, Settings2 } from "lucide-react";
 import { useAuth } from "./auth/AuthProvider";
+import { getApiBase } from "./auth/platform";
 import { isTauri } from "./auth/platform";
 import { ChatPage } from "./pages/ChatPage";
 import { SignInPage } from "./pages/SignInPage";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { DeveloperSettings } from "./components/DeveloperSettings";
+import { useConversations } from "./hooks/useConversations";
+import { useDeveloperSettings } from "./hooks/useDeveloperSettings";
 
 const STORAGE_KEY = "surf-color-mode";
 
@@ -143,12 +150,110 @@ function OfflineBanner() {
   );
 }
 
+/** Shape returned by GET /api/v1/chat/:id */
+interface ApiMessageRecord {
+  id: string;
+  role: "user" | "assistant";
+  content: string | null;
+  agent?: string | null;
+  response?: Record<string, unknown> | null;
+  attachments?: unknown[];
+  timestamp: string;
+}
+
 function AppContent() {
-  const { isAuthenticated, isGuest, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isGuest, isLoading: authLoading, getApiToken } = useAuth();
   const [chatKey, setChatKey] = useState(0);
   const [hasMessages, setHasMessages] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const { conversations, refresh: refreshConversations, deleteConversation } = useConversations();
+  const { settings: devSettings, updateSetting, resetToDefaults, isDevMode } = useDeveloperSettings();
+  const [devSettingsOpen, setDevSettingsOpen] = useState(false);
+
+  // Ref for the loadConversation action exposed by ChatPage
+  const loadConversationRef = useRef<((id: string, messages: ChatMessage[]) => void) | null>(null);
+
+  // Ref for the reset action exposed by ChatPage
+  const resetChatRef = useRef<(() => void) | null>(null);
+
   const handleHasMessages = useCallback(
     (has: boolean) => setHasMessages(has),
+    [],
+  );
+
+  /** Fetch a full conversation from the API and load it into the chat view. */
+  const handleSelectConversation = useCallback(
+    async (id: string) => {
+      try {
+        const token = await getApiToken();
+        const headers: Record<string, string> = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+
+        const res = await fetch(`${getApiBase()}/chat/${id}`, {
+          credentials: "include",
+          headers,
+        });
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const messages: ChatMessage[] = (data.messages ?? []).map(
+          (m: ApiMessageRecord) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content ?? "",
+            agent: m.agent ?? undefined,
+            response: m.response ?? undefined,
+            timestamp: new Date(m.timestamp),
+          }),
+        );
+
+        // If loadConversation ref is available, load into existing instance;
+        // otherwise bump the key to create a fresh ChatPage.
+        if (loadConversationRef.current) {
+          loadConversationRef.current(id, messages);
+        }
+
+        setActiveConversationId(id);
+        setHasMessages(messages.length > 0);
+      } finally {
+        setDrawerOpen(false);
+      }
+    },
+    [getApiToken],
+  );
+
+  const handleNewChat = useCallback(() => {
+    setChatKey((k) => k + 1);
+    setHasMessages(false);
+    setActiveConversationId(null);
+    setDrawerOpen(false);
+  }, []);
+
+  const handleDeleteConversation = useCallback(
+    async (id: string) => {
+      await deleteConversation(id);
+      // If we deleted the active conversation, reset the chat
+      if (id === activeConversationId) {
+        setChatKey((k) => k + 1);
+        setHasMessages(false);
+        setActiveConversationId(null);
+      }
+    },
+    [deleteConversation, activeConversationId],
+  );
+
+  /** Called by ChatPage after a message exchange completes. */
+  const handleStreamComplete = useCallback(() => {
+    void refreshConversations();
+  }, [refreshConversations]);
+
+  /** Called by ChatPage to register its loadConversation action. */
+  const handleRegisterActions = useCallback(
+    (load: (id: string, msgs: ChatMessage[]) => void, reset: () => void) => {
+      loadConversationRef.current = load;
+      resetChatRef.current = reset;
+    },
     [],
   );
 
@@ -205,17 +310,36 @@ function AppContent() {
         <Button
           intent="secondary"
           size="sm"
+          aria-label="Conversation history"
+          onPress={() => {
+            void refreshConversations();
+            setDrawerOpen(true);
+          }}
+          className="gap-1.5 transition-colors duration-150 border-accent/40 text-accent hover:border-accent hover:bg-accent-subtle active:scale-[0.98]"
+        >
+          <History size={16} />
+          <span className="hidden sm:inline text-sm font-medium">History</span>
+        </Button>
+        <Button
+          intent="secondary"
+          size="sm"
           aria-label="New chat"
           isDisabled={!hasMessages}
-          onPress={() => {
-            setChatKey((k) => k + 1);
-            setHasMessages(false);
-          }}
+          onPress={handleNewChat}
           className={`gap-1.5 ${hasMessages ? "transition-colors duration-150 border-accent/40 text-accent hover:border-accent hover:bg-accent-subtle active:scale-[0.98]" : "border-transparent text-text-muted cursor-default"}`}
         >
           <NewChatIcon />
           <span className="hidden sm:inline text-sm font-medium">New chat</span>
         </Button>
+        {isDevMode && (
+          <button
+            onClick={() => setDevSettingsOpen(true)}
+            aria-label="Developer settings"
+            className="p-1.5 rounded-md text-text-secondary hover:text-text-primary hover:bg-surface transition-colors cursor-pointer"
+          >
+            <Settings2 size={18} />
+          </button>
+        )}
         <ThemeToggle />
         <div className="w-px h-5 bg-border mx-1 sm:mx-4" />
         <UserMenu />
@@ -223,8 +347,36 @@ function AppContent() {
       <p className="sm:hidden text-center font-display text-xs font-semibold text-text-primary tracking-tight py-1.5 border-b border-border shrink-0">
         Responses are AI-generated.
       </p>
+      <Drawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        side="left"
+        title="Conversation history"
+      >
+        <ConversationList
+          conversations={conversations}
+          activeId={activeConversationId ?? undefined}
+          onSelect={(id) => void handleSelectConversation(id)}
+          onDelete={(id) => void handleDeleteConversation(id)}
+          onNew={handleNewChat}
+        />
+      </Drawer>
+      {isDevMode && (
+        <DeveloperSettings
+          isOpen={devSettingsOpen}
+          onClose={() => setDevSettingsOpen(false)}
+          settings={devSettings}
+          onUpdate={updateSetting}
+          onReset={resetToDefaults}
+        />
+      )}
       <main className="flex-1 overflow-hidden">
-        <ChatPage key={chatKey} onHasMessages={handleHasMessages} />
+        <ChatPage
+          key={chatKey}
+          onHasMessages={handleHasMessages}
+          onStreamComplete={handleStreamComplete}
+          onRegisterActions={handleRegisterActions}
+        />
       </main>
     </div>
   );

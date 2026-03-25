@@ -70,6 +70,14 @@ workflow_timeouts = meter.create_counter(
 )
 
 
+def record_token_usage(
+    input_tokens: int, output_tokens: int, agent_name: str = "unknown"
+) -> None:
+    """Increment the ``surf.chat.tokens_total`` counter with direction labels."""
+    chat_tokens.add(input_tokens, {"agent": agent_name, "direction": "input"})
+    chat_tokens.add(output_tokens, {"agent": agent_name, "direction": "output"})
+
+
 def setup_telemetry(app: FastAPI, settings: Settings) -> None:
     """Initialise OpenTelemetry tracing and instrument FastAPI.
 
@@ -114,10 +122,18 @@ def setup_telemetry(app: FastAPI, settings: Settings) -> None:
                 " — telemetry data will be discarded (expected in dev)"
             )
         else:
-            logger.error(
-                "OTEL_EXPORTER_OTLP_ENDPOINT not set"
-                " — telemetry data will be discarded"
-            )
+            logger.error("OTEL_EXPORTER_OTLP_ENDPOINT not set — telemetry data will be discarded")
+
+
+def create_anthropic_span(model_id: str, agent_name: str = "unknown"):
+    """Create a span for an Anthropic API call."""
+    return tracer.start_as_current_span(
+        "anthropic.messages.create",
+        attributes={
+            "llm.model": model_id,
+            "llm.agent": agent_name,
+        },
+    )
 
 
 def span_conversation_persistence(conversation_id: str) -> trace.Span:

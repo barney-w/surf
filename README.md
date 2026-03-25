@@ -5,7 +5,7 @@
 
 **The open framework for extensible & grounded AI agent orchestration.**
 
-_FastAPI · Anthropic Claude · Azure RAG · Cosmos DB_
+_FastAPI · Anthropic Claude · Azure RAG · PostgreSQL_
 
 [![CI](https://github.com/barney-w/surf/actions/workflows/pr-checks.yml/badge.svg?branch=main)](https://github.com/barney-w/surf/actions/workflows/pr-checks.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -27,6 +27,8 @@ _FastAPI · Anthropic Claude · Azure RAG · Cosmos DB_
 - [just](https://github.com/casey/just) for task running
 - [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
 - An Azure subscription with Azure OpenAI access
+
+> **Windows:** Use [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) (Ubuntu). All commands run inside WSL. See [docs/wsl-setup.md](./docs/wsl-setup.md) for details.
 
 ### Setup
 
@@ -92,7 +94,7 @@ graph TD
   it_agent["IT Agent<br/>RAG tool + structured JSON"]
   aisearch["Azure AI Search<br/>BM25 + Vector"]
   anthropic["Anthropic<br/>claude-sonnet-4-6"]
-  cosmos["Cosmos DB<br/>Conversations"]
+  postgres["PostgreSQL<br/>Conversations"]
   keyvault["Key Vault"]
   logs["Log Analytics<br/>OpenTelemetry"]
 
@@ -105,7 +107,7 @@ graph TD
   hr_agent --> anthropic
   it_agent --> anthropic
   coordinator --> anthropic
-  api --> cosmos
+  api --> postgres
   api --> keyvault
   api --> logs
 ```
@@ -168,7 +170,6 @@ phase(thinking) -> agent(name) -> phase(generating) -> delta* -> phase(verifying
 | --------------- | ---------------------- | ------------------------------------------------------ |
 | Azure OpenAI    | `openai.bicep`         | text-embedding-3-large embeddings (ingestion pipeline) |
 | Azure AI Search | `ai-search.bicep`      | Hybrid BM25 + vector search for RAG                    |
-| Cosmos DB       | `cosmos-db.bicep`      | Serverless conversation storage (`/user_id` partition) |
 | Container Apps  | `container-apps.bicep` | API (0--3 replicas) + ingestion (0--1) hosting         |
 | Key Vault       | `key-vault.bicep`      | Secrets management                                     |
 | Storage         | `storage.bicep`        | Document blob storage for ingestion                    |
@@ -180,20 +181,17 @@ graph LR
   vnet["networking"]
   openai["openai"]
   search["ai-search"]
-  cosmos["cosmos-db"]
   storage["storage"]
   kv["key-vault"]
   logs["log-analytics"]
   ca["container-apps"]
 
   vnet --> search
-  vnet --> cosmos
   vnet --> storage
   vnet --> kv
   logs --> ca
   ca --> openai
   ca --> search
-  ca --> cosmos
   ca --> kv
   ca --> storage
 ```
@@ -223,7 +221,7 @@ Each workflow uses path filters so only relevant pipelines run per commit.
 - **Anthropic** -- claude-sonnet-4-6 (chat completions for all agents)
 - **Azure OpenAI** -- text-embedding-3-large (ingestion embeddings only)
 - **Azure AI Search** -- hybrid vector + BM25 retrieval
-- **Cosmos DB** -- serverless NoSQL with user-based partitioning
+- **PostgreSQL** -- conversation persistence with Alembic migrations
 - **OpenTelemetry** -- distributed tracing and structured logging
 - **Bicep** -- infrastructure as code (8 modules, 3 environments)
 - **uv** for dependency management
@@ -245,8 +243,12 @@ Each workflow uses path filters so only relevant pipelines run per commit.
 | `just lint`           | Lint all code                                      |
 | `just typecheck`      | Type-check all code                                |
 | `just format`         | Format all code                                    |
+| `just dev-remote`     | Run frontend against a deployed API (no local DB)  |
+| `just check-prereqs`  | Verify all dev tools are installed                 |
 | `just setup-dev`      | Deploy dev Azure resources + generate .env         |
 | `just teardown-dev`   | Delete dev Azure resources                         |
+| `just ask "question"` | Ask the dev agent about the codebase               |
+| `just ask-repl`       | Start interactive dev agent session                |
 
 ```bash
 git clone https://github.com/barney-w/surf.git
@@ -272,12 +274,16 @@ Interactive chat interface for testing the AI workflow without the surf-kit fron
 
 ## Documentation & Resources
 
-| Resource        | Link                                                   |
-| --------------- | ------------------------------------------------------ |
-| Load Testing    | [api/tests/load/README.md](./api/tests/load/README.md) |
-| Contributing    | [CONTRIBUTING.md](./CONTRIBUTING.md)                   |
-| Code of Conduct | [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)             |
-| Security        | [SECURITY.md](./SECURITY.md)                           |
+| Resource         | Link                                                   |
+| ---------------- | ------------------------------------------------------ |
+| Local Deployment | [docs/local-deployment.md](./docs/local-deployment.md) |
+| WSL Setup        | [docs/wsl-setup.md](./docs/wsl-setup.md)               |
+| GitLab CI/CD     | [docs/gitlab-setup.md](./docs/gitlab-setup.md)         |
+| Dev Agent        | [tools/dev-agent/README.md](./tools/dev-agent/README.md) |
+| Load Testing     | [api/tests/load/README.md](./api/tests/load/README.md) |
+| Contributing     | [CONTRIBUTING.md](./CONTRIBUTING.md)                   |
+| Code of Conduct  | [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)             |
+| Security         | [SECURITY.md](./SECURITY.md)                           |
 
 ---
 

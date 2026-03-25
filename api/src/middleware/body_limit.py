@@ -24,11 +24,18 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
         if content_length and int(content_length) > limit:
             logger.warning(
                 "Request body too large: %s bytes (max %d) for %s",
-                content_length, limit, request.url.path,
+                content_length,
+                limit,
+                request.url.path,
             )
             return JSONResponse(
                 status_code=413,
-                content={"error": {"type": "payload_too_large", "message": f"Request body exceeds {limit} byte limit"}},
+                content={
+                    "error": {
+                        "type": "payload_too_large",
+                        "message": f"Request body exceeds {limit} byte limit",
+                    }
+                },
             )
 
         # Also enforce on actual body (Content-Length can be omitted or spoofed)
@@ -37,11 +44,18 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
             if len(body) > limit:
                 logger.warning(
                     "Request body too large: %d bytes (max %d) for %s",
-                    len(body), limit, request.url.path,
+                    len(body),
+                    limit,
+                    request.url.path,
                 )
                 return JSONResponse(
                     status_code=413,
-                    content={"error": {"type": "payload_too_large", "message": f"Request body exceeds {limit} byte limit"}},
+                    content={
+                        "error": {
+                            "type": "payload_too_large",
+                            "message": f"Request body exceeds {limit} byte limit",
+                        }
+                    },
                 )
 
         return await call_next(request)

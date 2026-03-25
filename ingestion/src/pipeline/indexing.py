@@ -1,4 +1,9 @@
-"""Azure AI Search indexing — index management and chunk upload."""
+"""Azure AI Search indexing — index management and chunk upload.
+
+This module is the **source of truth** for all search index schemas. Every
+index used by the platform is defined here so that ``init-index --all`` can
+recreate the full search layer from scratch on a fresh Azure instance.
+"""
 
 from __future__ import annotations
 
@@ -24,6 +29,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 VECTOR_DIMENSIONS = 3072
+
+# ---------------------------------------------------------------------------
+# Index: surf-index (main RAG index)
+# Populated by the ingestion CLI (ingest command).
+# ---------------------------------------------------------------------------
+
+DEFAULT_INDEX_NAME = "surf-index"
 
 INDEX_FIELDS = [
     SimpleField(name="id", type=SearchFieldDataType.String, key=True, filterable=True),
@@ -53,9 +65,61 @@ INDEX_FIELDS = [
     SimpleField(name="metadata", type=SearchFieldDataType.String, filterable=False),
 ]
 
+# ---------------------------------------------------------------------------
+# Index: surf-sharepoint-index (SharePoint content)
+# Populated by an Azure-managed blob indexer that reads chunked content from
+# the ``documents`` blob container (written by ``sync-sharepoint``).
+# ---------------------------------------------------------------------------
 
-def create_or_update_index(index_client: SearchIndexClient, index_name: str) -> None:
-    """Create or update the AI Search index with the required schema."""
+SHAREPOINT_INDEX_NAME = "surf-sharepoint-index"
+
+SHAREPOINT_INDEX_FIELDS = [
+    SimpleField(name="chunk_id", type=SearchFieldDataType.String, key=True, filterable=True),
+    SimpleField(name="parent_id", type=SearchFieldDataType.String, filterable=True),
+    SimpleField(name="document_id", type=SearchFieldDataType.String, filterable=True),
+    SearchableField(name="title", type=SearchFieldDataType.String),
+    SearchableField(name="content", type=SearchFieldDataType.String),
+    SearchField(
+        name="content_vector",
+        type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
+        searchable=True,
+        vector_search_dimensions=VECTOR_DIMENSIONS,
+        vector_search_profile_name="default-vector-profile",
+    ),
+    SimpleField(name="source_url", type=SearchFieldDataType.String, filterable=False),
+    SimpleField(name="source_type", type=SearchFieldDataType.String, filterable=True),
+    SimpleField(name="domain", type=SearchFieldDataType.String, filterable=True, facetable=True),
+    SimpleField(name="document_type", type=SearchFieldDataType.String, filterable=True),
+    SearchableField(name="section_heading", type=SearchFieldDataType.String),
+    SimpleField(name="chunk_index", type=SearchFieldDataType.Int32, filterable=True, sortable=True),
+]
+
+# ---------------------------------------------------------------------------
+# Registry: all managed indexes
+# ---------------------------------------------------------------------------
+
+INDEX_REGISTRY: dict[str, list[Any]] = {
+    DEFAULT_INDEX_NAME: INDEX_FIELDS,
+    SHAREPOINT_INDEX_NAME: SHAREPOINT_INDEX_FIELDS,
+}
+
+
+def create_or_update_index(
+    index_client: SearchIndexClient,
+    index_name: str,
+    fields: list[Any] | None = None,
+) -> None:
+    """Create or update an AI Search index.
+
+    Args:
+        index_client: Authenticated ``SearchIndexClient``.
+        index_name: Name of the index to create/update.
+        fields: Field definitions.  If ``None``, looks up *index_name* in
+            ``INDEX_REGISTRY`` and falls back to ``INDEX_FIELDS``.
+    """
+    if fields is None:
+        fields = INDEX_REGISTRY.get(index_name, INDEX_FIELDS)
+
     vector_search = VectorSearch(
         algorithms=[HnswAlgorithmConfiguration(name="default-hnsw")],
         profiles=[
@@ -68,7 +132,7 @@ def create_or_update_index(index_client: SearchIndexClient, index_name: str) -> 
 
     index = SearchIndex(
         name=index_name,
-        fields=INDEX_FIELDS,
+        fields=fields,
         vector_search=vector_search,
     )
 
