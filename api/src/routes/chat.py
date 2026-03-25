@@ -142,10 +142,13 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
 
     ctx = await prepare_chat_request(body, user_id, conversation_service)
 
-    # Apply debug overrides from X-Surf-Debug-* request headers.
-    overrides = parse_debug_overrides(dict(request.headers))
-    if overrides:
-        _search_overrides.set(overrides)
+    # Apply debug overrides from X-Surf-Debug-* request headers (dev only).
+    from src.config.settings import get_settings as _get_settings
+
+    if _get_settings().environment == "dev":
+        overrides = parse_debug_overrides(dict(request.headers))
+        if overrides:
+            _search_overrides.set(overrides)
 
     # Run the workflow (with timeout)
     rag_available = True
@@ -276,10 +279,13 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             media_type="text/event-stream",
         )
 
-    # Parse debug overrides once so the generator can re-apply them.
-    stream_overrides = parse_debug_overrides(dict(request.headers))
-    # Gate the debug SSE event behind the X-Surf-Debug request header.
-    emit_debug = "x-surf-debug" in {k.lower() for k in request.headers}
+    # Parse debug overrides once so the generator can re-apply them (dev only).
+    from src.config.settings import get_settings as _get_settings
+
+    _is_dev = _get_settings().environment == "dev"
+    stream_overrides = parse_debug_overrides(dict(request.headers)) if _is_dev else None
+    # Gate the debug SSE event behind dev mode AND the X-Surf-Debug request header.
+    emit_debug = _is_dev and "x-surf-debug" in {k.lower() for k in request.headers}
 
     async def generate() -> AsyncGenerator[str, None]:
         rag_collector = setup_context_vars(ctx)

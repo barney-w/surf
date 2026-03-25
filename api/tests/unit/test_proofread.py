@@ -13,9 +13,10 @@ def _settings(**overrides: object) -> Settings:
         "anthropic_api_key": "test-key",
         "anthropic_proofread_model_id": "claude-haiku-4-5-20251001",
         "proofread_enabled": True,
+        "postgres_password": "test",
     }
     defaults.update(overrides)
-    return Settings(**defaults)  # type: ignore[arg-type]
+    return Settings(_env_file=None, **defaults)  # type: ignore[arg-type]
 
 
 def _mock_response(text: str) -> MagicMock:
