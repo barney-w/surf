@@ -57,7 +57,5 @@ param webMinReplicas = 1
 param webMaxReplicas = 1
 
 // GitLab CI/CD — Workload Identity Federation
-// Uncomment and set to create a CI managed identity with OIDC federated credential.
-// After deployment, set the output ciIdentityClientId as AZURE_CI_CLIENT_ID in GitLab.
-// param gitlabOidcIssuer = 'https://gitlab.example.com'
-// param gitlabProjectPath = 'group/surf'
+param gitlabOidcIssuer = 'https://gitlab.com'
+param gitlabProjectPath = 'your-group/surf'

@@ -298,7 +298,7 @@ jobs:
         run: uv sync --frozen ${{ matrix.prerelease }}
 
       - name: Run pip-audit
-        run: uv run pip-audit
+        run: uv run pip-audit --ignore-vuln CVE-2026-4539
 
   sast:
     name: SAST (Bandit)

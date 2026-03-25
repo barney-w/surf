@@ -28,17 +28,19 @@ default:
 # ---------------------------------------------------------------------------
 # Shared templates: Azure Workload Identity Federation (OIDC)
 # ---------------------------------------------------------------------------
-# These replace long-lived service principal secrets with short-lived OIDC
-# tokens issued by GitLab and exchanged for Azure AD credentials via a
-# federated identity credential on the CI managed identity.
+# Authenticates via short-lived OIDC tokens issued by GitLab, exchanged for
+# Azure AD credentials via a federated identity credential on the CI managed
+# identity (provisioned by infra/main.bicep when gitlabOidcIssuer is set).
 #
-# Infrastructure: infra/main.bicep → ciManagedIdentity + gitlabFederatedCredential
-#
-# Required CI/CD variables (masked, protected):
+# Required CI/CD variables (masked):
 #   AZURE_CI_CLIENT_ID    — CI managed identity client ID (Bicep output)
 #   AZURE_TENANT_ID       — Azure AD tenant ID
 #   AZURE_SUBSCRIPTION_ID — Azure subscription ID
 #   ACR_LOGIN_SERVER      — e.g. acrsurfdev.azurecr.io
+#
+# Bootstrap: if the CI managed identity doesn't exist yet, deploy
+# infra/main.bicep once locally, then set AZURE_CI_CLIENT_ID from the
+# ciIdentityClientId output.
 # ---------------------------------------------------------------------------
 
 # Base template: requests a GitLab OIDC token for Azure AD exchange.
@@ -61,7 +63,8 @@ default:
     DOCKER_CERT_PATH: "/certs/client"
     DOCKER_BUILDKIT: "1"
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends docker.io
+    # Install Docker CLI + BuildKit (Azure CLI image is Azure Linux — uses tdnf, not apt-get)
+    - tdnf install -y moby-cli moby-buildx
     # Wait for Docker-in-Docker to be ready
     - |
       for i in $(seq 1 30); do
@@ -75,7 +78,7 @@ default:
     - az account set --subscription "$AZURE_SUBSCRIPTION_ID"
     - az acr login --name "${ACR_LOGIN_SERVER%%.*}"
 
-# Azure CLI jobs (deploy, infra) using WIF.
+# Azure CLI jobs (deploy, infra) — no Docker needed.
 .azure-deploy:
   extends: .azure-wif
   image: mcr.microsoft.com/azure-cli:latest

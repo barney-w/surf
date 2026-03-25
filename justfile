@@ -57,7 +57,7 @@ check-prereqs:
     echo "All prerequisites installed."
 
 # Run web frontend against a deployed API (no local API/DB needed)
-dev-remote url="https://ca-web-surf-dev.lemongrass-396ccf8b.australiaeast.azurecontainerapps.io":
+dev-remote url="":
     cd web && API_PROXY_TARGET={{url}} npm run dev
 
 # Run database migrations

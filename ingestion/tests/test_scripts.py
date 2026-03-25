@@ -370,13 +370,13 @@ class TestCreateIndexer:
         assert body["targetIndexName"] == "surf-sharepoint-index"
         assert body["skillsetName"] == "surf-sharepoint-index-skillset"
 
-    def test_indexer_has_daily_schedule(self) -> None:
-        """Indexer should run on a daily schedule."""
+    def test_indexer_has_hourly_schedule(self) -> None:
+        """Indexer should run on an hourly schedule."""
         api, mock_client = _make_api()
         _create_indexer(api, "surf-sharepoint-index")
 
         body = _extract_body(mock_client)
-        assert body["schedule"]["interval"] == "P1D"
+        assert body["schedule"]["interval"] == "PT1H"
 
     def test_indexer_file_extensions_match_sync(self) -> None:
         """Indexed file extensions should cover the same formats as the sync."""

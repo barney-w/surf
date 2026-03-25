@@ -1,3 +1,4 @@
+import contextlib
 import json
 import logging
 from collections.abc import Sequence
@@ -229,10 +230,8 @@ class _SafeHandoffAnthropicClient(AnthropicClient):
                 output_tokens=self._stream_output_tokens,
                 model_id=self._stream_model_id,
             )
-            try:
+            with contextlib.suppress(LookupError):
                 token_usage_collector.get().append(usage)
-            except LookupError:
-                pass
 
             # Close the OTel span with token attributes.
             span = self._current_span

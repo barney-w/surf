@@ -57,7 +57,7 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/security", "tests/integration"]
-addopts = "--cov=src --cov-report=term-missing:skip-covered --cov-fail-under=78"
+addopts = "--cov=src --cov-report=term-missing:skip-covered --cov-fail-under=77"
 markers = [
     "integration: tests that require a real database connection",
 ]

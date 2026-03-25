@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import re
 from collections.abc import Awaitable, Callable
@@ -6,9 +7,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Annotated
 
-from anthropic import AsyncAnthropic
-
 from agent_framework import FunctionTool, tool
+from anthropic import AsyncAnthropic
 from azure.search.documents.aio import SearchClient
 from pydantic import Field
 
@@ -44,9 +44,7 @@ class SearchOverrides:
     enable_proofread: bool | None = None
 
 
-_search_overrides: ContextVar[SearchOverrides | None] = ContextVar(
-    "search_overrides", default=None
-)
+_search_overrides: ContextVar[SearchOverrides | None] = ContextVar("search_overrides", default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -66,9 +64,7 @@ class SearchDebugInfo:
     tier_counts: dict[str, int] = field(default_factory=dict)
 
 
-search_debug_info: ContextVar[SearchDebugInfo | None] = ContextVar(
-    "search_debug", default=None
-)
+search_debug_info: ContextVar[SearchDebugInfo | None] = ContextVar("search_debug", default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +127,7 @@ def parse_debug_overrides(headers: dict[str, str]) -> SearchOverrides | None:
         enable_rewrite=_bool_or_none(debug_headers.get(f"{prefix}enablerewrite")),
         enable_proofread=_bool_or_none(debug_headers.get(f"{prefix}enableproofread")),
     )
+
 
 _search_clients: list[SearchClient] = []
 
@@ -375,10 +372,8 @@ async def rewrite_query_with_llm(query: str) -> str:
                 output_tokens=response.usage.output_tokens,
                 model_id=_rewrite_model_id,
             )
-            try:
+            with contextlib.suppress(LookupError):
                 token_usage_collector.get().append(usage)
-            except LookupError:
-                pass
         except Exception:
             pass  # Never let usage capture break the rewrite path
 
@@ -391,7 +386,11 @@ async def rewrite_query_with_llm(query: str) -> str:
                     rewritten[:100],
                 )
             else:
-                logger.info("query_rewrite: rewrote query (%d chars -> %d chars)", len(query), len(rewritten))
+                logger.info(
+                    "query_rewrite: rewrote query (%d chars -> %d chars)",
+                    len(query),
+                    len(rewritten),
+                )
             return rewritten
         return query
     except Exception:
@@ -518,7 +517,9 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
         top_k = overrides.top_k if overrides and overrides.top_k is not None else 15
 
         # Determine whether to use hybrid (vector) search.
-        use_hybrid = overrides.enable_vector if overrides and overrides.enable_vector is not None else True
+        use_hybrid = (
+            overrides.enable_vector if overrides and overrides.enable_vector is not None else True
+        )
 
         if get_settings().trace_prompt_content:
             logger.info(
@@ -538,15 +539,17 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
 
         # Initialise debug info for this search invocation.
         debug = SearchDebugInfo(original_query=query)
-        try:
+        with contextlib.suppress(LookupError):
             search_debug_info.set(debug)
-        except LookupError:
-            pass  # ContextVar not initialised for this context; debug will still accumulate locally
 
         try:
             # Strategy 0: LLM query rewrite (before primary search)
             search_query = query
-            run_rewrite = overrides.enable_rewrite if overrides and overrides.enable_rewrite is not None else True
+            run_rewrite = (
+                overrides.enable_rewrite
+                if overrides and overrides.enable_rewrite is not None
+                else True
+            )
             if run_rewrite:
                 rewritten_query = await rewrite_query_with_llm(query)
                 if rewritten_query != query:
@@ -573,7 +576,11 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
                 k: v for k, v in filters.items() if k in identity_keys
             }
 
-            run_broadened = overrides.enable_broadened if overrides and overrides.enable_broadened is not None else True
+            run_broadened = (
+                overrides.enable_broadened
+                if overrides and overrides.enable_broadened is not None
+                else True
+            )
             if run_broadened and len(results) < min_confident_results:
                 logger.info(
                     "search_knowledge_base: strategy 1 returned %d results (< %d), "
@@ -596,7 +603,11 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
 
             # Strategy 3: Keyword extraction fallback — strip conversational
             # phrasing and search with extracted keywords
-            run_keyword = overrides.enable_keyword if overrides and overrides.enable_keyword is not None else True
+            run_keyword = (
+                overrides.enable_keyword
+                if overrides and overrides.enable_keyword is not None
+                else True
+            )
             if run_keyword and len(results) < min_confident_results:
                 keywords = _extract_keywords(query)
                 if keywords != query.lower().strip():
@@ -644,13 +655,25 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
             return "No relevant documents found for this query."
 
         # Chunk stitching (can be disabled via override).
-        run_stitching = overrides.enable_stitching if overrides and overrides.enable_stitching is not None else True
+        run_stitching = (
+            overrides.enable_stitching
+            if overrides and overrides.enable_stitching is not None
+            else True
+        )
         if run_stitching:
             results = stitch_adjacent_chunks(results)
 
         # Resolve threshold values, applying overrides when present.
-        strong_threshold = overrides.strong_threshold if overrides and overrides.strong_threshold is not None else 0.7
-        partial_threshold = overrides.partial_threshold if overrides and overrides.partial_threshold is not None else 0.4
+        strong_threshold = (
+            overrides.strong_threshold
+            if overrides and overrides.strong_threshold is not None
+            else 0.7
+        )
+        partial_threshold = (
+            overrides.partial_threshold
+            if overrides and overrides.partial_threshold is not None
+            else 0.4
+        )
 
         # Normalise scores within the result set so the top result is always 1.0.
         # This is robust to both keyword (BM25, scores ~0-10) and hybrid search

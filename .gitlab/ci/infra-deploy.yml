@@ -8,8 +8,8 @@
 # Required CI/CD variables (masked, protected):
 #   ANTHROPIC_API_KEY       — Anthropic API key (stored in Key Vault via Bicep)
 #   GUEST_TOKEN_SECRET      — HMAC secret for guest tokens (stored in Key Vault via Bicep)
-#   GITLAB_OIDC_ISSUER      — GitLab instance URL for WIF (optional, for CI identity)
-#   GITLAB_PROJECT_PATH     — GitLab project path for WIF (optional, for CI identity)
+#   GITLAB_OIDC_ISSUER      — GitLab instance URL (optional, for CI identity)
+#   GITLAB_PROJECT_PATH     — GitLab project path (optional, for CI identity)
 # ---------------------------------------------------------------------------
 
 .infra-ci-rules:

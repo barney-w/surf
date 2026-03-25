@@ -70,9 +70,7 @@ workflow_timeouts = meter.create_counter(
 )
 
 
-def record_token_usage(
-    input_tokens: int, output_tokens: int, agent_name: str = "unknown"
-) -> None:
+def record_token_usage(input_tokens: int, output_tokens: int, agent_name: str = "unknown") -> None:
     """Increment the ``surf.chat.tokens_total`` counter with direction labels."""
     chat_tokens.add(input_tokens, {"agent": agent_name, "direction": "input"})
     chat_tokens.add(output_tokens, {"agent": agent_name, "direction": "output"})

@@ -17,7 +17,10 @@ from dotenv import load_dotenv
 # Azure credentials are available without manually sourcing the file.
 load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 
+from src.connectors.csv_parser import create_document_from_csv  # noqa: E402
+from src.connectors.docx import create_document_from_docx  # noqa: E402
 from src.connectors.pdf import create_document_from_pdf  # noqa: E402
+from src.connectors.txt import create_document_from_txt  # noqa: E402
 from src.pipeline.chunking import ChunkingConfig, chunk_document  # noqa: E402
 from src.pipeline.embedding import generate_embeddings  # noqa: E402
 from src.pipeline.indexing import (  # noqa: E402
@@ -40,15 +43,24 @@ def _discover_files(path: Path, source: str) -> list[Path]:
     Returns:
         Sorted list of matching file paths.
     """
-    extension_map: dict[str, str] = {"pdf": ".pdf"}
-    ext = extension_map.get(source, f".{source}")
+    extension_map: dict[str, str | list[str]] = {
+        "pdf": ".pdf",
+        "docx": ".docx",
+        "txt": [".txt", ".md"],
+        "csv": ".csv",
+    }
+    raw = extension_map.get(source, f".{source}")
+    exts: list[str] = raw if isinstance(raw, list) else [raw]
 
     if path.is_file():
-        if path.suffix.lower() == ext:
+        if path.suffix.lower() in exts:
             return [path]
         return []
 
-    return sorted(path.rglob(f"*{ext}"))
+    found: list[Path] = []
+    for ext in exts:
+        found.extend(path.rglob(f"*{ext}"))
+    return sorted(found)
 
 
 def _load_manifest(manifest_path: str | None) -> dict[str, dict[str, Any]]:
@@ -101,7 +113,7 @@ def _parse_file(source: str, file_path: Path, manifest_entry: dict[str, Any]) ->
     """Parse a single file into an IngestedDocument.
 
     Args:
-        source: Source type (``"pdf"``).
+        source: Source type (``"pdf"``, ``"docx"``, ``"txt"``, ``"csv"``).
         file_path: Path to the file.
         manifest_entry: Metadata dict for the file.
 
@@ -110,6 +122,12 @@ def _parse_file(source: str, file_path: Path, manifest_entry: dict[str, Any]) ->
     """
     if source == "pdf":
         return create_document_from_pdf(file_path, manifest_entry)
+    if source == "docx":
+        return create_document_from_docx(file_path, manifest_entry)
+    if source in ("txt", "md"):
+        return create_document_from_txt(file_path, manifest_entry)
+    if source == "csv":
+        return create_document_from_csv(file_path, manifest_entry)
     msg = f"Unsupported source type: {source}"
     raise ValueError(msg)
 
@@ -283,8 +301,44 @@ def cli() -> None:
     """Surf document ingestion pipeline."""
 
 
+# Map file extensions to the internal source type used by _parse_file / _discover_files.
+_EXTENSION_TO_SOURCE: dict[str, str] = {
+    ".pdf": "pdf",
+    ".docx": "docx",
+    ".txt": "txt",
+    ".md": "txt",
+    ".csv": "csv",
+}
+
+
+def _detect_source(target: Path) -> str:
+    """Auto-detect the source type from a file extension.
+
+    For directories, returns an empty string so the caller can fall back to
+    the explicit ``--source`` option.
+
+    Raises:
+        click.ClickException: If the extension is not supported.
+    """
+    if target.is_dir():
+        return ""
+    ext = target.suffix.lower()
+    source = _EXTENSION_TO_SOURCE.get(ext)
+    if source is None:
+        supported = ", ".join(sorted(_EXTENSION_TO_SOURCE))
+        raise click.ClickException(
+            f"Unsupported file extension '{ext}'. Supported extensions: {supported}"
+        )
+    return source
+
+
 @cli.command()
-@click.option("--source", type=click.Choice(["pdf"]), required=True)
+@click.option(
+    "--source",
+    type=click.Choice(["pdf", "docx", "txt", "csv"]),
+    default=None,
+    help="Source type. Auto-detected from file extension when omitted.",
+)
 @click.option("--path", type=click.Path(exists=True), required=True)
 @click.option("--domain", required=True, help="Document domain (hr, it, governance)")
 @click.option("--manifest", type=click.Path(exists=True), default=None, help="Manifest JSON file")
@@ -308,7 +362,7 @@ def cli() -> None:
     help="Number of chunks per embedding API call.",
 )
 def ingest(
-    source: str,
+    source: str | None,
     path: str,
     domain: str,
     manifest: str | None,
@@ -320,6 +374,12 @@ def ingest(
     """Ingest documents into the knowledge base."""
     target = Path(path)
     config = ChunkingConfig(max_chunk_tokens=chunk_size, overlap_tokens=overlap)
+
+    # Auto-detect source type from file extension when --source is omitted.
+    if source is None:
+        source = _detect_source(target)
+        if not source:
+            raise click.ClickException("--source is required when --path points to a directory.")
 
     # 1. Load manifest (if provided)
     manifest_data = _load_manifest(manifest)

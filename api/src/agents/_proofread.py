@@ -8,6 +8,7 @@ never change meaning.  Falls back to the original text on any error.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 from typing import TYPE_CHECKING
@@ -86,10 +87,8 @@ async def proofread_message(message: str, settings: Settings) -> str:
                 output_tokens=response.usage.output_tokens,
                 model_id=settings.anthropic_proofread_model_id,
             )
-            try:
+            with contextlib.suppress(LookupError):
                 token_usage_collector.get().append(usage)
-            except LookupError:
-                pass
         except Exception:
             pass  # Never let usage capture break proofreading
 
