@@ -8,7 +8,10 @@ from src.config.settings import Settings, get_settings
 class TestSettingsDefaults:
     """Test that Settings loads with sensible defaults when no env vars are set."""
 
-    def test_default_values(self):
+    def test_default_values(self, monkeypatch: pytest.MonkeyPatch):
+        # Clear CI-injected env vars that override defaults
+        for var in ("ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ORGANISATION_NAME"):
+            monkeypatch.delenv(var, raising=False)
         settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
 
         assert settings.environment == "dev"
@@ -71,6 +74,7 @@ class TestProductionKeyValidator:
             _env_file=None,  # pyright: ignore[reportCallIssue]
             environment="production",
             anthropic_api_key="sk-test-key",
+            postgres_password="test-secret",
         )
         assert settings.environment == "production"
 
@@ -80,6 +84,7 @@ class TestProductionKeyValidator:
             _env_file=None,  # pyright: ignore[reportCallIssue]
             environment="staging",
             anthropic_foundry_api_key="sk-foundry-key",
+            postgres_password="test-secret",
         )
         assert settings.environment == "staging"
 
@@ -111,6 +116,7 @@ class TestSettingsEnvOverrides:
         monkeypatch.setenv("AUTH_ENABLED", "true")
         monkeypatch.setenv("API_CORS_ORIGINS", '["http://localhost:5173"]')
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "test-secret")
 
         settings = Settings()
 
@@ -141,6 +147,7 @@ class TestLifespanProductionGuards:
             environment="staging",
             auth_enabled=False,
             anthropic_api_key="sk-test-key",
+            postgres_password="test-secret",
         )
 
         with patch("src.main.settings", unsafe_settings), pytest.raises(SystemExit):
@@ -161,6 +168,7 @@ class TestLifespanProductionGuards:
             auth_enabled=True,
             debug=True,
             anthropic_api_key="sk-test-key",
+            postgres_password="test-secret",
         )
 
         with patch("src.main.settings", unsafe_settings), pytest.raises(SystemExit):
@@ -182,6 +190,7 @@ class TestLifespanProductionGuards:
             debug=False,
             api_cors_origins=["*"],
             anthropic_api_key="sk-test-key",
+            postgres_password="test-secret",
         )
 
         with patch("src.main.settings", unsafe_settings), pytest.raises(SystemExit):
@@ -229,6 +238,7 @@ class TestLifespanProductionGuards:
             debug=False,
             api_cors_origins=["https://surf.example.com"],
             anthropic_api_key="sk-test-key",
+            postgres_password="test-secret",
         )
 
         with patch("src.main.settings", valid_settings):

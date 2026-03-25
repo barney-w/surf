@@ -1,0 +1,133 @@
+# ---------------------------------------------------------------------------
+# Web CI/CD: lint → build SPA → Docker push/scan → deploy
+# ---------------------------------------------------------------------------
+# Mirrors: .github/workflows/web-ci.yml
+# Trigger: push to main changing web/**, or manual
+# Auth: Workload Identity Federation via .azure-docker-build / .azure-deploy
+#
+# IMPORTANT: The web app depends on @surf-kit/* packages via file: protocol
+# at ../../surf-kit relative to web/. We must clone surf-kit to exactly
+# $CI_PROJECT_DIR/../surf-kit so the path resolves correctly.
+#
+# The build is split into two jobs to avoid running Docker-in-Docker without
+# TLS (the node:22 image lacks docker cert auto-discovery). web-spa-build
+# produces the SPA dist/ artifact; web-docker-push packages and pushes it.
+# ---------------------------------------------------------------------------
+
+.web-ci-rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: [web/**, .gitlab/ci/web-ci.yml]
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+
+# Shared setup: clone surf-kit, build it, cd into web/
+# NOTE: SURF_KIT_CLONE_URL must be marked as Masked in GitLab CI/CD variables
+# if it contains a deploy token, to prevent credential leakage in job logs.
+.web-surf-kit-setup:
+  before_script:
+    # Clone surf-kit to the exact relative path that package.json expects
+    - git clone --depth 1 "${SURF_KIT_CLONE_URL}" "$CI_PROJECT_DIR/../surf-kit"
+    # Verify the path resolved correctly
+    - |
+      if [ ! -f "$CI_PROJECT_DIR/../surf-kit/packages/theme/package.json" ]; then
+        echo "ERROR: surf-kit not found at expected path ($CI_PROJECT_DIR/../surf-kit)"
+        echo "The file: protocol paths in web/package.json expect surf-kit at ../../surf-kit relative to web/"
+        exit 1
+      fi
+    # Build surf-kit packages (uses pnpm)
+    - cd "$CI_PROJECT_DIR/../surf-kit"
+    - corepack enable pnpm || npm install -g pnpm
+    - pnpm install --frozen-lockfile
+    - pnpm build
+    - cd "$CI_PROJECT_DIR/web"
+
+web-lint:
+  extends: [.web-ci-rules, .web-surf-kit-setup]
+  stage: lint
+  image: node:22
+  script:
+    - npm ci
+    # typecheck = tsc -b (configured in package.json scripts)
+    - npm run typecheck
+
+# Build the SPA only (no Docker). Produces web/dist/ as an artifact.
+web-spa-build:
+  extends: [.web-ci-rules, .web-surf-kit-setup]
+  stage: build
+  needs: [web-lint]
+  image: node:22
+  script:
+    - npm ci
+    - VITE_ENTRA_CLIENT_ID="$VITE_ENTRA_CLIENT_ID" VITE_ENTRA_TENANT_ID="$VITE_ENTRA_TENANT_ID" npm run build
+    - |
+      if [ ! -d "$CI_PROJECT_DIR/web/dist" ]; then
+        echo "ERROR: web/dist/ directory not found after build"; exit 1
+      fi
+      echo "SPA build output: $(ls dist/ | wc -l) files"
+  artifacts:
+    paths:
+      - web/dist/
+    expire_in: 1 hour
+
+# Package dist/ into Docker image and push to ACR (with TLS-secured DinD).
+web-docker-push:
+  extends: [.web-ci-rules, .azure-docker-build]
+  stage: build
+  needs: [web-spa-build]
+  environment:
+    name: dev
+  script:
+    # Build and push (web/dist/ comes from web-spa-build artifact, Dockerfile from checkout)
+    - SHORT_SHA=$(echo "$CI_COMMIT_SHA" | cut -c1-7)
+    - WEB_IMAGE_TAG="${ACR_LOGIN_SERVER}/surf-web:${SHORT_SHA}"
+    - docker build -t "$WEB_IMAGE_TAG" -f "$CI_PROJECT_DIR/web/Dockerfile" "$CI_PROJECT_DIR/web"
+    - docker push "$WEB_IMAGE_TAG"
+    - echo "WEB_IMAGE_TAG=${WEB_IMAGE_TAG}" >> "$CI_PROJECT_DIR/web-build.env"
+
+    # Trivy vulnerability scan (checksum-verified)
+    - curl -sfL --retry 3 --retry-delay 5 -o /tmp/trivy.tar.gz https://github.com/aquasecurity/trivy/releases/download/v0.69.3/trivy_0.69.3_Linux-64bit.tar.gz
+    - echo "1816b632dfe529869c740c0913e36bd1629cb7688bd5634f4a858c1d57c88b75  /tmp/trivy.tar.gz" | sha256sum -c -
+    - tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy
+    - trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed "$WEB_IMAGE_TAG"
+
+    # SBOM generation (checksum-verified)
+    - curl -sfL --retry 3 --retry-delay 5 -o /tmp/syft.tar.gz https://github.com/anchore/syft/releases/download/v1.22.0/syft_1.22.0_linux_amd64.tar.gz
+    - echo "90ac44b173bd5db36142b351c2e83f89ecdee403285513d4586303dbf8b6bea1  /tmp/syft.tar.gz" | sha256sum -c -
+    - tar -xzf /tmp/syft.tar.gz -C /usr/local/bin syft
+    - syft "$WEB_IMAGE_TAG" -o spdx-json > "$CI_PROJECT_DIR/sbom-web.spdx.json"
+  artifacts:
+    reports:
+      dotenv: web-build.env
+    paths:
+      - sbom-web.spdx.json
+    expire_in: 30 days
+
+web-deploy:
+  extends: [.web-ci-rules, .azure-deploy]
+  stage: deploy
+  needs: [web-docker-push]
+  interruptible: false
+  resource_group: web-deploy
+  environment:
+    name: dev
+  script:
+    - az containerapp update
+        --name ca-web-surf-dev
+        --resource-group "$AZURE_RESOURCE_GROUP"
+        --image "$WEB_IMAGE_TAG"
+    - |
+      FQDN=$(az containerapp show \
+        --name ca-web-surf-dev \
+        --resource-group "$AZURE_RESOURCE_GROUP" \
+        --query properties.configuration.ingress.fqdn -o tsv)
+      for i in $(seq 1 30); do
+        status=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/healthz")
+        if [ "$status" = "200" ]; then
+          echo "Web is healthy"
+          exit 0
+        fi
+        echo "Attempt $i: status=$status, retrying..."
+        sleep 5
+      done
+      echo "ERROR: Health check failed after 150 seconds"
+      exit 1

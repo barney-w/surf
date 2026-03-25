@@ -142,6 +142,26 @@ param webMinReplicas int = 1
 @description('Web maximum replicas')
 param webMaxReplicas int = 1
 
+// ---------------------------------------------------------------------------
+// GitLab CI/CD — Workload Identity Federation (OIDC)
+// ---------------------------------------------------------------------------
+// Creates a dedicated CI managed identity with a federated credential so
+// GitLab pipelines authenticate via short-lived OIDC tokens instead of
+// stored service-principal secrets. Set both params to enable.
+//
+// Bootstrap (one-time):
+//   1. Deploy this template manually with gitlabOidcIssuer + gitlabProjectPath
+//   2. Note the output ciIdentityClientId
+//   3. Set AZURE_CI_CLIENT_ID in GitLab CI/CD variables (masked)
+//   4. GitLab pipelines now authenticate via WIF — no secrets stored
+// ---------------------------------------------------------------------------
+
+@description('GitLab OIDC issuer URL for Workload Identity Federation (e.g. https://gitlab.example.com). Empty to disable.')
+param gitlabOidcIssuer string = ''
+
+@description('GitLab project path for federated credential subject claim (e.g. group/surf)')
+param gitlabProjectPath string = ''
+
 @description('Container image tag for surf-api (set by CI/CD)')
 param apiImageTag string = ''
 
@@ -166,6 +186,9 @@ var tags = {
 
 // Unique suffix for globally-unique names
 var uniqueSuffix = uniqueString(resourceGroup().id, projectName, environmentName)
+
+// GitLab CI/CD Workload Identity Federation
+var enableGitlabOidc = !empty(gitlabOidcIssuer) && !empty(gitlabProjectPath)
 
 // Container image variables — use a public placeholder on first bootstrap
 var bootstrapImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
@@ -208,6 +231,59 @@ module managedIdentity 'br/public:avm/res/managed-identity/user-assigned-identit
     location: location
     tags: tags
   }
+}
+
+// ---------------------------------------------------------------------------
+// Module: CI/CD Managed Identity (GitLab Workload Identity Federation)
+// ---------------------------------------------------------------------------
+// Separate identity from the workload identity (id-${baseName}) so CI/CD
+// permissions (AcrPush, Contributor) are isolated from runtime permissions
+// (AcrPull, Key Vault Secrets User, etc.).
+
+module ciManagedIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.5.0' = if (enableGitlabOidc) {
+  name: 'deploy-ci-managed-identity'
+  params: {
+    name: 'id-ci-${baseName}'
+    location: location
+    tags: tags
+    federatedIdentityCredentials: [
+      {
+        name: 'gitlab-ci-main'
+        issuer: gitlabOidcIssuer
+        subject: 'project_path:${gitlabProjectPath}:ref_type:branch:ref:main'
+        audiences: ['api://AzureADTokenExchange']
+      }
+    ]
+  }
+}
+
+// Role: CI identity → Contributor on resource group (required for az deployment group create)
+resource ciContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableGitlabOidc) {
+  name: guid(resourceGroup().id, 'ci-contributor', baseName)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c') // Contributor
+    #disable-next-line BCP318 // Safe: guarded by same enableGitlabOidc condition
+    principalId: ciManagedIdentity.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Role: CI identity → AcrPush on container registry (for docker push from CI)
+resource ciAcrPushRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableGitlabOidc) {
+  name: guid(resourceGroup().id, 'ci-acr-push', baseName)
+  scope: acrResource
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8311e382-0749-4cb8-b61a-304f252e45ec') // AcrPush
+    #disable-next-line BCP318 // Safe: guarded by same enableGitlabOidc condition
+    principalId: ciManagedIdentity.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+  dependsOn: [acr]
+}
+
+// Reference to ACR for scoping the AcrPush role assignment
+resource acrResource 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+  name: replace('acr${baseName}', '-', '')
 }
 
 // ---------------------------------------------------------------------------
@@ -1015,3 +1091,7 @@ output vnetName string = vnet.outputs.name
 
 @description('FQDN of the surf-web container app')
 output surfWebFqdn string = surfWeb.properties.configuration.ingress.fqdn
+
+@description('CI managed identity client ID (set as AZURE_CI_CLIENT_ID in GitLab CI/CD variables)')
+#disable-next-line BCP318 // Safe: ternary guards the conditional module access
+output ciIdentityClientId string = enableGitlabOidc ? ciManagedIdentity.outputs.clientId : ''

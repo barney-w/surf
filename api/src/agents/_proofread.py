@@ -77,6 +77,22 @@ async def proofread_message(message: str, settings: Settings) -> str:
             timeout=_TIMEOUT_SECONDS,
         )
 
+        # Capture token usage from the proofreading call.
+        try:
+            from src.orchestrator.builder import TokenUsage, token_usage_collector
+
+            usage = TokenUsage(
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                model_id=settings.anthropic_proofread_model_id,
+            )
+            try:
+                token_usage_collector.get().append(usage)
+            except LookupError:
+                pass
+        except Exception:
+            pass  # Never let usage capture break proofreading
+
         raw = response.content[0].text  # type: ignore[union-attr]
 
         # Extract content from <corrected> tags.  If the model ignored the

@@ -10,6 +10,7 @@ from src.config.settings import Settings
 from src.models.conversation import (
     ConversationDocument,
     ConversationMetadata,
+    ConversationSummary,
     FeedbackRecord,
     MessageRecord,
 )
@@ -64,6 +65,43 @@ class ConversationService:
             return True
         except Exception:
             return False
+
+    async def list_conversations(
+        self, user_id: str, limit: int = 20, offset: int = 0
+    ) -> list[ConversationSummary]:
+        """List conversations for a user, ordered by most recently updated."""
+        async with self._get_pool().acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT c.id, c.updated_at, c.last_active_agent,
+                       (SELECT content FROM messages
+                        WHERE conversation_id = c.id AND role = 'user'
+                        ORDER BY ordinal LIMIT 1) AS first_user_message,
+                       (SELECT content FROM messages
+                        WHERE conversation_id = c.id
+                        ORDER BY ordinal DESC LIMIT 1) AS last_message,
+                       (SELECT count(*) FROM messages
+                        WHERE conversation_id = c.id) AS message_count
+                FROM conversations c
+                WHERE c.user_id = $1
+                ORDER BY c.updated_at DESC
+                LIMIT $2 OFFSET $3
+                """,
+                user_id,
+                limit,
+                offset,
+            )
+        return [
+            ConversationSummary(
+                id=str(row["id"]),
+                title=(row["first_user_message"] or "New conversation")[:80],
+                last_message_preview=(row["last_message"] or "")[:120] or None,
+                updated_at=row["updated_at"],
+                last_active_agent=row["last_active_agent"],
+                message_count=row["message_count"],
+            )
+            for row in rows
+        ]
 
     async def get_conversation(
         self, conversation_id: str, user_id: str
@@ -251,9 +289,7 @@ class ConversationService:
             # result is like "DELETE 42"
             count = int(result.split()[-1])
             if count > 0:
-                logger.info(
-                    "Cleaned up %d expired conversations (ttl=%d days)", count, ttl_days
-                )
+                logger.info("Cleaned up %d expired conversations (ttl=%d days)", count, ttl_days)
             return count
 
     async def add_feedback(

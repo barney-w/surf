@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------------------
+# Infrastructure: Bicep validate → deploy
+# ---------------------------------------------------------------------------
+# Mirrors: .github/workflows/infra-deploy.yml
+# Trigger: push to main changing infra/**, or manual
+# Auth: Workload Identity Federation via .azure-deploy
+#
+# Required CI/CD variables (masked, protected):
+#   ANTHROPIC_API_KEY       — Anthropic API key (stored in Key Vault via Bicep)
+#   GUEST_TOKEN_SECRET      — HMAC secret for guest tokens (stored in Key Vault via Bicep)
+#   GITLAB_OIDC_ISSUER      — GitLab instance URL for WIF (optional, for CI identity)
+#   GITLAB_PROJECT_PATH     — GitLab project path for WIF (optional, for CI identity)
+# ---------------------------------------------------------------------------
+
+.infra-ci-rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: [infra/**, .gitlab/ci/infra-deploy.yml]
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+
+infra-validate:
+  extends: [.infra-ci-rules, .azure-deploy]
+  stage: lint
+  environment:
+    name: dev
+  script:
+    - az deployment group validate
+        --resource-group "$AZURE_RESOURCE_GROUP"
+        --template-file infra/main.bicep
+        --parameters infra/environments/dev.bicepparam
+        --parameters entraTenantId="$ENTRA_TENANT_ID"
+        --parameters entraClientId="$ENTRA_CLIENT_ID"
+        --parameters organisationName="$ORGANISATION_NAME"
+        --parameters aiSearchEndpointOverride="${AI_SEARCH_ENDPOINT_OVERRIDE:-}"
+        --parameters anthropicApiKey="$ANTHROPIC_API_KEY"
+        --parameters guestTokenSecret="$GUEST_TOKEN_SECRET"
+        --parameters gitlabOidcIssuer="${GITLAB_OIDC_ISSUER:-}"
+        --parameters gitlabProjectPath="${GITLAB_PROJECT_PATH:-}"
+
+infra-deploy:
+  extends: [.infra-ci-rules, .azure-deploy]
+  stage: deploy
+  needs: [infra-validate]
+  interruptible: false
+  resource_group: infra-deploy
+  environment:
+    name: dev
+  script:
+    - az deployment group create
+        --resource-group "$AZURE_RESOURCE_GROUP"
+        --template-file infra/main.bicep
+        --parameters infra/environments/dev.bicepparam
+        --parameters entraTenantId="$ENTRA_TENANT_ID"
+        --parameters entraClientId="$ENTRA_CLIENT_ID"
+        --parameters organisationName="$ORGANISATION_NAME"
+        --parameters aiSearchEndpointOverride="${AI_SEARCH_ENDPOINT_OVERRIDE:-}"
+        --parameters anthropicApiKey="$ANTHROPIC_API_KEY"
+        --parameters guestTokenSecret="$GUEST_TOKEN_SECRET"
+        --parameters gitlabOidcIssuer="${GITLAB_OIDC_ISSUER:-}"
+        --parameters gitlabProjectPath="${GITLAB_PROJECT_PATH:-}"
+        --name "surf-dev-$(date +%Y%m%d%H%M%S)"

@@ -2,6 +2,7 @@ import json
 import logging
 from collections.abc import Sequence
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any, cast
 
 from agent_framework import (
@@ -19,7 +20,7 @@ from src.agents._base import AuthLevel, get_organisation_name
 from src.agents._discovery import discover_agents
 from src.agents._registry import AgentRegistry
 from src.agents.coordinator.prompts import build_coordinator_prompt
-from src.config.settings import Settings
+from src.config.settings import Settings, get_settings
 from src.orchestrator.middleware import RAGCollectorMiddleware
 from src.orchestrator.pdf import MAX_DIRECT_PAGES, count_pages, extract_text
 from src.orchestrator.stateless import StatelessContextProvider
@@ -30,6 +31,18 @@ from src.rag.tools import create_rag_tool
 current_attachments: ContextVar[list[dict[str, str]] | None] = ContextVar(
     "current_attachments", default=None
 )
+
+
+@dataclass
+class TokenUsage:
+    """Token usage captured from a single Anthropic API call."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    model_id: str = ""
+
+
+token_usage_collector: ContextVar[list[TokenUsage]] = ContextVar("token_usage")
 
 logger = logging.getLogger(__name__)
 
@@ -155,10 +168,90 @@ class _SafeHandoffAnthropicClient(AnthropicClient):
     user message when the conversation would otherwise end with an assistant turn.
     It also strips OpenAI-specific options (like ``store``) that the framework's
     handoff layer injects but the Anthropic SDK does not accept.
+
+    Additionally captures token usage from every streaming response and appends
+    it to the ``token_usage_collector`` ContextVar so callers can report costs.
     """
 
     # OpenAI-specific option keys that the framework may inject but Anthropic does not support.
     _UNSUPPORTED_OPTION_KEYS = {"store", "conversation_id"}
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        # Per-stream accumulator for the current API call's token counts.
+        self._stream_input_tokens: int = 0
+        self._stream_output_tokens: int = 0
+        self._stream_model_id: str = ""
+        # OpenTelemetry span for the current Anthropic API call.
+        self._current_span: Any | None = None
+
+    def _process_stream_event(self, event: Any) -> Any:
+        """Intercept streaming events to capture token usage and manage tracing spans.
+
+        ``message_start`` carries input tokens and opens a span;
+        ``message_delta`` carries output tokens; ``message_stop`` signals
+        the end of one API call so we flush the accumulated counts into the
+        collector and close the span.
+        """
+        from src.middleware.telemetry import tracer
+
+        event_type = getattr(event, "type", None)
+
+        if event_type == "message_start":
+            # Start of a new API response — reset accumulators.
+            msg = getattr(event, "message", None)
+            self._stream_model_id = getattr(msg, "model", "") or ""
+            usage = getattr(msg, "usage", None)
+            self._stream_input_tokens = getattr(usage, "input_tokens", 0) or 0
+            self._stream_output_tokens = getattr(usage, "output_tokens", 0) or 0
+
+            # Open an OTel span for this Anthropic API call.
+            try:
+                self._current_span = tracer.start_span(
+                    "anthropic.messages.create",
+                    attributes={
+                        "llm.model": self._stream_model_id or self.model_id or "unknown",
+                        "llm.agent": getattr(self, "_agent_name", None) or "unknown",
+                    },
+                )
+            except Exception:
+                self._current_span = None
+
+        elif event_type == "message_delta":
+            # Accumulate output tokens reported in the delta.
+            usage = getattr(event, "usage", None)
+            self._stream_output_tokens += getattr(usage, "output_tokens", 0) or 0
+
+        elif event_type == "message_stop":
+            # End of this API call — flush accumulated usage to the collector.
+            usage = TokenUsage(
+                input_tokens=self._stream_input_tokens,
+                output_tokens=self._stream_output_tokens,
+                model_id=self._stream_model_id,
+            )
+            try:
+                token_usage_collector.get().append(usage)
+            except LookupError:
+                pass
+
+            # Close the OTel span with token attributes.
+            span = self._current_span
+            if span is not None:
+                try:
+                    span.set_attribute("llm.input_tokens", self._stream_input_tokens)
+                    span.set_attribute("llm.output_tokens", self._stream_output_tokens)
+                    settings = get_settings()
+                    if settings.trace_prompt_content:
+                        span.set_attribute(
+                            "llm.prompt",
+                            f"[model={self._stream_model_id}]",
+                        )
+                    span.end()
+                except Exception:
+                    pass
+                self._current_span = None
+
+        return super()._process_stream_event(event)
 
     def _prepare_options(
         self, messages: Sequence[Message], options: Any, **kwargs: Any

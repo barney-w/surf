@@ -8,6 +8,7 @@ from src.agents._registry import AgentRegistry
 from src.config.settings import get_settings
 from src.models.agent import AgentResponseModel
 from src.rag.quality_gate import QualityGateResult, run_quality_gate
+from src.rag.tools import _search_overrides
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,15 @@ async def process_agent_response(
             agent_response = agent_response.model_copy(update={"sources": recovered})
             logger.info("injected %d recovered sources into response", len(recovered))
 
-    # 3. Proofread
+    # 3. Proofread — respect per-request debug override if present.
     settings = get_settings()
-    if settings.proofread_enabled:
+    overrides = _search_overrides.get()
+    proofread_enabled = (
+        overrides.enable_proofread
+        if overrides and overrides.enable_proofread is not None
+        else settings.proofread_enabled
+    )
+    if proofread_enabled:
         corrected = await proofread_message(agent_response.message, settings)
         if corrected != agent_response.message:
             agent_response = agent_response.model_copy(update={"message": corrected})

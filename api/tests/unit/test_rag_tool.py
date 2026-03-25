@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from azure.core.exceptions import ResourceNotFoundError
@@ -20,6 +21,8 @@ from src.rag.tools import (
     _merge_and_deduplicate,  # pyright: ignore[reportPrivateUsage]
     clear_search_clients,
     create_rag_tool,
+    rewrite_query_with_llm,
+    set_rewrite_client,
     set_search_client,
     stitch_adjacent_chunks,
 )
@@ -256,15 +259,20 @@ class TestRagToolFilterWiring:
 
 @pytest.fixture(autouse=True)
 def _reset_search_clients():  # pyright: ignore[reportUnusedFunction]
-    """Clear module-level search clients and embed func between tests."""
+    """Clear module-level search clients, embed func, and rewrite client between tests."""
     clear_search_clients()
     from src.rag import tools
 
     original_embed = tools._embed_func
+    original_rewrite_client = tools._rewrite_client
+    original_rewrite_model = tools._rewrite_model_id
     tools._embed_func = None
+    tools._rewrite_client = None
     yield
     clear_search_clients()
     tools._embed_func = original_embed
+    tools._rewrite_client = original_rewrite_client
+    tools._rewrite_model_id = original_rewrite_model
 
 
 class TestResultFormatting:
@@ -1086,3 +1094,120 @@ class TestMultiStrategySearch:
         result = await rag_tool.invoke(arguments={"query": "test query", "document_type": None})
 
         assert "=== SOURCE" not in result
+
+
+# ---------------------------------------------------------------------------
+# rewrite_query_with_llm
+# ---------------------------------------------------------------------------
+
+
+class TestRewriteQueryWithLlm:
+    """Verify LLM-based query rewrite behaviour."""
+
+    @pytest.mark.asyncio
+    async def test_rewrite_query_with_llm_success(self):
+        """Mock AsyncAnthropic and verify the rewrite is applied."""
+        mock_client = AsyncMock()
+        mock_content_block = MagicMock()
+        mock_content_block.text = "sick leave policy absence notification"
+        mock_response = MagicMock()
+        mock_response.content = [mock_content_block]
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+        set_rewrite_client(mock_client, "claude-haiku-4-5-20251001")
+
+        result = await rewrite_query_with_llm("what happens if I'm sick?")
+        assert result == "sick leave policy absence notification"
+        mock_client.messages.create.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_rewrite_query_with_llm_timeout(self):
+        """Verify original query returned when the LLM call times out."""
+        mock_client = AsyncMock()
+
+        async def _slow_create(**kwargs):
+            await asyncio.sleep(10)
+
+        mock_client.messages.create = _slow_create
+
+        set_rewrite_client(mock_client, "claude-haiku-4-5-20251001")
+
+        result = await rewrite_query_with_llm("what happens if I'm sick?")
+        assert result == "what happens if I'm sick?"
+
+    @pytest.mark.asyncio
+    async def test_rewrite_query_with_llm_no_client(self):
+        """Verify original query returned when the rewrite client is None."""
+        from src.rag import tools
+
+        tools._rewrite_client = None
+
+        result = await rewrite_query_with_llm("what happens if I'm sick?")
+        assert result == "what happens if I'm sick?"
+
+    @pytest.mark.asyncio
+    async def test_strategy_0_uses_rewritten_query(self):
+        """Strategy 1 should receive the rewritten query from Strategy 0."""
+        mock_search = AsyncMock()
+        mock_search.return_value = [_sr(f"doc{i}", score=0.9 - i * 0.01) for i in range(5)]
+
+        # Set up rewrite client to return a rewritten query
+        mock_rewrite_client = AsyncMock()
+        mock_content_block = MagicMock()
+        mock_content_block.text = "sick leave policy absence notification"
+        mock_response = MagicMock()
+        mock_response.content = [mock_content_block]
+        mock_rewrite_client.messages.create = AsyncMock(return_value=mock_response)
+
+        set_rewrite_client(mock_rewrite_client, "claude-haiku-4-5-20251001")
+
+        with patch("src.rag.tools.search_index", mock_search), patch(
+            "src.rag.tools._search_clients", [MagicMock()]
+        ):
+            rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
+            await rag_tool.invoke(
+                arguments={"query": "what happens if I'm sick?", "document_type": None}
+            )
+
+        # Strategy 1 should have been called with the rewritten query
+        _, s1_kwargs = mock_search.call_args_list[0]
+        assert s1_kwargs["query"] == "sick leave policy absence notification"
+
+    @pytest.mark.asyncio
+    async def test_strategy_2_uses_original_query_after_rewrite(self):
+        """Strategies 2-3 should use the original query, not the rewritten one."""
+        mock_search = AsyncMock()
+        mock_search.side_effect = [
+            # Strategy 1: sparse (triggers strategy 2)
+            [_sr("doc1", score=0.9)],
+            # Strategy 2: more results
+            [_sr(f"doc{i}", score=0.8 - i * 0.01) for i in range(2, 6)],
+        ]
+
+        # Set up rewrite client
+        mock_rewrite_client = AsyncMock()
+        mock_content_block = MagicMock()
+        mock_content_block.text = "sick leave policy absence notification"
+        mock_response = MagicMock()
+        mock_response.content = [mock_content_block]
+        mock_rewrite_client.messages.create = AsyncMock(return_value=mock_response)
+
+        set_rewrite_client(mock_rewrite_client, "claude-haiku-4-5-20251001")
+
+        original_query = "what happens if I'm sick?"
+
+        with patch("src.rag.tools.search_index", mock_search), patch(
+            "src.rag.tools._search_clients", [MagicMock()]
+        ):
+            rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
+            await rag_tool.invoke(
+                arguments={"query": original_query, "document_type": None}
+            )
+
+        # Strategy 1 should use rewritten query
+        _, s1_kwargs = mock_search.call_args_list[0]
+        assert s1_kwargs["query"] == "sick leave policy absence notification"
+
+        # Strategy 2 should use the ORIGINAL query
+        _, s2_kwargs = mock_search.call_args_list[1]
+        assert s2_kwargs["query"] == original_query

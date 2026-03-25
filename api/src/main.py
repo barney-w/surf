@@ -24,6 +24,7 @@ from src.orchestrator.history import ConversationHistoryProvider
 from src.rag.tools import (
     clear_search_clients,
     set_embed_func,
+    set_rewrite_client,
     set_search_client,
     verify_rag_connectivity,
 )
@@ -67,9 +68,7 @@ try:
             return result  # pyright: ignore[reportReturnType]
 
         _AnthropicClient._prepare_options = _patched_prepare  # type: ignore[assignment]  # pyright: ignore[reportPrivateUsage]
-        logger.info(
-            "Applied AnthropicClient monkey-patch for agent-framework %s", _fw_version
-        )
+        logger.info("Applied AnthropicClient monkey-patch for agent-framework %s", _fw_version)
 except (ImportError, ModuleNotFoundError, AttributeError):
     pass  # framework not installed or API changed — nothing to patch
 
@@ -175,6 +174,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info(
             "Embedding client initialised (deployment=%s)",
             settings.azure_openai_embedding_deployment_name,
+        )
+
+    # --- RAG query rewrite (LLM-based, optional) ---
+    if settings.enable_rag_query_rewrite and settings.anthropic_api_key:
+        from anthropic import AsyncAnthropic
+
+        rewrite_client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        set_rewrite_client(rewrite_client, settings.rag_rewrite_model_id)
+        logger.info(
+            "RAG query rewrite enabled (model=%s)",
+            settings.rag_rewrite_model_id,
         )
 
     # --- RAG connectivity verification ---
@@ -283,7 +293,13 @@ app.add_middleware(
     allow_origins=settings.api_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Conversation-ID", "X-User-ID", "X-Request-ID"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Conversation-ID",
+        "X-User-ID",
+        "X-Request-ID",
+    ],
     expose_headers=["X-Request-ID"],
 )
 app.add_middleware(BodySizeLimitMiddleware)

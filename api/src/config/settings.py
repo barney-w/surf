@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     anthropic_foundry_api_key: str = ""
     anthropic_proofread_model_id: str = "claude-haiku-4-5-20251001"
     proofread_enabled: bool = True
+    enable_rag_query_rewrite: bool = True
+    rag_rewrite_model_id: str = "claude-haiku-4-5-20251001"
 
     # Azure AI Search
     azure_search_endpoint: str = ""
@@ -61,6 +63,9 @@ class Settings(BaseSettings):
         "https://tauri.localhost",
         "http://localhost:8081",  # Expo dev server
     ]
+
+    # Telemetry / Privacy
+    trace_prompt_content: bool = False  # When False, redact prompts from spans/logs
 
     # Conversation
     max_history_messages: int = 20

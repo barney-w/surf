@@ -1,0 +1,126 @@
+# ---------------------------------------------------------------------------
+# API CI/CD: lint → test (with Postgres) → build/push/scan → deploy
+# ---------------------------------------------------------------------------
+# Mirrors: .github/workflows/api-ci.yml
+# Trigger: push to main changing api/**, or manual
+# Auth: Workload Identity Federation via .azure-docker-build / .azure-deploy
+# ---------------------------------------------------------------------------
+
+# Rules: only on main push with api/ changes, or manual trigger
+.api-ci-rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: [api/**, .gitlab/ci/api-ci.yml]
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+
+api-lint:
+  extends: .api-ci-rules
+  stage: lint
+  image: python:3.12-slim
+  script:
+    - apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+    - curl -LsSf https://astral.sh/uv/0.7.2/install.sh -o /tmp/uv-install.sh
+    - echo "dc5cab9ace3988b5b37d7780ba27ac259b4194d5f6435ea8fcfd81e2962a01f6  /tmp/uv-install.sh" | sha256sum -c -
+    - sh /tmp/uv-install.sh
+    - export PATH="$HOME/.local/bin:$PATH"
+    - cd api
+    - uv sync --frozen --prerelease=allow
+    - uv run ruff check .
+
+api-test:
+  extends: .api-ci-rules
+  stage: test
+  image: python:3.12-slim
+  needs: [api-lint]
+  # Ephemeral CI-only Postgres — created and destroyed with each job run.
+  # These are NOT real credentials. The service is never reachable outside this job.
+  services:
+    - name: postgres:16
+      alias: postgres
+      variables:
+        POSTGRES_USER: surf
+        POSTGRES_PASSWORD: test
+        POSTGRES_DB: surf
+  variables:
+    # GitLab services are accessed by alias, not localhost
+    DATABASE_URL: "postgresql://surf:test@postgres:5432/surf"
+  script:
+    - apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+    - curl -LsSf https://astral.sh/uv/0.7.2/install.sh -o /tmp/uv-install.sh
+    - echo "dc5cab9ace3988b5b37d7780ba27ac259b4194d5f6435ea8fcfd81e2962a01f6  /tmp/uv-install.sh" | sha256sum -c -
+    - sh /tmp/uv-install.sh
+    - export PATH="$HOME/.local/bin:$PATH"
+    - cd api
+    - uv sync --frozen --prerelease=allow
+    # Run Alembic migrations before tests
+    - uv run alembic upgrade head
+    # Runs all tests: unit, security, integration
+    - uv run pytest --tb=short
+
+api-build-push:
+  extends: [.api-ci-rules, .azure-docker-build]
+  stage: build
+  needs: [api-test]
+  environment:
+    name: dev
+  script:
+    # Build and push
+    - SHORT_SHA=$(echo "$CI_COMMIT_SHA" | cut -c1-7)
+    - API_IMAGE_TAG="${ACR_LOGIN_SERVER}/surf-api:${SHORT_SHA}"
+    - docker build -t "$API_IMAGE_TAG" -f api/Dockerfile api
+    - docker push "$API_IMAGE_TAG"
+    - echo "API_IMAGE_TAG=${API_IMAGE_TAG}" >> "$CI_PROJECT_DIR/api-build.env"
+
+    # Trivy vulnerability scan (checksum-verified)
+    - curl -sfL --retry 3 --retry-delay 5 -o /tmp/trivy.tar.gz https://github.com/aquasecurity/trivy/releases/download/v0.69.3/trivy_0.69.3_Linux-64bit.tar.gz
+    - echo "1816b632dfe529869c740c0913e36bd1629cb7688bd5634f4a858c1d57c88b75  /tmp/trivy.tar.gz" | sha256sum -c -
+    - tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy
+    - trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed "$API_IMAGE_TAG"
+
+    # SBOM generation (checksum-verified)
+    - curl -sfL --retry 3 --retry-delay 5 -o /tmp/syft.tar.gz https://github.com/anchore/syft/releases/download/v1.22.0/syft_1.22.0_linux_amd64.tar.gz
+    - echo "90ac44b173bd5db36142b351c2e83f89ecdee403285513d4586303dbf8b6bea1  /tmp/syft.tar.gz" | sha256sum -c -
+    - tar -xzf /tmp/syft.tar.gz -C /usr/local/bin syft
+    - syft "$API_IMAGE_TAG" -o spdx-json > "$CI_PROJECT_DIR/sbom-api.spdx.json"
+  artifacts:
+    reports:
+      dotenv: api-build.env
+    paths:
+      - sbom-api.spdx.json
+    expire_in: 30 days
+
+api-deploy:
+  extends: [.api-ci-rules, .azure-deploy]
+  stage: deploy
+  needs: [api-build-push]
+  interruptible: false
+  resource_group: api-deploy
+  environment:
+    name: dev
+  script:
+    # Deploy image to Container Apps
+    - az containerapp update
+        --name ca-api-surf-dev
+        --resource-group "$AZURE_RESOURCE_GROUP"
+        --image "$API_IMAGE_TAG"
+
+    # Verify latest revision is running (API is internal-only, can't curl from CI)
+    - |
+      for i in $(seq 1 20); do
+        STATUS=$(az containerapp revision list \
+          --name ca-api-surf-dev \
+          --resource-group "$AZURE_RESOURCE_GROUP" \
+          --query "[0].properties.runningState" -o tsv)
+        case "$STATUS" in
+          Running|RunningAtMaxScale)
+            echo "API revision is healthy (status: $STATUS)"
+            exit 0 ;;
+          Failed|Degraded)
+            echo "ERROR: Revision failed (status: $STATUS)"
+            exit 1 ;;
+        esac
+        echo "Attempt $i: revision status=$STATUS, waiting..."
+        sleep 5
+      done
+      echo "ERROR: Revision not running after 100 seconds (last status: $STATUS)"
+      exit 1

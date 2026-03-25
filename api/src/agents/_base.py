@@ -39,7 +39,7 @@ class AuthLevel(StrEnum):
     the organisation's own tenant.
     """
 
-    PUBLIC = "public"               # No login needed — anyone can use this agent
+    PUBLIC = "public"  # No login needed — anyone can use this agent
     MICROSOFT_ACCOUNT = "microsoft"  # Requires a Microsoft account (any tenant)
     ORGANISATIONAL = "organisational"  # Requires an account from the org's tenant
 

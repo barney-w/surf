@@ -35,9 +35,30 @@ db-cleanup:
 db-destroy:
     docker compose down -v
 
-# Open the dev admin page in browser
+# Open the dev admin page in browser (cross-platform)
 admin:
-    open http://localhost:8090/api/v1/admin/
+    python3 -m webbrowser http://localhost:8090/api/v1/admin/
+
+# Check that all development prerequisites are installed
+check-prereqs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ok=true
+    for cmd in az uv node npm docker just git python3; do
+        if command -v "$cmd" > /dev/null 2>&1; then
+            ver=$("$cmd" --version 2>&1 | head -1)
+            printf "  %-10s %s\n" "$cmd" "$ver"
+        else
+            printf "  %-10s MISSING\n" "$cmd"
+            ok=false
+        fi
+    done
+    $ok || { echo "Some prerequisites are missing."; exit 1; }
+    echo "All prerequisites installed."
+
+# Run web frontend against a deployed API (no local API/DB needed)
+dev-remote url="https://ca-web-surf-dev.lemongrass-396ccf8b.australiaeast.azurecontainerapps.io":
+    cd web && API_PROXY_TARGET={{url}} npm run dev
 
 # Run database migrations
 db-migrate:
@@ -93,17 +114,26 @@ typecheck:
 format:
     cd api && uv run ruff format . && cd ../ingestion && uv run ruff format .
 
+# Create all search index schemas on the configured Azure AI Search service
+setup-indexes:
+    cd ingestion && uv run python -m src init-index --all
+
+# Migrate all search indexes from a source service to the configured destination
+# Usage: just migrate-search-index https://old-search-service.search.windows.net
+migrate-search-index source_endpoint:
+    cd ingestion && uv run python -m src migrate-index --source-endpoint "{{source_endpoint}}" --all
+
 # Deploy minimal Azure resources for local development
 # OpenAI is deployed to eastus2 (embedding model); everything else to australiaeast.
 # Chat uses Anthropic Claude directly — set ANTHROPIC_API_KEY in .env after setup.
-setup-dev:
+setup-dev rg="rg-surf-dev" rg_ai="rg-surf-dev-ai" location="australiaeast" location_ai="eastus2":
     #!/usr/bin/env bash
     set -euo pipefail
 
-    RG="rg-surf-dev"
-    RG_AI="rg-surf-dev-ai"
-    LOCATION="australiaeast"
-    LOCATION_AI="eastus2"
+    RG="{{rg}}"
+    RG_AI="{{rg_ai}}"
+    LOCATION="{{location}}"
+    LOCATION_AI="{{location_ai}}"
     STAMP="surf-dev-$(date +%Y%m%d%H%M%S)"
 
     SUB_NAME=$(az account show --query name -o tsv)
@@ -227,6 +257,18 @@ mobile-ios:
 mobile-android:
     cd mobile && npx expo start --android
 
+# Ask the dev agent a question about the codebase
+ask *QUESTION:
+    cd tools/dev-agent && npx tsx src/cli.ts {{QUESTION}}
+
+# Start interactive dev agent REPL
+ask-repl:
+    cd tools/dev-agent && npx tsx src/cli.ts
+
+# Install dev agent dependencies
+dev-agent-install:
+    cd tools/dev-agent && npm install
+
 # Deploy API container to Azure Container Apps
 api-deploy:
     #!/usr/bin/env bash
@@ -295,10 +337,10 @@ web-deploy:
     fi
 
 # Deploy infrastructure (Bicep) to Azure
-infra-deploy:
+infra-deploy rg="rg-surf-dev":
     #!/usr/bin/env bash
     set -euo pipefail
-    RG="rg-surf-dev"
+    RG="{{rg}}"
     echo "Validating Bicep template..."
     az deployment group validate \
       --resource-group "$RG" \
@@ -380,13 +422,13 @@ index-status *ARGS:
     cd ingestion && uv run python -m src status {{ARGS}}
 
 # Delete both dev resource groups and all their resources
-teardown-dev:
+teardown-dev rg="rg-surf-dev" rg_ai="rg-surf-dev-ai":
     #!/usr/bin/env bash
     set -euo pipefail
     SUB_NAME=$(az account show --query name -o tsv)
-    echo "⚠ This will DELETE rg-surf-dev and rg-surf-dev-ai in subscription: $SUB_NAME"
+    echo "⚠ This will DELETE {{rg}} and {{rg_ai}} in subscription: $SUB_NAME"
     read -rp "Type 'yes' to confirm: " CONFIRM
     [[ "$CONFIRM" == "yes" ]] || { echo "Aborted."; exit 1; }
-    az group delete --name rg-surf-dev    --yes --no-wait
-    az group delete --name rg-surf-dev-ai --yes --no-wait
+    az group delete --name "{{rg}}"    --yes --no-wait
+    az group delete --name "{{rg_ai}}" --yes --no-wait
     echo "Resource group deletion initiated (runs in background)."

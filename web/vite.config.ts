@@ -44,7 +44,7 @@ export default defineConfig({
     host: host || false,
     open: !process.env.TAURI_ENV_PLATFORM,
     proxy: {
-      '/api': { target: 'http://localhost:8090', changeOrigin: true },
+      '/api': { target: process.env.API_PROXY_TARGET || 'http://localhost:8090', changeOrigin: true },
     },
   },
   optimizeDeps: {

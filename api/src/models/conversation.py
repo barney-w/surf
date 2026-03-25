@@ -34,6 +34,17 @@ class ConversationMetadata(BaseModel):
     feedback: list[FeedbackRecord] = []
 
 
+class ConversationSummary(BaseModel):
+    """Lightweight summary of a conversation for list views."""
+
+    id: str
+    title: str  # First user message truncated to 80 chars
+    last_message_preview: str | None = None  # Last message truncated to 120 chars
+    updated_at: datetime
+    last_active_agent: str | None = None
+    message_count: int = 0
+
+
 class ConversationDocument(BaseModel):
     id: str
     user_id: str

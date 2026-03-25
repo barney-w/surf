@@ -1,0 +1,93 @@
+# ---------------------------------------------------------------------------
+# Surf — GitLab CI/CD Root Configuration
+# ---------------------------------------------------------------------------
+# REQUIRED PROJECT SETTING: Enable "Auto-cancel redundant pipelines" in
+# Settings → CI/CD → General pipelines to cancel stale pipelines on new pushes.
+# ---------------------------------------------------------------------------
+
+stages:
+  - lint
+  - test
+  - build
+  - deploy
+  - security
+
+# Prevent duplicate pipelines when both push and MR events fire.
+# Without this, a push to a branch with an open MR creates TWO pipelines.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'        # manual trigger from UI
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'    # future: scheduled pipelines
+
+# Default settings for all jobs
+default:
+  interruptible: true
+
+# ---------------------------------------------------------------------------
+# Shared templates: Azure Workload Identity Federation (OIDC)
+# ---------------------------------------------------------------------------
+# These replace long-lived service principal secrets with short-lived OIDC
+# tokens issued by GitLab and exchanged for Azure AD credentials via a
+# federated identity credential on the CI managed identity.
+#
+# Infrastructure: infra/main.bicep → ciManagedIdentity + gitlabFederatedCredential
+#
+# Required CI/CD variables (masked, protected):
+#   AZURE_CI_CLIENT_ID    — CI managed identity client ID (Bicep output)
+#   AZURE_TENANT_ID       — Azure AD tenant ID
+#   AZURE_SUBSCRIPTION_ID — Azure subscription ID
+#   ACR_LOGIN_SERVER      — e.g. acrsurfdev.azurecr.io
+# ---------------------------------------------------------------------------
+
+# Base template: requests a GitLab OIDC token for Azure AD exchange.
+.azure-wif:
+  id_tokens:
+    GITLAB_TOKEN:
+      aud: api://AzureADTokenExchange
+
+# Docker build jobs that push images to ACR.
+# Provides: az CLI, Docker CLI, Docker-in-Docker with TLS, ACR login.
+.azure-docker-build:
+  extends: .azure-wif
+  image: mcr.microsoft.com/azure-cli:latest
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_HOST: "tcp://docker:2376"
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: "/certs/client"
+    DOCKER_BUILDKIT: "1"
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends docker.io
+    # Wait for Docker-in-Docker to be ready
+    - |
+      for i in $(seq 1 30); do
+        docker info >/dev/null 2>&1 && break
+        echo "Waiting for Docker daemon ($i/30)..."
+        sleep 1
+      done
+      docker info || { echo "ERROR: Docker daemon not available"; exit 1; }
+    # Federated login — short-lived OIDC token, no stored secrets
+    - az login --service-principal -u "$AZURE_CI_CLIENT_ID" --federated-token "$GITLAB_TOKEN" --tenant "$AZURE_TENANT_ID"
+    - az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+    - az acr login --name "${ACR_LOGIN_SERVER%%.*}"
+
+# Azure CLI jobs (deploy, infra) using WIF.
+.azure-deploy:
+  extends: .azure-wif
+  image: mcr.microsoft.com/azure-cli:latest
+  before_script:
+    - az login --service-principal -u "$AZURE_CI_CLIENT_ID" --federated-token "$GITLAB_TOKEN" --tenant "$AZURE_TENANT_ID"
+    - az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+
+# --- Include all pipeline files ---
+# Rules are on each job, not on includes (works on any GitLab version).
+include:
+  - local: .gitlab/ci/api-ci.yml
+  - local: .gitlab/ci/web-ci.yml
+  - local: .gitlab/ci/ingestion-ci.yml
+  - local: .gitlab/ci/infra-deploy.yml
+  - local: .gitlab/ci/pr-checks.yml
