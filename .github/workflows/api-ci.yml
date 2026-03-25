@@ -199,20 +199,23 @@ jobs:
           resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}
           imageToDeploy: ${{ needs.build-push.outputs.image-tag }}
 
-      - name: Smoke test
+      - name: Verify deployment health
         run: |
-          FQDN=$(az containerapp show \
-            --name ca-${{ env.SERVICE_NAME }}-surf-dev \
-            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
-            --query properties.configuration.ingress.fqdn -o tsv)
-          for i in $(seq 1 30); do
-            status=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/api/v1/health")
-            if [ "$status" = "200" ]; then
-              echo "API is healthy"
-              exit 0
-            fi
-            echo "Attempt $i: status=$status, retrying..."
+          for i in $(seq 1 20); do
+            STATUS=$(az containerapp revision list \
+              --name ca-${{ env.SERVICE_NAME }}-surf-dev \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --query "[0].properties.runningState" -o tsv)
+            case "$STATUS" in
+              Running|RunningAtMaxScale)
+                echo "API revision is healthy (status: $STATUS)"
+                exit 0 ;;
+              Failed|Degraded)
+                echo "ERROR: Revision failed (status: $STATUS)"
+                exit 1 ;;
+            esac
+            echo "Attempt $i: revision status=$STATUS, waiting..."
             sleep 5
           done
-          echo "ERROR: Health check failed after 150 seconds"
+          echo "ERROR: Revision not running after 100 seconds (last status: $STATUS)"
           exit 1

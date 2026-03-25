@@ -253,6 +253,12 @@ module ciManagedIdentity 'br/public:avm/res/managed-identity/user-assigned-ident
         subject: 'project_path:${gitlabProjectPath}:ref_type:branch:ref:main'
         audiences: ['api://AzureADTokenExchange']
       }
+      {
+        name: 'gitlab-ci-main-env-dev'
+        issuer: gitlabOidcIssuer
+        subject: 'project_path:${gitlabProjectPath}:ref_type:branch:ref:main:environment:dev'
+        audiences: ['api://AzureADTokenExchange']
+      }
     ]
   }
 }
@@ -262,6 +268,17 @@ resource ciContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   name: guid(resourceGroup().id, 'ci-contributor', baseName)
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c') // Contributor
+    #disable-next-line BCP318 // Safe: guarded by same enableGitlabOidc condition
+    principalId: ciManagedIdentity.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Role: CI identity → User Access Administrator on resource group (required for role assignments in Bicep)
+resource ciUserAccessAdminRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableGitlabOidc) {
+  name: guid(resourceGroup().id, 'ci-user-access-admin', baseName)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '18d7d88d-d35e-4fb5-a5c3-7773c20a72d9') // User Access Administrator
     #disable-next-line BCP318 // Safe: guarded by same enableGitlabOidc condition
     principalId: ciManagedIdentity.outputs.principalId
     principalType: 'ServicePrincipal'

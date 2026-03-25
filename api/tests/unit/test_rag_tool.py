@@ -1161,8 +1161,9 @@ class TestRewriteQueryWithLlm:
 
         set_rewrite_client(mock_rewrite_client, "claude-haiku-4-5-20251001")
 
-        with patch("src.rag.tools.search_index", mock_search), patch(
-            "src.rag.tools._search_clients", [MagicMock()]
+        with (
+            patch("src.rag.tools.search_index", mock_search),
+            patch("src.rag.tools._search_clients", [MagicMock()]),
         ):
             rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
             await rag_tool.invoke(
@@ -1196,13 +1197,12 @@ class TestRewriteQueryWithLlm:
 
         original_query = "what happens if I'm sick?"
 
-        with patch("src.rag.tools.search_index", mock_search), patch(
-            "src.rag.tools._search_clients", [MagicMock()]
+        with (
+            patch("src.rag.tools.search_index", mock_search),
+            patch("src.rag.tools._search_clients", [MagicMock()]),
         ):
             rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
-            await rag_tool.invoke(
-                arguments={"query": original_query, "document_type": None}
-            )
+            await rag_tool.invoke(arguments={"query": original_query, "document_type": None})
 
         # Strategy 1 should use rewritten query
         _, s1_kwargs = mock_search.call_args_list[0]

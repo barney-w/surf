@@ -19,6 +19,7 @@ from src.agents._output import (
 from src.middleware.auth import UserContext, get_current_user
 from src.middleware.error_handler import LLM_TIMEOUT_SECONDS, LLMTimeoutError
 from src.middleware.rate_limit import limiter
+from src.middleware.telemetry import record_token_usage
 from src.models.agent import (
     AgentResponseModel,
     RoutingMetadata,
@@ -26,9 +27,8 @@ from src.models.agent import (
 )
 from src.models.chat import ChatRequest, ChatResponse
 from src.models.conversation import FeedbackRecord
-from src.rag.tools import _search_overrides, parse_debug_overrides, search_debug_info
-from src.middleware.telemetry import record_token_usage
 from src.orchestrator.builder import token_usage_collector
+from src.rag.tools import _search_overrides, parse_debug_overrides, search_debug_info
 from src.services.chat_service import (
     persist_exchange,
     prepare_chat_request,
@@ -279,7 +279,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
     # Parse debug overrides once so the generator can re-apply them.
     stream_overrides = parse_debug_overrides(dict(request.headers))
     # Gate the debug SSE event behind the X-Surf-Debug request header.
-    emit_debug = "x-surf-debug" in {k.lower() for k in request.headers.keys()}
+    emit_debug = "x-surf-debug" in {k.lower() for k in request.headers}
 
     async def generate() -> AsyncGenerator[str, None]:
         rag_collector = setup_context_vars(ctx)
@@ -506,6 +506,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
         # Debug: log what we got from the workflow
         from src.config.settings import get_settings as _get_settings
+
         if _get_settings().trace_prompt_content:
             logger.info(
                 "workflow output: structured_result=%s response_text=%r buf_start=%r",
@@ -574,15 +575,17 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             usages = token_usage_collector.get()
             total_input = sum(u.input_tokens for u in usages)
             total_output = sum(u.output_tokens for u in usages)
-            yield sse({
-                "type": "usage",
-                "input_tokens": total_input,
-                "output_tokens": total_output,
-                "calls": [
-                    {"model": u.model_id, "input": u.input_tokens, "output": u.output_tokens}
-                    for u in usages
-                ],
-            })
+            yield sse(
+                {
+                    "type": "usage",
+                    "input_tokens": total_input,
+                    "output_tokens": total_output,
+                    "calls": [
+                        {"model": u.model_id, "input": u.input_tokens, "output": u.output_tokens}
+                        for u in usages
+                    ],
+                }
+            )
             # Record to OpenTelemetry counter.
             record_token_usage(total_input, total_output, agent_name=routed_agent or "unknown")
         except LookupError:
@@ -594,19 +597,21 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             try:
                 debug = search_debug_info.get()
                 if debug:
-                    yield sse({
-                        "type": "debug",
-                        "search": {
-                            "original_query": debug.original_query,
-                            "rewritten_query": debug.rewritten_query,
-                            "strategies_used": debug.strategies_used,
-                            "results_per_strategy": debug.results_per_strategy,
-                            "total_results": debug.total_results,
-                            "tier_counts": debug.tier_counts,
-                        },
-                        "quality_gate": gate_result.check if gate_result else "not_run",
-                        "agent": routed_agent,
-                    })
+                    yield sse(
+                        {
+                            "type": "debug",
+                            "search": {
+                                "original_query": debug.original_query,
+                                "rewritten_query": debug.rewritten_query,
+                                "strategies_used": debug.strategies_used,
+                                "results_per_strategy": debug.results_per_strategy,
+                                "total_results": debug.total_results,
+                                "tier_counts": debug.tier_counts,
+                            },
+                            "quality_gate": gate_result.check if gate_result else "not_run",
+                            "agent": routed_agent,
+                        }
+                    )
             except LookupError:
                 pass
 

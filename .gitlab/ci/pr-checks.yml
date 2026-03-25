@@ -190,7 +190,8 @@ pr-dependency-audit:
   script:
     - cd "$SERVICE"
     - uv sync --frozen $PRERELEASE
-    - uv run pip-audit
+    # CVE-2026-4539: pygments 2.19.2 — no fix version available yet
+    - uv run pip-audit --ignore-vuln CVE-2026-4539
 
 pr-sast:
   extends: [.python-uv, .mr-rules]

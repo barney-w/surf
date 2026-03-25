@@ -4,7 +4,7 @@ Creates (via REST API, idempotent PUT):
 1. Data source — blob storage connection with managed identity
 2. Index — surf-sharepoint-index with vector search
 3. Skillset — Text Split + Azure OpenAI Embedding
-4. Indexer — blob indexer with daily schedule
+4. Indexer — blob indexer with hourly schedule (configurable via INDEXER_SCHEDULE_INTERVAL)
 
 All endpoints, deployment names, and config come from environment variables.
 
@@ -336,7 +336,7 @@ def _create_indexer(api: SearchApiClient, index_name: str) -> None:
             },
         ],
         "outputFieldMappings": [],
-        "schedule": {"interval": "P1D"},
+        "schedule": {"interval": os.environ.get("INDEXER_SCHEDULE_INTERVAL", "PT1H")},
     }
 
     resp = api.request("PUT", f"indexers/{indexer_name}", body)
