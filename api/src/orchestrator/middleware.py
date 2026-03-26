@@ -87,11 +87,13 @@ class RAGCollectorMiddleware(FunctionMiddleware):
 
         if obs:
             try:
-                obs.update(output={
-                    "source_count": source_count,
-                    "duration_ms": round(duration_ms, 1),
-                    "has_infra_error": "SEARCH_INFRASTRUCTURE_ERROR:" in result,
-                })
+                obs.update(
+                    output={
+                        "source_count": source_count,
+                        "duration_ms": round(duration_ms, 1),
+                        "has_infra_error": "SEARCH_INFRASTRUCTURE_ERROR:" in result,
+                    }
+                )
                 obs.__exit__(None, None, None)
             except Exception:
                 pass

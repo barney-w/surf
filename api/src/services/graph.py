@@ -87,7 +87,11 @@ class GraphService:
 
         error_desc = result.get("error_description", "")
         error_code = result.get("error", "unknown")
-        logger.warning("Client-credential token acquisition failed: %s — %s", error_code, error_desc)
+        logger.warning(
+            "Client-credential token acquisition failed: %s — %s",
+            error_code,
+            error_desc,
+        )
         return None
 
     async def get_user_profile(self, graph_token: str) -> UserProfile | None:

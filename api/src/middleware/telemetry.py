@@ -115,9 +115,7 @@ def _attach_langfuse(settings: Settings) -> None:
                     should_export_span=is_default_export_span,
                 )
             )
-            logger.info(
-                "Langfuse span processor added (base_url=%s)", settings.langfuse_base_url
-            )
+            logger.info("Langfuse span processor added (base_url=%s)", settings.langfuse_base_url)
         else:
             logger.warning(
                 "Cannot attach Langfuse — tracer provider does not support span processors"
