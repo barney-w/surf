@@ -12,6 +12,8 @@ from collections.abc import Awaitable, Callable
 
 from agent_framework import FunctionInvocationContext, FunctionMiddleware
 
+from src.middleware.langfuse_utils import get_langfuse
+from src.middleware.telemetry import rag_results_count, rag_search_duration
 from src.rag.tools import rag_results_collector
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,20 @@ class RAGCollectorMiddleware(FunctionMiddleware):
         if context.function.name != "search_knowledge_base":
             await call_next()
             return
+
+        # Langfuse retriever span for search_knowledge_base invocations.
+        langfuse = get_langfuse()
+        if langfuse:
+            try:
+                obs = langfuse.start_as_current_observation(
+                    name="search_knowledge_base",
+                    as_type="retriever",
+                    input={"query": str(context.arguments) if context.arguments else ""},
+                ).__enter__()
+            except Exception:
+                obs = None
+        else:
+            obs = None
 
         start = time.perf_counter()
         await call_next()
@@ -64,6 +80,21 @@ class RAGCollectorMiddleware(FunctionMiddleware):
                 "RAG tool completed: %.1fms, no sources found",
                 duration_ms,
             )
+
+        rag_status = "error" if "SEARCH_INFRASTRUCTURE_ERROR:" in result else "ok"
+        rag_search_duration.record(duration_ms / 1000, {"status": rag_status})
+        rag_results_count.record(source_count)
+
+        if obs:
+            try:
+                obs.update(output={
+                    "source_count": source_count,
+                    "duration_ms": round(duration_ms, 1),
+                    "has_infra_error": "SEARCH_INFRASTRUCTURE_ERROR:" in result,
+                })
+                obs.__exit__(None, None, None)
+            except Exception:
+                pass
 
         # Collect ALL tool outputs (not just those with sources) so the
         # quality gate can distinguish skipped vs empty vs infra-error.

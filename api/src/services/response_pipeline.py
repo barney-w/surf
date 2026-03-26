@@ -6,6 +6,8 @@ from src.agents._output import deduplicate_sources, extract_sources, strip_sourc
 from src.agents._proofread import proofread_message
 from src.agents._registry import AgentRegistry
 from src.config.settings import get_settings
+from src.middleware.langfuse_utils import get_langfuse
+from src.middleware.telemetry import quality_gate_triggers
 from src.models.agent import AgentResponseModel
 from src.rag.quality_gate import QualityGateResult, run_quality_gate
 from src.rag.tools import _search_overrides
@@ -40,6 +42,30 @@ async def process_agent_response(
             len(agent_response.sources),
             agent_response.confidence,
         )
+
+    quality_gate_triggers.add(1, {"check": gate_result.check, "agent": routed_agent})
+
+    # Langfuse trace scoring
+    langfuse = get_langfuse()
+    if langfuse:
+        try:
+            langfuse.score_current_trace(
+                name="quality_gate",
+                value=gate_result.check,
+                data_type="CATEGORICAL",
+            )
+            langfuse.score_current_trace(
+                name="confidence",
+                value=agent_response.confidence,
+                data_type="CATEGORICAL",
+            )
+            langfuse.score_current_trace(
+                name="source_count",
+                value=float(len(agent_response.sources)),
+                data_type="NUMERIC",
+            )
+        except Exception:
+            pass  # Langfuse failures must never affect response pipeline
 
     # 2. Source recovery
     if not agent_response.sources and rag_outputs:

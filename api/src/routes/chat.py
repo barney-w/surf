@@ -1,4 +1,7 @@
 import asyncio
+import contextlib
+
+from langfuse import propagate_attributes
 import logging
 import uuid
 from collections.abc import AsyncGenerator
@@ -18,6 +21,8 @@ from src.agents._output import (
 )
 from src.middleware.auth import UserContext, get_current_user
 from src.middleware.error_handler import LLM_TIMEOUT_SECONDS, LLMTimeoutError
+from src.middleware.langfuse_utils import get_langfuse
+from src.middleware.logging import set_logging_context
 from src.middleware.rate_limit import limiter
 from src.middleware.telemetry import record_token_usage
 from src.models.agent import (
@@ -150,89 +155,117 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
         if overrides:
             _search_overrides.set(overrides)
 
-    # Run the workflow (with timeout)
-    rag_available = True
-    try:
-        response_text, structured_result, routed_agent, rag_outputs = await run_workflow(
-            workflow,
-            ctx.sanitised_message,
-            ctx=ctx,
+    # Langfuse root trace for the non-streaming chat endpoint.
+    langfuse = get_langfuse()
+    prop_ctx = (
+        propagate_attributes(user_id=user_id, session_id=str(ctx.conversation_id))
+        if langfuse
+        else contextlib.nullcontext()
+    )
+    trace_ctx = (
+        langfuse.start_as_current_observation(
+            name="chat",
+            as_type="span",
+            input={"message": body.message, "conversation_id": str(ctx.conversation_id)},
+            metadata={"target_agent": body.agent},
         )
-    except LLMTimeoutError:
-        raise
-    except Exception as exc:
-        if is_prompt_too_long(exc):
-            raise HTTPException(
-                status_code=413,
-                detail=PROMPT_TOO_LONG_MESSAGE,
-            ) from exc
-        # RAG or other non-timeout workflow error — degrade gracefully
-        logger.warning(
-            "Workflow error (possible RAG failure) — returning low-confidence response",
-            exc_info=True,
-        )
-        response_text = ""
-        structured_result = None
-        routed_agent = "coordinator"
-        rag_outputs: list[str] = []
-        rag_available = False
-
-    # Build response — use structured output if available, otherwise fallback
-    message_id = str(uuid.uuid4())
-    if not rag_available:
-        agent_response = AgentResponseModel(
-            message=(
-                "I was unable to fully process your request because some knowledge sources "
-                "are temporarily unavailable. Please try again shortly."
-            ),
-            confidence="low",
-            follow_up_suggestions=[
-                "Could you rephrase your question?",
-                "Try again in a moment.",
-            ],
-        )
-    elif structured_result is not None:
-        agent_response = structured_result
-    else:
-        fallback_text = response_text or "I'm sorry, I couldn't generate a response."
-        agent_response = parse_agent_output(fallback_text, routed_agent)
-
-    # Post-processing pipeline (quality gate, source recovery, proofread, URL stripping)
-    agent_response, _ = await process_agent_response(agent_response, rag_outputs, routed_agent)
-
-    routing = RoutingMetadata(
-        routed_by="coordinator",
-        primary_agent=routed_agent,
+        if langfuse
+        else contextlib.nullcontext()
     )
 
-    # Persist user message, assistant message, and update last_active_agent.
-    if ctx.db_available:
-        ok = await persist_exchange(
-            ctx,
-            ctx.sanitised_message,
-            agent_response.message,
-            agent_response,
-            routed_agent,
-            message_id,
+    with prop_ctx, trace_ctx as trace:
+        # Run the workflow (with timeout)
+        rag_available = True
+        try:
+            response_text, structured_result, routed_agent, rag_outputs = await run_workflow(
+                workflow,
+                ctx.sanitised_message,
+                ctx=ctx,
+            )
+        except LLMTimeoutError:
+            raise
+        except Exception as exc:
+            if is_prompt_too_long(exc):
+                raise HTTPException(
+                    status_code=413,
+                    detail=PROMPT_TOO_LONG_MESSAGE,
+                ) from exc
+            # RAG or other non-timeout workflow error — degrade gracefully
+            logger.warning(
+                "Workflow error (possible RAG failure) — returning low-confidence response",
+                exc_info=True,
+            )
+            response_text = ""
+            structured_result = None
+            routed_agent = "coordinator"
+            rag_outputs: list[str] = []
+            rag_available = False
+
+        # Build response — use structured output if available, otherwise fallback
+        message_id = str(uuid.uuid4())
+        set_logging_context(message_id=message_id, agent_name=routed_agent)
+        if not rag_available:
+            agent_response = AgentResponseModel(
+                message=(
+                    "I was unable to fully process your request because some knowledge sources "
+                    "are temporarily unavailable. Please try again shortly."
+                ),
+                confidence="low",
+                follow_up_suggestions=[
+                    "Could you rephrase your question?",
+                    "Try again in a moment.",
+                ],
+            )
+        elif structured_result is not None:
+            agent_response = structured_result
+        else:
+            fallback_text = response_text or "I'm sorry, I couldn't generate a response."
+            agent_response = parse_agent_output(fallback_text, routed_agent)
+
+        # Post-processing pipeline (quality gate, source recovery, proofread, URL stripping)
+        agent_response, _ = await process_agent_response(agent_response, rag_outputs, routed_agent)
+
+        routing = RoutingMetadata(
+            routed_by="coordinator",
+            primary_agent=routed_agent,
         )
-        if not ok:
-            ctx.db_available = False
 
-    chat_response = ChatResponse(
-        conversation_id=ctx.conversation_id,
-        message_id=message_id,
-        agent=routed_agent,
-        response=agent_response,
-        routing=routing,
-        created_at=datetime.now(UTC),
-    )
+        # Persist user message, assistant message, and update last_active_agent.
+        if ctx.db_available:
+            ok = await persist_exchange(
+                ctx,
+                ctx.sanitised_message,
+                agent_response.message,
+                agent_response,
+                routed_agent,
+                message_id,
+            )
+            if not ok:
+                ctx.db_available = False
 
-    response = JSONResponse(
-        content=chat_response.model_dump(mode="json"),
-    )
-    if not ctx.db_available:
-        response.headers["X-Surf-Warning"] = "db-unavailable"
-    return response
+        chat_response = ChatResponse(
+            conversation_id=ctx.conversation_id,
+            message_id=message_id,
+            agent=routed_agent,
+            response=agent_response,
+            routing=routing,
+            created_at=datetime.now(UTC),
+        )
+
+        if trace:
+            with contextlib.suppress(Exception):
+                trace.update(output={
+                    "agent": routed_agent,
+                    "confidence": agent_response.confidence,
+                    "source_count": len(agent_response.sources),
+                })
+
+        response = JSONResponse(
+            content=chat_response.model_dump(mode="json"),
+        )
+        if not ctx.db_available:
+            response.headers["X-Surf-Warning"] = "db-unavailable"
+        return response
 
 
 @router.post("/chat/stream")
@@ -296,6 +329,25 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         # Re-apply debug overrides inside the generator's context copy.
         if stream_overrides:
             _search_overrides.set(stream_overrides)
+
+        # Langfuse root trace for the streaming chat endpoint.
+        langfuse = get_langfuse()
+        langfuse_trace = None
+        langfuse_prop = None
+        if langfuse:
+            try:  # noqa: SIM105 — need to capture __enter__() return value
+                langfuse_prop = propagate_attributes(
+                    user_id=user_id,
+                    session_id=str(ctx.conversation_id),
+                ).__enter__()
+                langfuse_trace = langfuse.start_as_current_observation(
+                    name="chat_stream",
+                    as_type="span",
+                    input={"message": body.message, "conversation_id": str(ctx.conversation_id)},
+                    metadata={"target_agent": body.agent},
+                ).__enter__()
+            except Exception:
+                pass
 
         yield sse({"type": "phase", "phase": "thinking"})
 
@@ -550,10 +602,25 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                 ],
             )
 
+        set_logging_context(message_id=message_id, agent_name=routed_agent or "unknown")
+
         # Post-processing pipeline (quality gate, source recovery, proofread, URL stripping)
         agent_response, gate_result = await process_agent_response(
             agent_response, rag_collector, routed_agent
         )
+
+        if langfuse_trace:
+            try:
+                langfuse_trace.update(output={
+                    "agent": routed_agent or "unknown",
+                    "confidence": getattr(agent_response, 'confidence', 'unknown'),
+                    "source_count": len(getattr(agent_response, 'sources', [])),
+                })
+                langfuse_trace.__exit__(None, None, None)
+                if langfuse_prop is not None:
+                    langfuse_prop.__exit__(None, None, None)
+            except Exception:
+                pass
 
         enriched = enrich_agent_response(agent_response)
 
@@ -702,5 +769,20 @@ async def submit_feedback(
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     await conversation_service.add_feedback(conversation_id, user_id, feedback)
+
+    # Forward feedback to Langfuse (best-effort, no trace_id linkage yet).
+    langfuse = get_langfuse()
+    if langfuse:
+        with contextlib.suppress(Exception):
+            langfuse.create_score(
+                name="user_feedback",
+                value=feedback.rating,
+                data_type="CATEGORICAL",
+                comment=feedback.comment,
+                metadata={
+                    "message_id": feedback.message_id,
+                    "conversation_id": conversation_id,
+                },
+            )
 
     return {"status": "received", "conversation_id": conversation_id}
