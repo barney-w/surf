@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     entra_client_secret: str = ""
     guest_token_secret: str = ""
     guest_token_ttl_minutes: int = 30
+
+    # Langfuse (disabled when langfuse_base_url is empty)
+    langfuse_public_key: str = ""
+    langfuse_secret_key: SecretStr = SecretStr("")
+    langfuse_base_url: str = ""
+    langfuse_sample_rate: float = 1.0
 
     # Organisation
     organisation_name: str = ""
