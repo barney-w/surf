@@ -14,6 +14,8 @@ class TestShallowHealthCheck:
         data = response.json()
         assert data["status"] == "healthy"
         assert "checks" not in data
+        assert "features" in data
+        assert isinstance(data["features"]["conversation_history"], bool)
 
     def test_deep_false_returns_healthy(self):
         response = client.get("/api/v1/health?deep=false")

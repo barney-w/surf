@@ -155,6 +155,27 @@ class TestNormaliseStructuredData:
         assert result.structured_data == sd
         assert result.ui_hint == "steps"
 
+    def test_message_trimmed_when_structured_data_present(self):
+        """Long multi-paragraph message is trimmed to first paragraph when structured_data exists."""
+        long_msg = (
+            "Your recycling bin accepts these items.\n\n"
+            "Paper — newspaper, magazines\n"
+            "Cardboard — boxes, packaging\n"
+            "Glass — jars and bottles"
+        )
+        sd = '{"title": "Recycling bin items", "items": ["Paper", "Cardboard", "Glass"]}'
+        m = self._model(message=long_msg, structured_data=sd, ui_hint="list")
+        result = normalise_structured_data(m)
+        assert result.message == "Your recycling bin accepts these items."
+        assert result.structured_data == sd
+
+    def test_short_message_unchanged_when_structured_data_present(self):
+        """Single-paragraph message is not trimmed even with structured_data."""
+        sd = '{"steps": ["Step 1", "Step 2"]}'
+        m = self._model(message="Here are the steps:", structured_data=sd, ui_hint="steps")
+        result = normalise_structured_data(m)
+        assert result.message == "Here are the steps:"
+
     def test_whitespace_only_normalised_to_none(self):
         m = self._model(structured_data="  \n  ", ui_hint="card")
         result = normalise_structured_data(m)
