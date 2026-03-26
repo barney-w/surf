@@ -132,12 +132,28 @@ def _parse_source_block(block_body: str) -> Source | None:
         return None
 
 
+def _trim_message_for_structured(message: str) -> str:
+    """Trim message to first paragraph when structured_data will be rendered.
+
+    The UI renders both ``message`` and ``structured_data``.  When the LLM
+    ignores the "1-2 sentence lead-in" instruction and dumps the full answer
+    into both fields, users see duplicated content.  This keeps only the first
+    paragraph of ``message`` so the structured widget carries the detail.
+    """
+    # Split on blank lines (double newline).  Keep only the first paragraph.
+    parts = re.split(r"\n\s*\n", message.strip(), maxsplit=1)
+    return parts[0].strip()
+
+
 def normalise_structured_data(model: AgentResponseModel) -> AgentResponseModel:
     """Ensure structured_data is None when empty and ui_hint is consistent.
 
     LLMs sometimes emit structured_data as "" or "{}" instead of null, or set
     ui_hint to a non-"text" value without providing any structured_data.  This
     normalises both fields so the frontend never renders an empty card.
+
+    When valid structured_data IS present, also trims ``message`` to its first
+    paragraph to prevent content duplication in the UI.
     """
     sd = model.structured_data
     ui = model.ui_hint
@@ -157,6 +173,14 @@ def normalise_structured_data(model: AgentResponseModel) -> AgentResponseModel:
     # If ui_hint is "text" but structured_data is present, clear it.
     if ui == "text" and sd is not None:
         updates["structured_data"] = None
+
+    # Guard against duplicated content: when structured_data will be rendered,
+    # trim message to its first paragraph so the detail lives only in the
+    # structured widget.
+    if sd is not None and ui != "text":
+        trimmed = _trim_message_for_structured(model.message)
+        if trimmed != model.message:
+            updates["message"] = trimmed
 
     return model.model_copy(update=updates) if updates else model
 

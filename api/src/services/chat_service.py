@@ -20,6 +20,7 @@ from fastapi import HTTPException
 from src.agents._output import sanitize_agent_response
 from src.middleware.error_handler import LLM_TIMEOUT_SECONDS, LLMTimeoutError
 from src.middleware.input_validation import validate_message
+from src.middleware.telemetry import span_conversation_persistence, workflow_timeouts
 from src.models.agent import AgentResponseModel
 from src.models.conversation import AttachmentRecord, MessageRecord
 from src.orchestrator.builder import current_attachments, token_usage_collector
@@ -190,6 +191,7 @@ async def run_workflow(
         result = await asyncio.wait_for(_execute(), timeout=LLM_TIMEOUT_SECONDS)
         return (*result, rag_collector)
     except TimeoutError as err:
+        workflow_timeouts.add(1)
         raise LLMTimeoutError(f"LLM workflow timed out after {LLM_TIMEOUT_SECONDS}s") from err
 
 
@@ -229,20 +231,21 @@ async def persist_exchange(
         timestamp=datetime.now(UTC),
     )
 
-    ok = await _persist_message(
-        ctx.conversation_service, ctx.conversation_id, ctx.user_id, user_message
-    )
-    if ok:
+    with span_conversation_persistence(str(ctx.conversation_id)):
         ok = await _persist_message(
-            ctx.conversation_service, ctx.conversation_id, ctx.user_id, assistant_message
+            ctx.conversation_service, ctx.conversation_id, ctx.user_id, user_message
         )
-    if ok:
-        await _update_last_active_agent(
-            ctx.conversation_service, ctx.conversation_id, ctx.user_id, routed_agent
-        )
-        return True
+        if ok:
+            ok = await _persist_message(
+                ctx.conversation_service, ctx.conversation_id, ctx.user_id, assistant_message
+            )
+        if ok:
+            await _update_last_active_agent(
+                ctx.conversation_service, ctx.conversation_id, ctx.user_id, routed_agent
+            )
+            return True
 
-    return False
+        return False
 
 
 async def _update_last_active_agent(
