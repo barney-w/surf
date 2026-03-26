@@ -55,13 +55,15 @@ class TestGetLangfuse:
     def test_returns_client_when_enabled(self):
         lu._enabled = True
         mock_client = MagicMock()
+        mock_langfuse_mod = MagicMock()
+        mock_langfuse_mod.Langfuse.return_value = mock_client
         settings = MagicMock()
         settings.langfuse_public_key = "pk-test"
         settings.langfuse_secret_key.get_secret_value.return_value = "sk-test"
         settings.langfuse_base_url = "http://localhost:3100"
         settings.langfuse_sample_rate = 1.0
         with (
-            patch("langfuse.Langfuse", return_value=mock_client),
+            patch.dict("sys.modules", {"langfuse": mock_langfuse_mod}),
             patch("src.config.settings.get_settings", return_value=settings),
         ):
             assert lu.get_langfuse() is mock_client
@@ -69,23 +71,27 @@ class TestGetLangfuse:
     def test_caches_client_on_subsequent_calls(self):
         lu._enabled = True
         mock_client = MagicMock()
+        mock_langfuse_mod = MagicMock()
+        mock_langfuse_mod.Langfuse.return_value = mock_client
         settings = MagicMock()
         settings.langfuse_public_key = "pk-test"
         settings.langfuse_secret_key.get_secret_value.return_value = "sk-test"
         settings.langfuse_base_url = "http://localhost:3100"
         settings.langfuse_sample_rate = 1.0
         with (
-            patch("langfuse.Langfuse", return_value=mock_client) as mock_cls,
+            patch.dict("sys.modules", {"langfuse": mock_langfuse_mod}),
             patch("src.config.settings.get_settings", return_value=settings),
         ):
             lu.get_langfuse()
             lu.get_langfuse()
-            assert mock_cls.call_count == 1
+            assert mock_langfuse_mod.Langfuse.call_count == 1
 
     def test_returns_none_on_import_error(self):
         lu._enabled = True
+        mock_langfuse_mod = MagicMock()
+        mock_langfuse_mod.Langfuse.side_effect = RuntimeError("not initialised")
         with (
-            patch("langfuse.Langfuse", side_effect=RuntimeError("not initialised")),
+            patch.dict("sys.modules", {"langfuse": mock_langfuse_mod}),
             patch("src.config.settings.get_settings", return_value=MagicMock()),
         ):
             assert lu.get_langfuse() is None

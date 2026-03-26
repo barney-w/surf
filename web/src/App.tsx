@@ -15,6 +15,7 @@ import { ThemeToggle } from "./components/ThemeToggle";
 import { DeveloperSettings } from "./components/DeveloperSettings";
 import { useConversations } from "./hooks/useConversations";
 import { useDeveloperSettings } from "./hooks/useDeveloperSettings";
+import { useFeatures } from "./hooks/useFeatures";
 
 const STORAGE_KEY = "surf-color-mode";
 
@@ -167,7 +168,8 @@ function AppContent() {
   const [hasMessages, setHasMessages] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const { conversations, refresh: refreshConversations, deleteConversation } = useConversations();
+  const features = useFeatures();
+  const { conversations, refresh: refreshConversations, deleteConversation } = useConversations({ enabled: features.conversationHistory });
   const { settings: devSettings, updateSetting, resetToDefaults, isDevMode } = useDeveloperSettings();
   const [devSettingsOpen, setDevSettingsOpen] = useState(false);
 
@@ -301,17 +303,19 @@ function AppContent() {
     <div className="flex flex-col h-full bg-canvas">
       <OfflineBanner />
       <header className="relative flex flex-wrap items-center gap-2 sm:gap-3 px-3 sm:px-6 py-2 sm:py-3 border-b border-border shrink-0">
-        <IconButton
-          intent="ghost"
-          size="sm"
-          aria-label="Conversation history"
-          onPress={() => {
-            void refreshConversations();
-            setDrawerOpen(true);
-          }}
-        >
-          <History size={18} />
-        </IconButton>
+        {features.conversationHistory && (
+          <IconButton
+            intent="ghost"
+            size="sm"
+            aria-label="Conversation history"
+            onPress={() => {
+              void refreshConversations();
+              setDrawerOpen(true);
+            }}
+          >
+            <History size={18} />
+          </IconButton>
+        )}
         <h1 className="font-display text-lg font-semibold text-text-primary tracking-tight">
           Surf
         </h1>
@@ -346,21 +350,23 @@ function AppContent() {
       <p className="sm:hidden text-center font-display text-xs font-semibold text-text-primary tracking-tight py-1.5 border-b border-border shrink-0">
         Responses are AI-generated.
       </p>
-      <Drawer
-        isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        side="left"
-        title="Conversation history"
-        className="flex flex-col px-0 pb-0"
-      >
-        <ConversationList
-          conversations={conversations}
-          activeId={activeConversationId ?? undefined}
-          onSelect={(id) => void handleSelectConversation(id)}
-          onDelete={(id) => void handleDeleteConversation(id)}
-          className="-mt-1"
-        />
-      </Drawer>
+      {features.conversationHistory && (
+        <Drawer
+          isOpen={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          side="left"
+          title="Conversation history"
+          className="flex flex-col px-0 pb-0"
+        >
+          <ConversationList
+            conversations={conversations}
+            activeId={activeConversationId ?? undefined}
+            onSelect={(id) => void handleSelectConversation(id)}
+            onDelete={(id) => void handleDeleteConversation(id)}
+            className="-mt-1"
+          />
+        </Drawer>
+      )}
       {isDevMode && (
         <DeveloperSettings
           isOpen={devSettingsOpen}

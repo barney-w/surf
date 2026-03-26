@@ -38,7 +38,7 @@ function normalise(raw: ApiConversationSummary): ConversationSummary {
  * Conversations are fetched from `GET /api/v1/conversations` and normalised
  * into the camelCase shape expected by @surf-kit/agent's ConversationList.
  */
-export function useConversations() {
+export function useConversations({ enabled = true }: { enabled?: boolean } = {}) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const { getApiToken, isAuthenticated, isGuest } = useAuth();
@@ -58,6 +58,7 @@ export function useConversations() {
   }, []);
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     setLoading(true);
     try {
       const headers = await getHeaders();
@@ -72,11 +73,11 @@ export function useConversations() {
     } finally {
       setLoading(false);
     }
-  }, [getHeaders]);
+  }, [enabled, getHeaders]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (enabled) void refresh();
+  }, [enabled, refresh]);
 
   const deleteConversation = useCallback(
     async (id: string) => {
