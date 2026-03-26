@@ -36,13 +36,14 @@ class TestSetupTelemetryModes:
         monkeypatch.setenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "InstrumentationKey=test")
 
         mock_cam = MagicMock()
+        fake_mod = types.ModuleType("azure.monitor.opentelemetry")
+        fake_mod.configure_azure_monitor = mock_cam  # type: ignore[attr-defined]
         with (
             patch("src.middleware.telemetry.FastAPIInstrumentor"),
             patch.dict(
                 "sys.modules",
-                {"azure.monitor.opentelemetry": types.ModuleType("azure.monitor.opentelemetry")},
+                {"azure.monitor.opentelemetry": fake_mod},
             ),
-            patch("azure.monitor.opentelemetry.configure_azure_monitor", mock_cam, create=True),
         ):
             from src.middleware.telemetry import setup_telemetry
 
