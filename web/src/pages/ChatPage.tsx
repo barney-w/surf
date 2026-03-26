@@ -339,6 +339,7 @@ export function ChatPage({
           <div className="shrink-0 py-2 sm:py-3">
             <MessageComposer
               onSend={handleSend}
+              onStop={actions.stop}
               isLoading={state.isLoading}
               placeholder="Ask a question..."
               className="bg-surface border-border"
@@ -373,6 +374,7 @@ export function ChatPage({
           <div className="w-full max-w-[640px] shrink-0">
             <MessageComposer
               onSend={handleSend}
+              onStop={actions.stop}
               isLoading={state.isLoading}
               placeholder="Ask a question..."
               className="bg-surface border-border"
