@@ -156,7 +156,7 @@ class TestNormaliseStructuredData:
         assert result.ui_hint == "steps"
 
     def test_message_trimmed_when_structured_data_present(self):
-        """Long multi-paragraph message is trimmed to first paragraph when structured_data exists."""
+        """Long multi-paragraph message is trimmed when structured_data exists."""
         long_msg = (
             "Your recycling bin accepts these items.\n\n"
             "Paper — newspaper, magazines\n"

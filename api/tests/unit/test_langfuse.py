@@ -67,9 +67,12 @@ def test_langfuse_enabled_when_configured():
 # ---------------------------------------------------------------------------
 
 
-def _run_setup_with_langfuse(settings: MagicMock, mock_processor_cls: MagicMock,
-                             fake_langfuse_top: types.ModuleType,
-                             fake_langfuse_mod: types.ModuleType) -> MagicMock:
+def _run_setup_with_langfuse(
+    settings: MagicMock,
+    mock_processor_cls: MagicMock,
+    fake_langfuse_top: types.ModuleType,
+    fake_langfuse_mod: types.ModuleType,
+) -> MagicMock:
     """Run setup_telemetry in no-op mode (no Azure, no OTLP) with Langfuse mocked.
 
     Returns the mock tracer provider so callers can assert on ``add_span_processor``.
@@ -117,7 +120,10 @@ def test_langfuse_span_processor_added_when_configured():
     fake_langfuse_top.is_default_export_span = mock_is_default  # type: ignore[attr-defined]
 
     mock_provider = _run_setup_with_langfuse(
-        settings, mock_processor_cls, fake_langfuse_top, fake_langfuse_mod,
+        settings,
+        mock_processor_cls,
+        fake_langfuse_top,
+        fake_langfuse_mod,
     )
 
     mock_processor_cls.assert_called_once_with(

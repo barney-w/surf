@@ -1,7 +1,5 @@
 import asyncio
 import contextlib
-
-from langfuse import propagate_attributes
 import logging
 import uuid
 from collections.abc import AsyncGenerator
@@ -9,6 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import APIRouter, HTTPException, Request
+from langfuse import propagate_attributes
 
 if TYPE_CHECKING:
     from agent_framework import Workflow, WorkflowEvent
@@ -254,11 +253,13 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
 
         if trace:
             with contextlib.suppress(Exception):
-                trace.update(output={
-                    "agent": routed_agent,
-                    "confidence": agent_response.confidence,
-                    "source_count": len(agent_response.sources),
-                })
+                trace.update(
+                    output={
+                        "agent": routed_agent,
+                        "confidence": agent_response.confidence,
+                        "source_count": len(agent_response.sources),
+                    }
+                )
 
         response = JSONResponse(
             content=chat_response.model_dump(mode="json"),
@@ -611,11 +612,13 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
         if langfuse_trace:
             try:
-                langfuse_trace.update(output={
-                    "agent": routed_agent or "unknown",
-                    "confidence": getattr(agent_response, 'confidence', 'unknown'),
-                    "source_count": len(getattr(agent_response, 'sources', [])),
-                })
+                langfuse_trace.update(
+                    output={
+                        "agent": routed_agent or "unknown",
+                        "confidence": getattr(agent_response, "confidence", "unknown"),
+                        "source_count": len(getattr(agent_response, "sources", [])),
+                    }
+                )
                 langfuse_trace.__exit__(None, None, None)
                 if langfuse_prop is not None:
                     langfuse_prop.__exit__(None, None, None)

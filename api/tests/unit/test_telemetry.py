@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import types
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
-import pytest
+if TYPE_CHECKING:
+    import pytest
 
 
 def _make_settings(**overrides: object) -> MagicMock:
@@ -77,7 +79,9 @@ class TestSetupTelemetryModes:
         fake_otlp_trace = types.ModuleType("opentelemetry.exporter.otlp.proto.grpc.trace_exporter")
         fake_otlp_trace.OTLPSpanExporter = MagicMock()  # type: ignore[attr-defined]
 
-        fake_otlp_metric = types.ModuleType("opentelemetry.exporter.otlp.proto.grpc.metric_exporter")
+        fake_otlp_metric = types.ModuleType(
+            "opentelemetry.exporter.otlp.proto.grpc.metric_exporter"
+        )
         fake_otlp_metric.OTLPMetricExporter = MagicMock()  # type: ignore[attr-defined]
 
         fake_modules = {
@@ -91,8 +95,12 @@ class TestSetupTelemetryModes:
             # Intermediate packages needed for import resolution
             "opentelemetry.exporter": types.ModuleType("opentelemetry.exporter"),
             "opentelemetry.exporter.otlp": types.ModuleType("opentelemetry.exporter.otlp"),
-            "opentelemetry.exporter.otlp.proto": types.ModuleType("opentelemetry.exporter.otlp.proto"),
-            "opentelemetry.exporter.otlp.proto.grpc": types.ModuleType("opentelemetry.exporter.otlp.proto.grpc"),
+            "opentelemetry.exporter.otlp.proto": types.ModuleType(
+                "opentelemetry.exporter.otlp.proto"
+            ),
+            "opentelemetry.exporter.otlp.proto.grpc": types.ModuleType(
+                "opentelemetry.exporter.otlp.proto.grpc"
+            ),
             "opentelemetry.sdk": types.ModuleType("opentelemetry.sdk"),
         }
 
