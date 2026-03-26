@@ -9,6 +9,7 @@ import contextlib
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import ExitStack
 
 from agent_framework import FunctionInvocationContext, FunctionMiddleware
 
@@ -39,64 +40,64 @@ class RAGCollectorMiddleware(FunctionMiddleware):
 
         # Langfuse retriever span for search_knowledge_base invocations.
         langfuse = get_langfuse()
+        lf_stack = ExitStack()
+        obs = None
         if langfuse:
-            try:
-                obs = langfuse.start_as_current_observation(
-                    name="search_knowledge_base",
-                    as_type="retriever",
-                    input={"query": str(context.arguments) if context.arguments else ""},
-                ).__enter__()
-            except Exception:
-                obs = None
-        else:
-            obs = None
+            with contextlib.suppress(Exception):
+                obs = lf_stack.enter_context(
+                    langfuse.start_as_current_observation(
+                        name="search_knowledge_base",
+                        as_type="retriever",
+                        input={"query": str(context.arguments) if context.arguments else ""},
+                    )
+                )
 
         start = time.perf_counter()
-        await call_next()
-        duration_ms = (time.perf_counter() - start) * 1000
+        try:
+            await call_next()
+        finally:
+            duration_ms = (time.perf_counter() - start) * 1000
 
-        result = str(context.result) if context.result is not None else ""
+            result = str(context.result) if context.result is not None else ""
 
-        # Count sources in the output (each starts with "=== SOURCE N ===").
-        source_count = result.count("=== SOURCE ")
+            # Count sources in the output (each starts with "=== SOURCE N ===").
+            source_count = result.count("=== SOURCE ")
 
-        # Detect infrastructure errors
-        if "SEARCH_INFRASTRUCTURE_ERROR:" in result:
-            logger.error(
-                "RAG tool returned infrastructure error",
-                extra={
-                    "event": "rag_tool_infrastructure_error",
-                    "duration_ms": round(duration_ms, 1),
-                },
-            )
-        elif source_count > 0:
-            logger.info(
-                "RAG tool completed: %.1fms, %d sources returned",
-                duration_ms,
-                source_count,
-            )
-        else:
-            logger.info(
-                "RAG tool completed: %.1fms, no sources found",
-                duration_ms,
-            )
-
-        rag_status = "error" if "SEARCH_INFRASTRUCTURE_ERROR:" in result else "ok"
-        rag_search_duration.record(duration_ms / 1000, {"status": rag_status})
-        rag_results_count.record(source_count)
-
-        if obs:
-            try:
-                obs.update(
-                    output={
-                        "source_count": source_count,
+            # Detect infrastructure errors
+            if "SEARCH_INFRASTRUCTURE_ERROR:" in result:
+                logger.error(
+                    "RAG tool returned infrastructure error",
+                    extra={
+                        "event": "rag_tool_infrastructure_error",
                         "duration_ms": round(duration_ms, 1),
-                        "has_infra_error": "SEARCH_INFRASTRUCTURE_ERROR:" in result,
-                    }
+                    },
                 )
-                obs.__exit__(None, None, None)
-            except Exception:
-                pass
+            elif source_count > 0:
+                logger.info(
+                    "RAG tool completed: %.1fms, %d sources returned",
+                    duration_ms,
+                    source_count,
+                )
+            else:
+                logger.info(
+                    "RAG tool completed: %.1fms, no sources found",
+                    duration_ms,
+                )
+
+            rag_status = "error" if "SEARCH_INFRASTRUCTURE_ERROR:" in result else "ok"
+            rag_search_duration.record(duration_ms / 1000, {"status": rag_status})
+            rag_results_count.record(source_count)
+
+            if obs:
+                with contextlib.suppress(Exception):
+                    obs.update(
+                        output={
+                            "source_count": source_count,
+                            "duration_ms": round(duration_ms, 1),
+                            "has_infra_error": "SEARCH_INFRASTRUCTURE_ERROR:" in result,
+                        }
+                    )
+            lf_stack.close()
 
         # Collect ALL tool outputs (not just those with sources) so the
         # quality gate can distinguish skipped vs empty vs infra-error.

@@ -7,7 +7,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import APIRouter, HTTPException, Request
-from langfuse import propagate_attributes
+
+try:
+    from langfuse import propagate_attributes
+except Exception:  # langfuse missing or broken — degrade gracefully
+    propagate_attributes = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
     from agent_framework import Workflow, WorkflowEvent
@@ -158,7 +162,7 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
     langfuse = get_langfuse()
     prop_ctx = (
         propagate_attributes(user_id=user_id, session_id=str(ctx.conversation_id))
-        if langfuse
+        if langfuse and propagate_attributes is not None
         else contextlib.nullcontext()
     )
     trace_ctx = (
@@ -334,19 +338,27 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         # Langfuse root trace for the streaming chat endpoint.
         langfuse = get_langfuse()
         langfuse_trace = None
-        langfuse_prop = None
+        lf_stack = contextlib.ExitStack()
         if langfuse:
-            try:  # noqa: SIM105 — need to capture __enter__() return value
-                langfuse_prop = propagate_attributes(
-                    user_id=user_id,
-                    session_id=str(ctx.conversation_id),
-                ).__enter__()
-                langfuse_trace = langfuse.start_as_current_observation(
-                    name="chat_stream",
-                    as_type="span",
-                    input={"message": body.message, "conversation_id": str(ctx.conversation_id)},
-                    metadata={"target_agent": body.agent},
-                ).__enter__()
+            try:
+                if propagate_attributes is not None:
+                    lf_stack.enter_context(
+                        propagate_attributes(
+                            user_id=user_id,
+                            session_id=str(ctx.conversation_id),
+                        )
+                    )
+                langfuse_trace = lf_stack.enter_context(
+                    langfuse.start_as_current_observation(
+                        name="chat_stream",
+                        as_type="span",
+                        input={
+                            "message": body.message,
+                            "conversation_id": str(ctx.conversation_id),
+                        },
+                        metadata={"target_agent": body.agent},
+                    )
+                )
             except Exception:
                 pass
 
@@ -611,7 +623,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         )
 
         if langfuse_trace:
-            try:
+            with contextlib.suppress(Exception):
                 langfuse_trace.update(
                     output={
                         "agent": routed_agent or "unknown",
@@ -619,11 +631,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                         "source_count": len(getattr(agent_response, "sources", [])),
                     }
                 )
-                langfuse_trace.__exit__(None, None, None)
-                if langfuse_prop is not None:
-                    langfuse_prop.__exit__(None, None, None)
-            except Exception:
-                pass
+        lf_stack.close()
 
         enriched = enrich_agent_response(agent_response)
 

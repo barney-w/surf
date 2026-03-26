@@ -13,7 +13,7 @@ Thank you for your interest in contributing to surf! This guide covers the devel
 - **[just](https://github.com/casey/just)** for task running
 - **[Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)** for deployment
 
-> **Windows:** Use [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) (Ubuntu). All commands run inside WSL. See [docs/wsl-setup.md](./docs/wsl-setup.md).
+> **Windows:** Use [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) (Ubuntu). All commands run inside WSL.
 
 ### Getting Started
 
