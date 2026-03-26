@@ -16,5 +16,158 @@ services:
       timeout: 3s
       retries: 5
 
+  otel-collector:
+    container_name: surf-otel-collector
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    ports:
+      - "4317:4317"   # gRPC receiver
+      - "4318:4318"   # HTTP receiver
+      - "8889:8889"   # Prometheus metrics endpoint
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+
+  # ---------------------------------------------------------------------------
+  # Langfuse v3 local stack (requires ClickHouse, Redis, MinIO)
+  # ---------------------------------------------------------------------------
+  langfuse:
+    container_name: surf-langfuse
+    image: langfuse/langfuse:3
+    restart: unless-stopped
+    ports:
+      - "3100:3000"
+    environment: &langfuse-env
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: dev-secret-do-not-use-in-production
+      NEXTAUTH_URL: http://localhost:3100
+      SALT: dev-salt-do-not-use-in-production
+      ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: localdev
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9090
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      # Auto-provision org, project, and API keys for local dev (no manual signup needed)
+      LANGFUSE_INIT_ORG_ID: surf-local
+      LANGFUSE_INIT_ORG_NAME: Surf Local Dev
+      LANGFUSE_INIT_PROJECT_ID: surf-dev
+      LANGFUSE_INIT_PROJECT_NAME: surf-dev
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-local-dev
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-local-dev
+      LANGFUSE_INIT_USER_EMAIL: dev@surf.local
+      LANGFUSE_INIT_USER_NAME: Developer
+      LANGFUSE_INIT_USER_PASSWORD: localdev
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+
+  langfuse-worker:
+    container_name: surf-langfuse-worker
+    image: langfuse/langfuse-worker:3
+    restart: unless-stopped
+    environment:
+      <<: *langfuse-env
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+
+  langfuse-db:
+    container_name: surf-langfuse-db
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  langfuse-clickhouse:
+    container_name: surf-langfuse-clickhouse
+    image: clickhouse/clickhouse-server:latest
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - langfuse-clickhouse:/var/lib/clickhouse
+      - langfuse-clickhouse-logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+
+  langfuse-redis:
+    container_name: surf-langfuse-redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: --requirepass localdev --maxmemory-policy noeviction
+    volumes:
+      - langfuse-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "localdev", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  langfuse-minio:
+    container_name: surf-langfuse-minio
+    image: minio/minio:latest
+    restart: unless-stopped
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    ports:
+      - "9090:9000"
+    volumes:
+      - langfuse-minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
+
 volumes:
   pgdata:
+  langfuse-data:
+  langfuse-clickhouse:
+  langfuse-clickhouse-logs:
+  langfuse-redis:
+  langfuse-minio:

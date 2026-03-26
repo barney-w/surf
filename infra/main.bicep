@@ -174,6 +174,9 @@ param webImageTag string = ''
 @description('Custom domain hostname for the web app (e.g. chatwith.surf). Leave empty to skip.')
 param webCustomDomain string = ''
 
+@description('Enable custom metric scheduled query alerts (requires Application Insights)')
+param enableMetricAlerts bool = true
+
 // ---------------------------------------------------------------------------
 // Variables
 // ---------------------------------------------------------------------------
@@ -217,6 +220,19 @@ module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.9.1' = {
     dataRetention: logAnalyticsRetentionDays
     publicNetworkAccessForIngestion: logAnalyticsPublicNetworkAccess
     publicNetworkAccessForQuery: logAnalyticsPublicNetworkAccess
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Module: Application Insights
+// ---------------------------------------------------------------------------
+
+module appInsights 'modules/application-insights.bicep' = {
+  name: 'deploy-app-insights'
+  params: {
+    name: 'appi-${baseName}'
+    location: location
+    workspaceId: logAnalytics.outputs.resourceId
   }
 }
 
@@ -789,6 +805,7 @@ resource surfApi 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'ENTRA_TENANT_ID', value: entraTenantId }
             { name: 'ENTRA_CLIENT_ID', value: entraClientId }
             { name: 'POSTGRES_ENABLED', value: 'False' }
+            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.outputs.connectionString }
           ], concat(
             !empty(organisationName) ? [{ name: 'ORGANISATION_NAME', value: organisationName }] : [],
             anthropicApiKeyInKv ? [{ name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }] : [],
@@ -1081,6 +1098,136 @@ module cpuAlert 'br/public:avm/res/insights/metric-alert:0.4.1' = {
           threshold: 800000000
           timeAggregation: 'Average'
           criterionType: 'StaticThresholdCriterion'
+        }
+      ]
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scheduled Query Alert Rules — custom OTel metrics via Application Insights
+// ---------------------------------------------------------------------------
+
+resource alertRagSearchSlow 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableMetricAlerts) {
+  name: 'alert-rag-search-slow-${baseName}'
+  location: location
+  tags: tags
+  properties: {
+    displayName: 'RAG search slow'
+    description: 'Fires when the p95 RAG search duration exceeds 5 seconds over a 5-minute window.'
+    severity: 2
+    enabled: true
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT5M'
+    scopes: [
+      appInsights.outputs.resourceId
+    ]
+    criteria: {
+      allOf: [
+        {
+          query: 'customMetrics | where name == "surf.rag.search_duration_seconds" | summarize p95 = percentile(value, 95) by bin(timestamp, 5m) | where p95 > 5'
+          timeAggregation: 'Count'
+          operator: 'GreaterThan'
+          threshold: 0
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+  }
+}
+
+resource alertRagNoResults 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableMetricAlerts) {
+  name: 'alert-rag-no-results-${baseName}'
+  location: location
+  tags: tags
+  properties: {
+    displayName: 'RAG returning nothing'
+    description: 'Fires when the average RAG results count falls below 0.5 over a 15-minute window.'
+    severity: 1
+    enabled: true
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT15M'
+    scopes: [
+      appInsights.outputs.resourceId
+    ]
+    criteria: {
+      allOf: [
+        {
+          query: 'customMetrics | where name == "surf.rag.results_count" | summarize avg_results = avg(value) by bin(timestamp, 15m) | where avg_results < 0.5'
+          timeAggregation: 'Count'
+          operator: 'GreaterThan'
+          threshold: 0
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+  }
+}
+
+resource alertQualityGateFailures 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableMetricAlerts) {
+  name: 'alert-quality-gate-failures-${baseName}'
+  location: location
+  tags: tags
+  properties: {
+    displayName: 'Quality gate failures'
+    description: 'Fires when quality gate checks other than "passed" exceed 5 triggers in a 15-minute window.'
+    severity: 2
+    enabled: true
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT15M'
+    scopes: [
+      appInsights.outputs.resourceId
+    ]
+    criteria: {
+      allOf: [
+        {
+          query: 'customMetrics | where name == "surf.quality_gate.triggers_total" | extend check = tostring(customDimensions["check"]) | where check != "passed" | summarize failures = sum(valueCount) by bin(timestamp, 15m)'
+          timeAggregation: 'Total'
+          metricMeasureColumn: 'failures'
+          operator: 'GreaterThan'
+          threshold: 5
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+  }
+}
+
+resource alertWorkflowTimeouts 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableMetricAlerts) {
+  name: 'alert-workflow-timeouts-${baseName}'
+  location: location
+  tags: tags
+  properties: {
+    displayName: 'Workflow timeouts spike'
+    description: 'Fires when workflow timeouts exceed 3 in a 5-minute window.'
+    severity: 1
+    enabled: true
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT5M'
+    scopes: [
+      appInsights.outputs.resourceId
+    ]
+    criteria: {
+      allOf: [
+        {
+          query: 'customMetrics | where name == "surf.workflow.timeout_total" | summarize timeouts = sum(valueCount) by bin(timestamp, 5m)'
+          timeAggregation: 'Total'
+          metricMeasureColumn: 'timeouts'
+          operator: 'GreaterThan'
+          threshold: 3
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
         }
       ]
     }
