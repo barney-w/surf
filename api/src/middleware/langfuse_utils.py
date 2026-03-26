@@ -28,14 +28,34 @@ def langfuse_enabled() -> bool:
     return _enabled
 
 
+_client: object = None
+
+
 def get_langfuse():  # noqa: ANN201
-    """Return the Langfuse client singleton, or ``None`` if disabled."""
+    """Return the Langfuse client singleton, or ``None`` if disabled.
+
+    Creates the client with explicit credentials from ``Settings`` so
+    we don't depend on ``LANGFUSE_PUBLIC_KEY`` being in ``os.environ``
+    (pydantic-settings reads ``.env`` but doesn't export to the env).
+    """
+    global _client  # noqa: PLW0603
     if not langfuse_enabled():
         return None
+    if _client is not None:
+        return _client
     try:
-        from langfuse import get_client
+        from langfuse import Langfuse
 
-        return get_client()
+        from src.config.settings import get_settings
+
+        s = get_settings()
+        _client = Langfuse(
+            public_key=s.langfuse_public_key,
+            secret_key=s.langfuse_secret_key.get_secret_value(),
+            base_url=s.langfuse_base_url,
+            sample_rate=s.langfuse_sample_rate,
+        )
+        return _client
     except Exception:
         logger.warning("Failed to get Langfuse client", exc_info=True)
         return None

@@ -283,9 +283,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Flush Langfuse (if enabled)
     if settings.langfuse_base_url:
         try:
-            from langfuse import get_client
+            from src.middleware.langfuse_utils import get_langfuse
 
-            get_client().shutdown()
+            client = get_langfuse()
+            if client:
+                client.shutdown()
         except Exception:
             logger.warning("Langfuse shutdown failed", exc_info=True)
 
