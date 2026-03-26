@@ -18,7 +18,7 @@ from src.middleware.auth import get_current_user
 from src.middleware.body_limit import BodySizeLimitMiddleware
 from src.middleware.error_handler import add_error_handlers
 from src.middleware.logging import reset_logging_context, set_logging_context, setup_logging
-from src.middleware.telemetry import setup_telemetry
+from src.middleware.telemetry import chat_duration, rate_limit_hits, setup_telemetry
 from src.orchestrator.builder import build_agent_graph, create_model_client
 from src.orchestrator.history import ConversationHistoryProvider
 from src.rag.tools import (
@@ -83,6 +83,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # --- Telemetry (before agents, so their traces are captured) ---
     setup_telemetry(app, settings)
+
+    # Anthropic auto-instrumentation (captures all client.messages.create() as OTel spans)
+    try:
+        from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
+
+        AnthropicInstrumentor().instrument()
+    except ImportError:
+        logger.debug("opentelemetry-instrumentation-anthropic not available")
 
     # --- Production safety guards ---
     if settings.environment != "dev":
@@ -272,6 +280,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
     # Shutdown
+    # Flush Langfuse (if enabled)
+    if settings.langfuse_base_url:
+        try:
+            from langfuse import get_client
+
+            get_client().shutdown()
+        except Exception:
+            logger.warning("Langfuse shutdown failed", exc_info=True)
+
     clear_search_clients()
     logger.info("Search clients cleared")
     await graph_service.close()
@@ -310,7 +327,14 @@ from slowapi.errors import RateLimitExceeded  # noqa: E402
 from src.middleware.rate_limit import limiter  # noqa: E402
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # pyright: ignore[reportArgumentType]
+
+
+async def _counted_rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
+    rate_limit_hits.add(1)
+    return _rate_limit_exceeded_handler(request, exc)  # type: ignore[return-value]
+
+
+app.add_exception_handler(RateLimitExceeded, _counted_rate_limit_handler)  # pyright: ignore[reportArgumentType]
 
 add_error_handlers(app)
 app.include_router(agents_router)
@@ -356,6 +380,8 @@ async def request_logging_middleware(
     response.headers["X-Request-ID"] = request_id
 
     duration_ms = (time.perf_counter() - start) * 1000
+    if request.url.path.startswith("/api/v1/chat"):
+        chat_duration.record(duration_ms / 1000, {"path": request.url.path})
     logger.info(
         "Request completed: %s %s — %d (%.1fms)",
         request.method,
@@ -375,7 +401,12 @@ async def health_check(request: Request, deep: bool = False) -> dict[str, object
     Pass ?deep=true to verify connectivity to the database and Azure AI Search.
     Deep checks require authentication.
     """
-    result: dict[str, object] = {"status": "healthy"}
+    result: dict[str, object] = {
+        "status": "healthy",
+        "features": {
+            "conversation_history": getattr(app.state, "conversation_service", None) is not None,
+        },
+    }
     if not deep:
         return result
 

@@ -31,6 +31,9 @@ dependencies = [
     "msal>=1.28",
     "pymupdf>=1.25",
     "anthropic",
+    "langfuse>=3.0.0",
+    "opentelemetry-instrumentation-anthropic",
+    "azure-monitor-opentelemetry>=1.8.0",
 ]
 
 [tool.uv]
