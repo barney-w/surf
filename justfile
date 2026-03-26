@@ -1,5 +1,13 @@
 # Surf - Multi-Agent Orchestration Platform
 
+# Start the OpenTelemetry collector for local telemetry development
+otel:
+    docker compose up -d otel-collector
+
+# Start local Langfuse (trace viewer) at http://localhost:3100
+langfuse:
+    docker compose up -d langfuse langfuse-worker
+
 # Start local Postgres
 db:
     docker compose up -d postgres

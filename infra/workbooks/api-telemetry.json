@@ -1,0 +1,137 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/Application-Insights-Workbooks/master/schema/workbook.json",
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# Surf API Telemetry\nOperational dashboard for the Surf multi-agent orchestration API. Panels cover chat latency, RAG health, quality gate outcomes, and error counters."
+      },
+      "name": "header"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "time-range",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 86400000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                { "durationMs": 3600000 },
+                { "durationMs": 14400000 },
+                { "durationMs": 43200000 },
+                { "durationMs": 86400000 },
+                { "durationMs": 259200000 },
+                { "durationMs": 604800000 }
+              ]
+            },
+            "label": "Time Range"
+          }
+        ]
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customMetrics\n| where name == 'surf.chat.duration_seconds'\n| where timestamp {TimeRange}\n| summarize\n    p50 = percentile(value, 50),\n    p95 = percentile(value, 95),\n    p99 = percentile(value, 99)\n  by bin(timestamp, 5m)\n| order by timestamp asc",
+        "size": 0,
+        "title": "Chat Performance -- Duration Percentiles",
+        "queryType": 0,
+        "visualization": "timechart",
+        "chartSettings": {
+          "seriesLabelSettings": [
+            { "series": "p50", "label": "p50" },
+            { "series": "p95", "label": "p95" },
+            { "series": "p99", "label": "p99" }
+          ],
+          "ySettings": {
+            "numberFormatSettings": {
+              "unit": 24,
+              "options": { "style": "decimal", "minimumFractionDigits": 1 }
+            }
+          }
+        }
+      },
+      "name": "chat-performance"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customMetrics\n| where name == 'surf.rag.search_duration_seconds'\n| where timestamp {TimeRange}\n| summarize avg_duration = avg(value) by bin(timestamp, 5m)\n| order by timestamp asc",
+        "size": 0,
+        "title": "RAG Health -- Average Search Duration (s)",
+        "queryType": 0,
+        "visualization": "timechart",
+        "chartSettings": {
+          "ySettings": {
+            "numberFormatSettings": {
+              "unit": 24,
+              "options": { "style": "decimal", "minimumFractionDigits": 2 }
+            }
+          }
+        }
+      },
+      "customWidth": "50",
+      "name": "rag-search-duration"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customMetrics\n| where name == 'surf.rag.results_count'\n| where timestamp {TimeRange}\n| summarize avg_results = avg(value) by bin(timestamp, 5m)\n| order by timestamp asc",
+        "size": 0,
+        "title": "RAG Health -- Average Results Count",
+        "queryType": 0,
+        "visualization": "timechart"
+      },
+      "customWidth": "50",
+      "name": "rag-results-count"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customMetrics\n| where name == 'surf.quality_gate.triggers_total'\n| where timestamp {TimeRange}\n| extend check = tostring(customDimensions['check'])\n| summarize triggers = sum(valueCount) by bin(timestamp, 15m), check\n| order by timestamp asc",
+        "size": 0,
+        "title": "Quality Gate -- Triggers by Check",
+        "queryType": 0,
+        "visualization": "barchart",
+        "chartSettings": {
+          "chartType": "stackedBar"
+        }
+      },
+      "name": "quality-gate-triggers"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let timeouts = customMetrics\n| where name == 'surf.workflow.timeout_total'\n| where timestamp {TimeRange}\n| summarize timeouts = sum(valueCount) by bin(timestamp, 5m);\nlet rate_limits = customMetrics\n| where name == 'surf.rate_limit.hits_total'\n| where timestamp {TimeRange}\n| summarize rate_limit_hits = sum(valueCount) by bin(timestamp, 5m);\nlet server_errors = requests\n| where timestamp {TimeRange}\n| where toint(resultCode) >= 500\n| summarize ['5xx_count'] = count() by bin(timestamp, 5m);\ntimeouts\n| join kind=fullouter rate_limits on timestamp\n| join kind=fullouter server_errors on timestamp\n| project\n    timestamp = coalesce(timestamp, timestamp1, timestamp2),\n    timeouts = coalesce(timeouts, 0),\n    rate_limit_hits = coalesce(rate_limit_hits, 0),\n    ['5xx_count'] = coalesce(['5xx_count'], 0)\n| order by timestamp asc",
+        "size": 0,
+        "title": "Errors -- Timeouts, Rate Limits & 5xx Responses",
+        "queryType": 0,
+        "visualization": "barchart",
+        "chartSettings": {
+          "chartType": "stackedBar",
+          "seriesLabelSettings": [
+            { "series": "timeouts", "label": "Workflow Timeouts", "color": "red" },
+            { "series": "rate_limit_hits", "label": "Rate Limit Hits", "color": "orange" },
+            { "series": "5xx_count", "label": "5xx Responses", "color": "redDark" }
+          ]
+        }
+      },
+      "name": "errors-panel"
+    }
+  ]
+}
