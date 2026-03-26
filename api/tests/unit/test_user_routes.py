@@ -39,6 +39,12 @@ _user_mod = importlib.util.module_from_spec(_spec)
 sys.modules["src.routes.user"] = _user_mod
 _spec.loader.exec_module(_user_mod)
 
+# Ensure @patch("src.routes.user.…") can traverse the module path.
+if "src.routes" not in sys.modules:
+    _routes_stub = types.ModuleType("src.routes")
+    sys.modules["src.routes"] = _routes_stub
+sys.modules["src.routes"].user = _user_mod  # type: ignore[attr-defined]
+
 _extract_bearer_token = _user_mod._extract_bearer_token  # type: ignore[attr-defined]
 router = _user_mod.router  # type: ignore[attr-defined]
 
@@ -166,6 +172,7 @@ class TestGetMe:
         graph = AsyncMock()
         graph.available = True
         graph.get_graph_token.return_value = None  # OBO failed
+        graph.get_user_groups.return_value = ["Engineering"]  # groups use client creds, still work
 
         app = _make_app(graph_service=graph)
         client = TestClient(app)
@@ -174,9 +181,9 @@ class TestGetMe:
 
         assert resp.status_code == 200
         body = resp.json()
-        # Falls back to JWT claims
+        # Falls back to JWT claims for profile, but groups still work
         assert body["displayName"] == "Jane Smith"
-        assert body["groups"] == []
+        assert body["groups"] == ["Engineering"]
 
     @patch("src.routes.user.get_current_user", new_callable=AsyncMock)
     def test_graph_profile_none_falls_back_to_jwt(
