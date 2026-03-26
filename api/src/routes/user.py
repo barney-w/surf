@@ -61,9 +61,10 @@ async def get_me(request: Request) -> JSONResponse:
                         "mail": graph_profile.mail or user.email,
                     }
                 )
-            groups = await graph_service.get_user_groups(graph_token)
-            if groups:
-                profile["groups"] = groups
+        # Groups use client credentials (application permission) — independent of OBO.
+        groups = await graph_service.get_user_groups(user.user_id)
+        if groups:
+            profile["groups"] = groups
 
     return JSONResponse(content=profile)
 

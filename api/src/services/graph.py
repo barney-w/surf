@@ -11,7 +11,8 @@ from src.config.settings import get_settings
 logger = logging.getLogger(__name__)
 
 _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
-_GRAPH_SCOPES = ["User.Read", "GroupMember.Read.All"]
+_OBO_SCOPES = ["User.Read"]
+_CLIENT_CREDENTIAL_SCOPES = ["https://graph.microsoft.com/.default"]
 
 
 @dataclass
@@ -50,13 +51,18 @@ class GraphService:
         return self._app is not None
 
     async def get_graph_token(self, user_assertion: str) -> str | None:
-        """Exchange a user access token for a Graph API token via OBO."""
+        """Exchange a user access token for a Graph API token via OBO.
+
+        Uses only delegated scopes (``User.Read``).  Application-level
+        permissions (e.g. ``GroupMember.Read.All``) are served by
+        :meth:`get_app_token` via client credentials instead.
+        """
         if not self._app:
             return None
 
         result: dict[str, object] = self._app.acquire_token_on_behalf_of(  # type: ignore[assignment]
             user_assertion=user_assertion,
-            scopes=_GRAPH_SCOPES,
+            scopes=_OBO_SCOPES,
         )
 
         if "access_token" in result:
@@ -65,6 +71,23 @@ class GraphService:
         error_desc = result.get("error_description", "")
         error_code = result.get("error", "unknown")
         logger.warning("OBO token acquisition failed: %s — %s", error_code, error_desc)
+        return None
+
+    async def get_app_token(self) -> str | None:
+        """Acquire a token via client credentials for application-level permissions."""
+        if not self._app:
+            return None
+
+        result: dict[str, object] = self._app.acquire_token_for_client(  # type: ignore[assignment]
+            scopes=_CLIENT_CREDENTIAL_SCOPES,
+        )
+
+        if "access_token" in result:
+            return str(result["access_token"])
+
+        error_desc = result.get("error_description", "")
+        error_code = result.get("error", "unknown")
+        logger.warning("Client-credential token acquisition failed: %s — %s", error_code, error_desc)
         return None
 
     async def get_user_profile(self, graph_token: str) -> UserProfile | None:
@@ -107,13 +130,20 @@ class GraphService:
             logger.warning("Failed to fetch user photo from Graph", exc_info=True)
             return None
 
-    async def get_user_groups(self, graph_token: str) -> list[str]:
-        """Fetch the signed-in user's group display names."""
+    async def get_user_groups(self, user_oid: str) -> list[str]:
+        """Fetch a user's group display names using application permissions.
+
+        Uses client credentials (``GroupMember.Read.All`` application
+        permission) so this does not depend on the OBO delegated flow.
+        """
+        app_token = await self.get_app_token()
+        if not app_token:
+            return []
         try:
             resp = await self._http.get(
-                f"{_GRAPH_BASE}/me/memberOf",
+                f"{_GRAPH_BASE}/users/{user_oid}/memberOf",
                 params={"$select": "displayName,id", "$top": "100"},
-                headers={"Authorization": f"Bearer {graph_token}"},
+                headers={"Authorization": f"Bearer {app_token}"},
             )
             resp.raise_for_status()
             data = resp.json()

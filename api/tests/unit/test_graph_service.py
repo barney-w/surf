@@ -75,7 +75,7 @@ class TestGetGraphToken:
         assert token == "graph-access-token-123"
         mock_msal_app.acquire_token_on_behalf_of.assert_called_once_with(
             user_assertion="user-assertion-jwt",
-            scopes=["User.Read", "GroupMember.Read.All"],
+            scopes=["User.Read"],
         )
 
     @pytest.mark.asyncio
@@ -190,11 +190,50 @@ class TestGetUserPhoto:
         assert photo is None
 
 
+class TestGetAppToken:
+    @pytest.mark.asyncio
+    async def test_returns_token_on_success(
+        self, service: GraphService, mock_msal_app: MagicMock
+    ) -> None:
+        mock_msal_app.acquire_token_for_client.return_value = {
+            "access_token": "app-token-123",
+        }
+
+        token = await service.get_app_token()
+
+        assert token == "app-token-123"
+        mock_msal_app.acquire_token_for_client.assert_called_once_with(
+            scopes=["https://graph.microsoft.com/.default"],
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_failure(
+        self, service: GraphService, mock_msal_app: MagicMock
+    ) -> None:
+        mock_msal_app.acquire_token_for_client.return_value = {
+            "error": "unauthorized_client",
+            "error_description": "Not configured",
+        }
+
+        token = await service.get_app_token()
+
+        assert token is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_msal_app(self, unconfigured_service: GraphService) -> None:
+        token = await unconfigured_service.get_app_token()
+
+        assert token is None
+
+
 class TestGetUserGroups:
     @pytest.mark.asyncio
     async def test_returns_list_of_group_names(
-        self, service: GraphService, mock_http: AsyncMock
+        self, service: GraphService, mock_msal_app: MagicMock, mock_http: AsyncMock
     ) -> None:
+        mock_msal_app.acquire_token_for_client.return_value = {
+            "access_token": "app-token",
+        }
         response = MagicMock()
         response.status_code = 200
         response.raise_for_status = MagicMock()
@@ -207,16 +246,34 @@ class TestGetUserGroups:
         }
         mock_http.get.return_value = response
 
-        groups = await service.get_user_groups("graph-token")
+        groups = await service.get_user_groups("user-oid-123")
 
         assert groups == ["Engineering", "Admins"]
+        # Verify it calls /users/{oid}/memberOf, not /me/memberOf
+        call_url = mock_http.get.call_args[0][0]
+        assert "/users/user-oid-123/memberOf" in call_url
 
     @pytest.mark.asyncio
-    async def test_returns_empty_list_on_failure(
-        self, service: GraphService, mock_http: AsyncMock
+    async def test_returns_empty_list_on_http_failure(
+        self, service: GraphService, mock_msal_app: MagicMock, mock_http: AsyncMock
     ) -> None:
+        mock_msal_app.acquire_token_for_client.return_value = {
+            "access_token": "app-token",
+        }
         mock_http.get.side_effect = httpx.HTTPError("Server error")
 
-        groups = await service.get_user_groups("graph-token")
+        groups = await service.get_user_groups("user-oid-123")
+
+        assert groups == []
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_list_when_no_app_token(
+        self, service: GraphService, mock_msal_app: MagicMock
+    ) -> None:
+        mock_msal_app.acquire_token_for_client.return_value = {
+            "error": "unauthorized_client",
+        }
+
+        groups = await service.get_user_groups("user-oid-123")
 
         assert groups == []
