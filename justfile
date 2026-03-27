@@ -1,5 +1,128 @@
 # Surf - Multi-Agent Orchestration Platform
 
+# ---------------------------------------------------------------------------
+# Pre-push validation — mirrors every PR check from .gitlab/ci/pr-checks.yml
+# ---------------------------------------------------------------------------
+
+# Run all PR checks locally (lint, test, security) before pushing
+precheck: precheck-lint precheck-test precheck-security
+    @echo ""
+    @echo "All pre-push checks passed."
+
+# Run all lint checks (api, ingestion, web, desktop)
+precheck-lint: _pc-api-lint _pc-ingestion-lint _pc-web-lint _pc-desktop-fmt
+
+# Run all test checks (api, ingestion, web build)
+precheck-test: _pc-api-test _pc-ingestion-test _pc-web-build
+
+# Run all security checks (secrets, dependency audit, SAST)
+precheck-security: _pc-secret-scan _pc-dependency-audit _pc-sast
+
+# --- Individual PR check jobs (prefixed _pc- to keep `just --list` clean) ---
+
+_pc-api-lint:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> pr-api-lint"
+    cd api
+    uv run ruff check .
+    uv run ruff format --check .
+
+_pc-api-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> pr-api-test"
+    cd api
+    uv run pytest --tb=short -q
+
+_pc-ingestion-lint:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> pr-ingestion-lint"
+    cd ingestion
+    uv run ruff check .
+    uv run ruff format --check .
+
+_pc-ingestion-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> pr-ingestion-test"
+    cd ingestion
+    uv run pytest --tb=short -q
+
+_pc-web-lint:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> pr-web-lint"
+    cd web
+    npm run typecheck
+
+_pc-web-build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> pr-web-build"
+    cd web
+    npm run build
+
+_pc-desktop-fmt:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> pr-desktop-fmt"
+    cd web/src-tauri
+    cargo fmt --check
+
+_pc-desktop-clippy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> pr-desktop-clippy"
+    cd web/src-tauri
+    cargo clippy -- -D warnings
+
+_pc-desktop-audit:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> pr-desktop-audit"
+    cd web/src-tauri
+    cargo audit
+
+_pc-secret-scan:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> pr-secret-scan"
+    gitleaks detect --source . --config .gitleaks.toml
+
+_pc-dependency-audit:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> pr-dependency-audit (api)"
+    cd api
+    uv run pip-audit --ignore-vuln CVE-2026-4539 --ignore-vuln GHSA-rf74-v2fm-23pw --ignore-vuln CVE-2026-33230 --ignore-vuln CVE-2026-33231
+    echo "==> pr-dependency-audit (ingestion)"
+    cd ../ingestion
+    uv run pip-audit --ignore-vuln CVE-2026-4539 --ignore-vuln GHSA-rf74-v2fm-23pw --ignore-vuln CVE-2026-33230 --ignore-vuln CVE-2026-33231
+
+_pc-sast:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> pr-sast (api)"
+    cd api && bandit -r src/ --severity-level medium
+    echo "==> pr-sast (ingestion)"
+    cd ../ingestion && bandit -r src/ --severity-level medium
+
+# Run Docker builds for all services (no push)
+precheck-docker:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> docker build: api"
+    docker build -f api/Dockerfile api/
+    echo "==> docker build: web"
+    cd web && npm run build && cd ..
+    docker build -f web/Dockerfile web/
+    echo "==> docker build: ingestion"
+    docker build -f ingestion/Dockerfile ingestion/
+    echo ""
+    echo "All Docker builds passed."
+
 # Start the OpenTelemetry collector for local telemetry development
 otel:
     docker compose up -d otel-collector

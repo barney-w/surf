@@ -53,7 +53,9 @@ jobs:
             --parameters entraTenantId="${{ vars.ENTRA_TENANT_ID }}" \
             --parameters entraClientId="${{ vars.ENTRA_CLIENT_ID }}" \
             --parameters organisationName="${{ vars.ORGANISATION_NAME }}" \
-            --parameters aiSearchEndpointOverride="${{ vars.AI_SEARCH_ENDPOINT_OVERRIDE }}"
+            --parameters aiSearchEndpointOverride="${{ vars.AI_SEARCH_ENDPOINT_OVERRIDE }}" \
+            --parameters webCustomDomain="${{ vars.WEB_CUSTOM_DOMAIN }}" \
+            --parameters webCustomDomainReady="${{ vars.WEB_CUSTOM_DOMAIN_READY || 'false' }}"
 
   # ---------------------------------------------------------------------------
   # Deploy infrastructure
@@ -88,4 +90,6 @@ jobs:
             --parameters entraClientId="${{ vars.ENTRA_CLIENT_ID }}" \
             --parameters organisationName="${{ vars.ORGANISATION_NAME }}" \
             --parameters aiSearchEndpointOverride="${{ vars.AI_SEARCH_ENDPOINT_OVERRIDE }}" \
+            --parameters webCustomDomain="${{ vars.WEB_CUSTOM_DOMAIN }}" \
+            --parameters webCustomDomainReady="${{ vars.WEB_CUSTOM_DOMAIN_READY || 'false' }}" \
             --name "surf-dev-$(date +%Y%m%d%H%M%S)"

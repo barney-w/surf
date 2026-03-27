@@ -8,6 +8,8 @@
 # Required CI/CD variables (masked, protected):
 #   ANTHROPIC_API_KEY       — Anthropic API key (stored in Key Vault via Bicep)
 #   GUEST_TOKEN_SECRET      — HMAC secret for guest tokens (stored in Key Vault via Bicep)
+#   WEB_CUSTOM_DOMAIN       — Custom domain hostname (e.g. chatwith.surf, optional)
+#   WEB_CUSTOM_DOMAIN_READY — Set 'true' once managed cert is provisioned (default: false)
 #   GITLAB_OIDC_ISSUER      — GitLab instance URL (optional, for CI identity)
 #   GITLAB_PROJECT_PATH     — GitLab project path (optional, for CI identity)
 # ---------------------------------------------------------------------------
@@ -36,6 +38,8 @@ infra-validate:
         --parameters guestTokenSecret="$GUEST_TOKEN_SECRET"
         --parameters gitlabOidcIssuer="${GITLAB_OIDC_ISSUER:-}"
         --parameters gitlabProjectPath="${GITLAB_PROJECT_PATH:-}"
+        --parameters webCustomDomain="${WEB_CUSTOM_DOMAIN:-}"
+        --parameters webCustomDomainReady="${WEB_CUSTOM_DOMAIN_READY:-false}"
 
 infra-deploy:
   extends: [.infra-ci-rules, .azure-deploy]
@@ -58,4 +62,6 @@ infra-deploy:
         --parameters guestTokenSecret="$GUEST_TOKEN_SECRET"
         --parameters gitlabOidcIssuer="${GITLAB_OIDC_ISSUER:-}"
         --parameters gitlabProjectPath="${GITLAB_PROJECT_PATH:-}"
+        --parameters webCustomDomain="${WEB_CUSTOM_DOMAIN:-}"
+        --parameters webCustomDomainReady="${WEB_CUSTOM_DOMAIN_READY:-false}"
         --name "surf-dev-$(date +%Y%m%d%H%M%S)"

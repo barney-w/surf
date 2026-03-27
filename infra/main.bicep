@@ -174,6 +174,9 @@ param webImageTag string = ''
 @description('Custom domain hostname for the web app (e.g. chatwith.surf). Leave empty to skip.')
 param webCustomDomain string = ''
 
+@description('Set true once the managed certificate for webCustomDomain has been provisioned. Bootstrap: deploy once with false (creates cert), then flip to true (binds cert with SNI).')
+param webCustomDomainReady bool = false
+
 @description('Enable custom metric scheduled query alerts (requires Application Insights)')
 param enableMetricAlerts bool = true
 
@@ -909,7 +912,14 @@ resource surfIngestion 'Microsoft.App/containerApps@2024-03-01' = {
 // Resource: Managed Certificate for custom domain (TXT validation)
 // ---------------------------------------------------------------------------
 
-resource webManagedCert 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (!empty(webCustomDomain)) {
+// Two-phase custom domain bootstrap:
+//   Phase 1 (webCustomDomainReady=false): surfWeb adds hostname with Disabled binding.
+//           Cert is NOT created yet — Azure requires the hostname on an app first.
+//   Phase 2 (webCustomDomainReady=true):  Cert is created (hostname exists from phase 1).
+//           surfWeb updates to SniEnabled with cert. ARM handles ordering via the
+//           webManagedCert.id reference in surfWeb's customDomains.
+// After bootstrap, all subsequent deploys use phase 2 (cert already exists, no-op).
+resource webManagedCert 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (!empty(webCustomDomain) && webCustomDomainReady) {
   parent: containerAppsEnv
   name: 'mc-${containerAppsEnv.name}-${replace(webCustomDomain, '.', '-')}'
   location: location
@@ -944,10 +954,13 @@ resource surfWeb 'Microsoft.App/containerApps@2024-03-01' = {
         transport: 'auto'
         allowInsecure: false
         customDomains: !empty(webCustomDomain) ? [
-          {
+          webCustomDomainReady ? {
             name: webCustomDomain
             bindingType: 'SniEnabled'
             certificateId: webManagedCert.id
+          } : {
+            name: webCustomDomain
+            bindingType: 'Disabled'
           }
         ] : []
       }
