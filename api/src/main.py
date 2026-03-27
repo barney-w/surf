@@ -72,6 +72,47 @@ try:
 except (ImportError, ModuleNotFoundError, AttributeError):
     pass  # framework not installed or API changed — nothing to patch
 
+# ---------------------------------------------------------------------------
+# Monkey-patch: HandoffAgentExecutor._is_handoff_requested only checks the
+# last response message for a ``function_result`` containing the handoff key.
+# With the Anthropic client the function_result content's ``result`` attribute
+# arrives as an empty string (serialisation bug), so the handoff is never
+# detected.  Fallback: scan all messages for a ``function_call`` whose name
+# matches a handoff tool (``handoff_to_<agent>``).
+# Remove this block once agent-framework-orchestrations ships a fix.
+# ---------------------------------------------------------------------------
+try:
+    from agent_framework_orchestrations._handoff import (  # noqa: N814
+        HandoffAgentExecutor as _HAEX,
+    )
+    from agent_framework_orchestrations._handoff import get_handoff_tool_name as _get_ht_name
+
+    _orig_is_handoff = _HAEX._is_handoff_requested  # pyright: ignore[reportPrivateUsage]
+
+    def _patched_is_handoff(self: object, response: object) -> str | None:  # type: ignore[override]
+        # Try the original implementation first.
+        result = _orig_is_handoff(self, response)  # pyright: ignore[reportArgumentType]
+        if result:
+            return result  # type: ignore[return-value]
+
+        # Fallback: look for a function_call content whose name matches a
+        # handoff tool.  This covers the Anthropic-client case where the
+        # function_result is empty but the function_call is present.
+        targets: set[str] = getattr(self, "_handoff_targets", set())  # pyright: ignore[reportAny]
+        tool_to_target = {_get_ht_name(t): t for t in targets}
+        for msg in getattr(response, "messages", []):
+            for content in getattr(msg, "contents", []):
+                if getattr(content, "type", None) == "function_call":
+                    name = getattr(content, "name", "")
+                    if name in tool_to_target:
+                        return tool_to_target[name]
+        return None
+
+    _HAEX._is_handoff_requested = _patched_is_handoff  # type: ignore[assignment]  # pyright: ignore[reportPrivateUsage]
+    logger.info("Applied HandoffAgentExecutor._is_handoff_requested monkey-patch")
+except (ImportError, ModuleNotFoundError, AttributeError):
+    pass
+
 settings = get_settings()
 
 
