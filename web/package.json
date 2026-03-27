@@ -14,7 +14,7 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
-    "@azure/msal-browser": "^4.29.0",
+    "@azure/msal-browser": "^4.30.0",
     "@surf-kit/agent": "file:../../surf-kit/packages/agent",
     "@surf-kit/core": "file:../../surf-kit/packages/core",
     "@surf-kit/hooks": "file:../../surf-kit/packages/hooks",
@@ -22,23 +22,23 @@
     "@surf-kit/theme": "file:../../surf-kit/packages/theme",
     "@surf-kit/tokens": "file:../../surf-kit/packages/tokens",
     "@tauri-apps/api": "^2.10.1",
-    "@tauri-apps/plugin-notification": "^2",
+    "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-store": "^2.4.2",
-    "@tauri-apps/plugin-updater": "^2",
-    "@tauri-apps/plugin-window-state": "^2",
+    "@tauri-apps/plugin-updater": "^2.10.0",
+    "@tauri-apps/plugin-window-state": "^2.4.1",
     "lucide-react": "^0.577.0",
-    "react": "^19",
-    "react-dom": "^19"
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4",
+    "@tailwindcss/vite": "^4.2.2",
     "@tauri-apps/cli": "^2.10.1",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^5.1.4",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
     "babel-plugin-react-compiler": "^1.0.0",
     "tailwindcss": "^4",
-    "typescript": "^5.9",
-    "vite": "^7"
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
   }
 }

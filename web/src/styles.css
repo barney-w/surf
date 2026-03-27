@@ -8,6 +8,7 @@
 @import "@surf-kit/tokens/css/light";
 @import "@surf-kit/tokens/css/dark";
 @import "@surf-kit/tokens/css/brand";
+@import "@surf-kit/tokens/css/energy";
 @source "../src/**/*.{ts,tsx}";
 @source "../node_modules/@surf-kit/core/dist/**/*.{js,mjs}";
 @source "../node_modules/@surf-kit/agent/dist/**/*.{js,mjs}";
