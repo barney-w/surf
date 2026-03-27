@@ -1,6 +1,7 @@
-import React, { createContext, useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ThemeProvider } from "@surf-kit/theme";
 import type { ColorMode } from "@surf-kit/theme";
+import { ColorModeContext } from "./contexts/ColorModeContext";
 import { Button, Drawer, DropdownMenu, IconButton } from "@surf-kit/core";
 import { WaveLoader } from "@surf-kit/core";
 import { ConversationList } from "@surf-kit/agent/chat";
@@ -22,18 +23,13 @@ const STORAGE_KEY = "surf-color-mode";
 function getSavedColorMode(): ColorMode {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === "light" || saved === "dark" || saved === "brand")
+    if (saved === "light" || saved === "dark" || saved === "brand" || saved === "energy")
       return saved;
   } catch {
     /* SSR / private browsing */
   }
   return "brand";
 }
-
-export const ColorModeContext = createContext<{
-  colorMode: ColorMode;
-  toggleColorMode: () => void;
-}>({ colorMode: "brand", toggleColorMode: () => {} });
 
 function SignInButton() {
   const { login } = useAuth();
@@ -424,7 +420,7 @@ export function App() {
 
   const toggleColorMode = useCallback(() => {
     setColorMode((prev) => {
-      const order: ColorMode[] = ["brand", "light", "dark"];
+      const order: ColorMode[] = ["brand", "light", "dark", "energy"];
       const next = order[(order.indexOf(prev) + 1) % order.length];
       try {
         localStorage.setItem(STORAGE_KEY, next);

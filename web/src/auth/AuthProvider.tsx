@@ -63,6 +63,8 @@ export function useAuth() {
 
 const clientId = import.meta.env.VITE_ENTRA_CLIENT_ID ?? "";
 
+const GUEST_ID_KEY = "surf-guest-id";
+
 // MSAL instance is created lazily — in Tauri we need to restore the
 // persisted token cache into localStorage before MSAL reads it.
 let msalInstance: PublicClientApplication | null = null;
@@ -120,29 +122,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Silently fetch a new guest token from the API and schedule the next refresh.
-  const refreshGuestToken = useCallback(async (): Promise<string | null> => {
+  /**
+   * Request a guest token from the API, optionally renewing an existing
+   * identity.  Persists the guest ID to sessionStorage so the same
+   * identity survives page reloads and token refreshes.
+   */
+  const fetchGuestToken = useCallback(async (existingGuestId?: string | null): Promise<{ token: string; guestId: string } | null> => {
     const apiBase = getApiBase();
     try {
-      const resp = await fetch(`${apiBase}/auth/guest`, { method: "POST" });
+      const resp = await fetch(`${apiBase}/auth/guest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(existingGuestId ? { guest_id: existingGuestId } : {}),
+      });
       if (!resp.ok) return null;
       const data = await resp.json() as { token: string; guest_id: string; expires_in: number };
-      guestTokenRef.current = data.token;
-      setGuestToken(data.token);
-      // Schedule next refresh inline to avoid circular dependency
-      if (guestRefreshTimer.current) clearTimeout(guestRefreshTimer.current);
-      const exp = getTokenExpiry(data.token);
-      if (exp !== null) {
-        const msUntilRefresh = Math.max((exp - 120) * 1000 - Date.now(), 10_000);
-        guestRefreshTimer.current = setTimeout(() => {
-          void refreshGuestToken();
-        }, msUntilRefresh);
-      }
-      return data.token;
+
+      // Persist identity so it survives page reloads
+      try { sessionStorage.setItem(GUEST_ID_KEY, data.guest_id); } catch { /* private browsing */ }
+
+      return { token: data.token, guestId: data.guest_id };
     } catch {
       return null;
     }
   }, []);
+
+  // Silently fetch a new guest token from the API and schedule the next refresh.
+  const refreshGuestToken = useCallback(async (): Promise<string | null> => {
+    // Read the current guest ID so the server renews the same identity
+    let guestId: string | null = null;
+    try { guestId = sessionStorage.getItem(GUEST_ID_KEY); } catch { /* noop */ }
+
+    const result = await fetchGuestToken(guestId);
+    if (!result) return null;
+
+    guestTokenRef.current = result.token;
+    setGuestToken(result.token);
+
+    // Schedule next refresh inline to avoid circular dependency
+    if (guestRefreshTimer.current) clearTimeout(guestRefreshTimer.current);
+    const exp = getTokenExpiry(result.token);
+    if (exp !== null) {
+      const msUntilRefresh = Math.max((exp - 120) * 1000 - Date.now(), 10_000);
+      guestRefreshTimer.current = setTimeout(() => {
+        void refreshGuestToken();
+      }, msUntilRefresh);
+    }
+    return result.token;
+  }, [fetchGuestToken]);
 
   // Schedule a silent refresh ~2 minutes before the token expires.
   const scheduleGuestRefresh = useCallback((token: string) => {
@@ -326,24 +353,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isGuestLoading) return;
     setIsGuestLoading(true);
     setError(null);
-    const apiBase = getApiBase();
     try {
-      const resp = await fetch(`${apiBase}/auth/guest`, { method: "POST" });
-      if (!resp.ok) {
+      // Reuse an existing guest identity if one was persisted from a
+      // previous session — this preserves conversation history.
+      let existingId: string | null = null;
+      try { existingId = sessionStorage.getItem(GUEST_ID_KEY); } catch { /* noop */ }
+
+      const result = await fetchGuestToken(existingId);
+      if (!result) {
         setError("Something went wrong. Please try again.");
         return;
       }
-      const data = await resp.json() as { token: string; guest_id: string };
-      guestTokenRef.current = data.token;
-      setGuestToken(data.token);
+      guestTokenRef.current = result.token;
+      setGuestToken(result.token);
       setIsGuest(true);
-      scheduleGuestRefresh(data.token);
+      scheduleGuestRefresh(result.token);
     } catch {
       setError("Couldn't reach the server. Please check your connection and try again.");
     } finally {
       setIsGuestLoading(false);
     }
-  }, [isGuestLoading, scheduleGuestRefresh]);
+  }, [isGuestLoading, fetchGuestToken, scheduleGuestRefresh]);
 
   const logout = useCallback(async () => {
     const clearLocalState = () => {
@@ -352,6 +382,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsGuest(false);
       guestTokenRef.current = null;
       setGuestToken(null);
+      try { sessionStorage.removeItem(GUEST_ID_KEY); } catch { /* noop */ }
       if (guestRefreshTimer.current) {
         clearTimeout(guestRefreshTimer.current);
         guestRefreshTimer.current = null;

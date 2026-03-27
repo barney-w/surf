@@ -5,6 +5,7 @@ import path from 'path'
 
 const agentSrc = path.resolve(__dirname, '../../surf-kit/packages/agent/src')
 const coreSrc = path.resolve(__dirname, '../../surf-kit/packages/core/src')
+const themeSrc = path.resolve(__dirname, '../../surf-kit/packages/theme/src')
 
 const host = process.env.TAURI_DEV_HOST
 
@@ -36,6 +37,9 @@ export default defineConfig({
 
       // Map @surf-kit/core to source for dev
       '@surf-kit/core': path.join(coreSrc, 'index.ts'),
+
+      // Map @surf-kit/theme to source for dev HMR
+      '@surf-kit/theme': path.join(themeSrc, 'index.ts'),
     },
   },
   server: {

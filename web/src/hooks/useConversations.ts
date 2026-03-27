@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { getApiBase } from "../auth/platform";
 
@@ -43,25 +43,16 @@ export function useConversations({ enabled = true }: { enabled?: boolean } = {})
   const [loading, setLoading] = useState(false);
   const { getApiToken, isAuthenticated, isGuest } = useAuth();
 
-  // Keep refs to avoid re-creating the callback when auth state changes
-  const getApiTokenRef = useRef(getApiToken);
-  getApiTokenRef.current = getApiToken;
-  const isAuthenticatedRef = useRef(isAuthenticated);
-  isAuthenticatedRef.current = isAuthenticated;
-  const isGuestRef = useRef(isGuest);
-  isGuestRef.current = isGuest;
-
-  const getHeaders = useCallback(async (): Promise<Record<string, string>> => {
-    if (!isAuthenticatedRef.current && !isGuestRef.current) return {};
-    const token = await getApiTokenRef.current();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
+  const hasAuth = isAuthenticated || isGuest;
 
   const refresh = useCallback(async () => {
-    if (!enabled) return;
+    if (!enabled || !hasAuth) return;
     setLoading(true);
     try {
-      const headers = await getHeaders();
+      const token = await getApiToken();
+      const headers: Record<string, string> = token
+        ? { Authorization: `Bearer ${token}` }
+        : {};
       const res = await fetch(`${getApiBase()}/conversations`, {
         credentials: "include",
         headers,
@@ -73,15 +64,19 @@ export function useConversations({ enabled = true }: { enabled?: boolean } = {})
     } finally {
       setLoading(false);
     }
-  }, [enabled, getHeaders]);
+  }, [enabled, hasAuth, getApiToken]);
 
+  // Re-fetch whenever auth state changes (e.g. guest login completes)
   useEffect(() => {
-    if (enabled) void refresh();
-  }, [enabled, refresh]);
+    if (enabled && hasAuth) void refresh();
+  }, [enabled, hasAuth, refresh]);
 
   const deleteConversation = useCallback(
     async (id: string) => {
-      const headers = await getHeaders();
+      const token = await getApiToken();
+      const headers: Record<string, string> = token
+        ? { Authorization: `Bearer ${token}` }
+        : {};
       const res = await fetch(`${getApiBase()}/chat/${id}`, {
         method: "DELETE",
         credentials: "include",
@@ -92,7 +87,7 @@ export function useConversations({ enabled = true }: { enabled?: boolean } = {})
         setConversations((prev) => prev.filter((c) => c.id !== id));
       }
     },
-    [getHeaders],
+    [getApiToken],
   );
 
   return { conversations, loading, refresh, deleteConversation };
