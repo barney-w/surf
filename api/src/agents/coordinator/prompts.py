@@ -1,9 +1,156 @@
+"""Coordinator prompt construction.
+
+The prompt is assembled dynamically so that only agents present in the
+current graph (after auth-level filtering) are referenced.  Few-shot
+examples that mention unavailable agents are omitted — leaving them in
+confuses smaller models (e.g. Haiku) because the corresponding handoff
+tools don't exist, causing the model to avoid tool use entirely.
+"""
+
+# Each example is tagged with the target agent it references.  ``None``
+# means the example doesn't route (greeting, clarification, etc.).
+_FEW_SHOT_EXAMPLES: list[tuple[str | None, str]] = [
+    (
+        "hr_agent",
+        'User: "How much annual leave do I have left?"\n'
+        "→ Route to hr_agent (leave entitlements are HR domain)",
+    ),
+    (
+        "it_agent",
+        'User: "My VPN keeps disconnecting when I work from home"\n'
+        "→ Route to it_agent (VPN and connectivity are IT domain)",
+    ),
+    (
+        None,
+        'User: "What time does the main office open?"\n'
+        "→ Answer directly as coordinator (general organisation information)",
+    ),
+    (
+        "it_agent",
+        'User: "I need to order a new monitor for my desk"\n'
+        "→ Route to it_agent (hardware/equipment requests are IT domain)",
+    ),
+    (
+        "hr_agent",
+        'User: "What does the agreement say about overtime penalty rates?"\n'
+        "→ Route to hr_agent (employment agreement interpretation is HR domain)",
+    ),
+    (
+        "hr_agent",
+        'User: "What does the code of conduct say about conflict of interest?"\n'
+        "→ Route to hr_agent (employee conduct policy is HR domain)",
+    ),
+    (
+        "hr_agent",
+        'User: "What is the organisation\'s risk appetite?"\n'
+        "→ Route to hr_agent (risk management applies to all staff, governed by HR)",
+    ),
+    (
+        "it_agent",
+        'User: "What does the records management policy say about public records?"\n'
+        "→ Route to it_agent (records management is IT/information governance domain)",
+    ),
+    (
+        "it_agent",
+        'User: "What are my obligations under the security policy?"\n'
+        "→ Route to it_agent (security policy is IT domain)",
+    ),
+    (
+        "hr_agent",
+        'User: "What does the facilities management policy say about office bookings?"\n'
+        "→ Route to hr_agent (organisational policy questions are HR domain)",
+    ),
+    (
+        "hr_agent",
+        'User: "What does the procurement policy say about tenders?"\n'
+        "→ Route to hr_agent (organisational policy and governance is HR domain)",
+    ),
+    (
+        "hr_agent",
+        'User: "What employee benefits are available for part-time staff?"\n'
+        "→ Route to hr_agent (organisational policy questions are HR domain)",
+    ),
+    (
+        None,
+        'User: "Hello!"\n→ "Hello, welcome to Surf. How can I assist you today?" (do NOT route)',
+    ),
+    (
+        None,
+        'User: "I need help with my account"\n'
+        "→ Ask a clarifying question — could be IT (login) or HR (payroll)",
+    ),
+    (
+        "it_agent",
+        'User: "Can you connect me to IT support?"\n'
+        "→ Route to it_agent immediately (explicit routing request — no clarification needed)",
+    ),
+    (
+        "it_agent",
+        'User: [after discussing Windows upgrade] "I can\'t login now"\n'
+        "→ Route to it_agent immediately (prior context establishes IT domain)",
+    ),
+    (
+        "it_agent",
+        'User: [after coordinator asked "1. Device login or 2. Work account?"] "1"\n'
+        "→ Route to it_agent (user selected option 1 — device login is IT domain)",
+    ),
+    (
+        "it_agent",
+        'User: "I need a laptop set up for a new starter joining next Monday"\n'
+        "→ Route to it_agent (equipment setup is primary), note you can also help\n"
+        "  with onboarding paperwork",
+    ),
+    (
+        "website_agent",
+        'User: "What goes in my green bin?"\n'
+        "→ Route to website_agent (public waste and recycling services)",
+    ),
+    (
+        "website_agent",
+        'User: "What programs are available for young people?"\n'
+        "→ Route to website_agent (public programs and community services)",
+    ),
+    (
+        "website_agent",
+        'User: "Where is the nearest library?"\n'
+        "→ Route to website_agent (public facilities and locations)",
+    ),
+    (
+        "website_agent",
+        'User: "What events are on this weekend?"\n'
+        "→ Route to website_agent (community events and activities)",
+    ),
+    (
+        "website_agent",
+        'User: "How do I apply for a permit?"\n'
+        "→ Route to website_agent (public services and applications)",
+    ),
+]
+
+
+def _build_few_shot_section(available_agents: set[str]) -> str:
+    """Return the few-shot examples section, filtered to available agents."""
+    lines: list[str] = []
+    for target, text in _FEW_SHOT_EXAMPLES:
+        if target is None or target in available_agents:
+            lines.append(text)
+    return "\n\n".join(lines)
+
+
 def build_coordinator_prompt(
     agent_descriptions: list[dict[str, str]],
     organisation_name: str = "",
 ) -> str:
     agent_list = "\n".join(f"- **{a['name']}**: {a['description']}" for a in agent_descriptions)
+    available_names = {a["name"] for a in agent_descriptions}
     org_label = f"{organisation_name}'s " if organisation_name else ""
+
+    # Pick a real agent name for the inline tool example in rule 3.
+    example_tool = (
+        f"`handoff_to_{next(iter(available_names))}`" if available_names else "`handoff_to_<agent>`"
+    )
+
+    few_shot = _build_few_shot_section(available_names)
 
     return f"""You are Surf — {org_label}multi-agent workplace assistant.
 
@@ -27,7 +174,7 @@ that don't fit a specific domain using your own knowledge and search tools.
    Do NOT answer these yourself — specialists have deeper knowledge and
    produce properly cited responses.
 3. If the query clearly fits one specialist, hand off immediately using the
-   corresponding handoff tool (e.g. `handoff_to_hr_agent`). Do not search
+   corresponding handoff tool (e.g. {example_tool}). Do not search
    first — trust the routing. If the user has provided any context in prior
    messages that narrows the domain (e.g. they mentioned Windows, login, IT),
    treat the domain as resolved and hand off immediately.
@@ -94,12 +241,10 @@ When the user uploads an image or PDF document alongside their message:
 - Handle "Thanks", "Bye", "Cheers" gracefully without routing.
 
 ### Ambiguous Queries
-- When a query could belong to multiple domains (e.g. "I need help with my
-  account"), ask a brief clarifying question to determine the correct domain
-  rather than guessing. You may ask at most ONE clarifying question — if the
-  follow-up is still ambiguous, route to the most likely specialist.
-- Example: "Could you clarify — are you referring to your IT account
-  (login/password) or your HR account (payroll/leave)?"
+- When a query could belong to multiple domains, ask a brief clarifying
+  question to determine the correct domain rather than guessing. You may ask
+  at most ONE clarifying question — if the follow-up is still ambiguous,
+  route to the most likely specialist.
 
 ### Numbered Option Responses
 - If your previous message presented numbered options and the user replies with
@@ -109,10 +254,8 @@ When the user uploads an image or PDF document alongside their message:
 - NEVER treat a numbered reply as a new conversation or respond with a greeting.
 
 ### Multi-Domain Queries
-- When a query clearly spans multiple domains (e.g. "I need a laptop for my
-  new starter"), route to the PRIMARY domain first and note the secondary
-  need. For the example, IT (equipment) is primary, HR (onboarding) is
-  secondary.
+- When a query clearly spans multiple domains, route to the PRIMARY domain
+  first and note the secondary need.
 
 ### Out-of-Scope Queries
 - Questions about public services, facilities, programs, or events that the
@@ -125,75 +268,7 @@ When the user uploads an image or PDF document alongside their message:
 
 ## Few-Shot Routing Examples
 
-User: "How much annual leave do I have left?"
-→ Route to hr_agent (leave entitlements are HR domain)
-
-User: "My VPN keeps disconnecting when I work from home"
-→ Route to it_agent (VPN and connectivity are IT domain)
-
-User: "What time does the main office open?"
-→ Answer directly as coordinator (general organisation information)
-
-User: "I need to order a new monitor for my desk"
-→ Route to it_agent (hardware/equipment requests are IT domain)
-
-User: "What does the agreement say about overtime penalty rates?"
-→ Route to hr_agent (employment agreement interpretation is HR domain)
-
-User: "What does the code of conduct say about conflict of interest?"
-→ Route to hr_agent (employee conduct policy is HR domain)
-
-User: "What is the organisation's risk appetite?"
-→ Route to hr_agent (risk management applies to all staff, governed by HR)
-
-User: "What does the records management policy say about public records?"
-→ Route to it_agent (records management is IT/information governance domain)
-
-User: "What are my obligations under the security policy?"
-→ Route to it_agent (security policy is IT domain)
-
-User: "What does the facilities management policy say about office bookings?"
-→ Route to hr_agent (organisational policy questions are HR domain)
-
-User: "What does the procurement policy say about tenders?"
-→ Route to hr_agent (organisational policy and governance is HR domain)
-
-User: "What employee benefits are available for part-time staff?"
-→ Route to hr_agent (organisational policy questions are HR domain)
-
-User: "Hello!"
-→ "Hello, welcome to Surf. How can I assist you today?" (do NOT route)
-
-User: "I need help with my account"
-→ Ask a clarifying question — could be IT (login) or HR (payroll)
-
-User: "Can you connect me to IT support?"
-→ Route to it_agent immediately (explicit routing request — no clarification needed)
-
-User: [after discussing Windows upgrade] "I can't login now"
-→ Route to it_agent immediately (prior context establishes IT domain)
-
-User: [after coordinator asked "1. Device login or 2. Work account?"] "1"
-→ Route to it_agent (user selected option 1 — device login is IT domain)
-
-User: "I need a laptop set up for a new starter joining next Monday"
-→ Route to it_agent (equipment setup is primary), note you can also help
-  with onboarding paperwork
-
-User: "What goes in my green bin?"
-→ Route to website_agent (public waste and recycling services)
-
-User: "What programs are available for young people?"
-→ Route to website_agent (public programs and community services)
-
-User: "Where is the nearest library?"
-→ Route to website_agent (public facilities and locations)
-
-User: "What events are on this weekend?"
-→ Route to website_agent (community events and activities)
-
-User: "How do I apply for a permit?"
-→ Route to website_agent (public services and applications)
+{few_shot}
 
 ## Response Format
 When answering directly (not handing off), structure your response as:

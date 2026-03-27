@@ -212,6 +212,96 @@ class TestGuestTokenEndpoint:
         assert resp.status_code == 403
         assert "not enabled" in resp.json()["detail"].lower()
 
+    @pytest.mark.asyncio
+    async def test_guest_endpoint_renews_existing_identity(self):
+        """Sending a valid guest_id back should reuse that identity."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from src.routes.guest import router
+
+        app = FastAPI()
+        app.include_router(router)
+
+        from src.middleware.rate_limit import limiter
+
+        app.state.limiter = limiter
+
+        from slowapi import _rate_limit_exceeded_handler
+        from slowapi.errors import RateLimitExceeded
+
+        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+        with patch("src.routes.guest.get_settings", return_value=_mock_settings()):
+            client = TestClient(app)
+            resp = client.post("/api/v1/auth/guest", json={"guest_id": "guest-abc123def456"})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["guest_id"] == "guest-abc123def456"
+
+        decoded = jwt.decode(data["token"], GUEST_SECRET, algorithms=["HS256"], issuer=GUEST_ISSUER)
+        assert decoded["sub"] == "guest-abc123def456"
+
+    @pytest.mark.asyncio
+    async def test_guest_endpoint_rejects_malformed_guest_id(self):
+        """A guest_id that doesn't match the expected format should be ignored."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from src.routes.guest import router
+
+        app = FastAPI()
+        app.include_router(router)
+
+        from src.middleware.rate_limit import limiter
+
+        app.state.limiter = limiter
+
+        from slowapi import _rate_limit_exceeded_handler
+        from slowapi.errors import RateLimitExceeded
+
+        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+        with patch("src.routes.guest.get_settings", return_value=_mock_settings()):
+            client = TestClient(app)
+            # Try injection-style guest_id
+            resp = client.post("/api/v1/auth/guest", json={"guest_id": "admin-superuser"})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # Should have minted a fresh ID, not used the malformed one
+        assert data["guest_id"] != "admin-superuser"
+        assert data["guest_id"].startswith("guest-")
+
+    @pytest.mark.asyncio
+    async def test_guest_endpoint_empty_body_creates_new_identity(self):
+        """An empty body (no guest_id) should create a fresh identity."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from src.routes.guest import router
+
+        app = FastAPI()
+        app.include_router(router)
+
+        from src.middleware.rate_limit import limiter
+
+        app.state.limiter = limiter
+
+        from slowapi import _rate_limit_exceeded_handler
+        from slowapi.errors import RateLimitExceeded
+
+        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+        with patch("src.routes.guest.get_settings", return_value=_mock_settings()):
+            client = TestClient(app)
+            resp = client.post("/api/v1/auth/guest")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["guest_id"].startswith("guest-")
+
 
 class TestGuestTokenRoundTrip:
     """End-to-end: issue a guest token then use it to authenticate."""

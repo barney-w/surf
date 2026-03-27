@@ -27,6 +27,12 @@ from src.rag.tools import (
     stitch_adjacent_chunks,
 )
 
+
+def _invoke_text(result: list) -> str:
+    """Extract concatenated text from agent-framework Content list returned by invoke()."""
+    return "".join(item.text for item in result if item.text)
+
+
 # ---------------------------------------------------------------------------
 # OData filter builder
 # ---------------------------------------------------------------------------
@@ -299,8 +305,10 @@ class TestResultFormatting:
 
         rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
         # Invoke underlying function via keyword-only arguments API
-        result = await rag_tool.invoke(
-            arguments={"query": "travel approval", "document_type": None},
+        result = _invoke_text(
+            await rag_tool.invoke(
+                arguments={"query": "travel approval", "document_type": None},
+            )
         )
 
         assert "=== SOURCE 1 ===" in result
@@ -323,8 +331,10 @@ class TestResultFormatting:
         set_search_client(mock_client)
 
         rag_tool = create_rag_tool(scope=None)
-        result = await rag_tool.invoke(
-            arguments={"query": "nonexistent topic", "document_type": None},
+        result = _invoke_text(
+            await rag_tool.invoke(
+                arguments={"query": "nonexistent topic", "document_type": None},
+            )
         )
         assert "No relevant documents found" in result
 
@@ -337,8 +347,10 @@ class TestResultFormatting:
         set_search_client(mock_client)
 
         rag_tool = create_rag_tool(scope=None)
-        result = await rag_tool.invoke(
-            arguments={"query": "annual leave", "document_type": None},
+        result = _invoke_text(
+            await rag_tool.invoke(
+                arguments={"query": "annual leave", "document_type": None},
+            )
         )
 
         assert "Knowledge search is unavailable" in result
@@ -681,7 +693,8 @@ class TestTierLabels:
         set_search_client(mock_client)
 
         rag_tool = create_rag_tool(scope=None)
-        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        args = {"query": "test", "document_type": None}
+        result = _invoke_text(await rag_tool.invoke(arguments=args))
         assert "relevance: 1.0 (STRONG MATCH)" in result
 
     @pytest.mark.asyncio
@@ -698,7 +711,8 @@ class TestTierLabels:
         set_search_client(mock_client)
 
         rag_tool = create_rag_tool(scope=None)
-        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        args = {"query": "test", "document_type": None}
+        result = _invoke_text(await rag_tool.invoke(arguments=args))
         assert "relevance: 0.5 (PARTIAL MATCH)" in result
 
     @pytest.mark.asyncio
@@ -715,7 +729,8 @@ class TestTierLabels:
         set_search_client(mock_client)
 
         rag_tool = create_rag_tool(scope=None)
-        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        args = {"query": "test", "document_type": None}
+        result = _invoke_text(await rag_tool.invoke(arguments=args))
         assert "relevance: 0.2 (WEAK MATCH)" in result
 
     @pytest.mark.asyncio
@@ -732,7 +747,8 @@ class TestTierLabels:
         set_search_client(mock_client)
 
         rag_tool = create_rag_tool(scope=None)
-        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        args = {"query": "test", "document_type": None}
+        result = _invoke_text(await rag_tool.invoke(arguments=args))
         assert "relevance: 0.7 (STRONG MATCH)" in result
 
     @pytest.mark.asyncio
@@ -749,7 +765,8 @@ class TestTierLabels:
         set_search_client(mock_client)
 
         rag_tool = create_rag_tool(scope=None)
-        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        args = {"query": "test", "document_type": None}
+        result = _invoke_text(await rag_tool.invoke(arguments=args))
         assert "relevance: 0.4 (PARTIAL MATCH)" in result
 
     @pytest.mark.asyncio
@@ -766,7 +783,8 @@ class TestTierLabels:
         set_search_client(mock_client)
 
         rag_tool = create_rag_tool(scope=None)
-        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        args = {"query": "test", "document_type": None}
+        result = _invoke_text(await rag_tool.invoke(arguments=args))
         assert result.startswith("Found 1 results")
 
     @pytest.mark.asyncio
@@ -785,7 +803,8 @@ class TestTierLabels:
         set_search_client(mock_client)
 
         rag_tool = create_rag_tool(scope=None)
-        result = await rag_tool.invoke(arguments={"query": "test", "document_type": None})
+        args = {"query": "test", "document_type": None}
+        result = _invoke_text(await rag_tool.invoke(arguments=args))
         assert "Found 4 results (2 strong, 1 partial, 1 weak)" in result
         assert "Base your answer on the strong and partial matches." in result
 
@@ -1016,7 +1035,8 @@ class TestMultiStrategySearch:
         ]
 
         rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
-        result = await rag_tool.invoke(arguments={"query": "some query", "document_type": "policy"})
+        args = {"query": "some query", "document_type": "policy"}
+        result = _invoke_text(await rag_tool.invoke(arguments=args))
 
         # Should have exactly 2 SOURCE blocks (one for shared-doc, one for unique-doc)
         source_blocks = result.count("=== SOURCE")
@@ -1065,11 +1085,13 @@ class TestMultiStrategySearch:
         ]
 
         rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
-        result = await rag_tool.invoke(
-            arguments={
-                "query": "tell me about something obscure",
-                "document_type": None,
-            }
+        result = _invoke_text(
+            await rag_tool.invoke(
+                arguments={
+                    "query": "tell me about something obscure",
+                    "document_type": None,
+                }
+            )
         )
 
         assert result == "No relevant documents found for this query."
@@ -1080,7 +1102,8 @@ class TestMultiStrategySearch:
         self.mock_search.side_effect = SearchInfrastructureError("403 Forbidden")
 
         rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
-        result = await rag_tool.invoke(arguments={"query": "test query", "document_type": None})
+        args = {"query": "test query", "document_type": None}
+        result = _invoke_text(await rag_tool.invoke(arguments=args))
 
         assert result.startswith("SEARCH_INFRASTRUCTURE_ERROR:")
         assert "403 Forbidden" in result
@@ -1091,7 +1114,8 @@ class TestMultiStrategySearch:
         self.mock_search.side_effect = SearchInfrastructureError("Connection refused")
 
         rag_tool = create_rag_tool(scope=RAGScope(domain="hr"))
-        result = await rag_tool.invoke(arguments={"query": "test query", "document_type": None})
+        args = {"query": "test query", "document_type": None}
+        result = _invoke_text(await rag_tool.invoke(arguments=args))
 
         assert "=== SOURCE" not in result
 
