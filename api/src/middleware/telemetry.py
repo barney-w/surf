@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import logging
 import os
+import socket
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from opentelemetry import metrics, trace
 from opentelemetry.instrumentation.fastapi import (  # pyright: ignore[reportMissingTypeStubs]
@@ -95,10 +97,36 @@ def record_token_usage(input_tokens: int, output_tokens: int, agent_name: str = 
 # ---------------------------------------------------------------------------
 
 
+def _langfuse_reachable(base_url: str, timeout: float = 2.0) -> bool:
+    """Quick TCP probe to check if Langfuse is accepting connections."""
+    parsed = urlparse(base_url)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def _attach_langfuse(settings: Settings) -> None:
-    """Add a ``LangfuseSpanProcessor`` to the active TracerProvider if configured."""
+    """Add a ``LangfuseSpanProcessor`` to the active TracerProvider if configured.
+
+    Performs a quick connectivity check first — if Langfuse is not reachable,
+    the processor is not attached and a single informational message is logged
+    instead of repeated connection-refused errors at runtime.
+    """
     if not settings.langfuse_base_url:
         return
+
+    if not _langfuse_reachable(settings.langfuse_base_url):
+        logger.info(
+            "Langfuse not reachable at %s — span processor not attached"
+            " (run `just langfuse` to enable)",
+            settings.langfuse_base_url,
+        )
+        return
+
     try:
         from langfuse import is_default_export_span
         from langfuse._client.span_processor import LangfuseSpanProcessor
@@ -198,9 +226,10 @@ def setup_telemetry(app: FastAPI, settings: Settings) -> None:
                 otlp_endpoint,
                 settings.environment,
             )
-        elif settings.langfuse_base_url:
-            # No OTLP exporter, but Langfuse is configured — create a real
-            # TracerProvider so the Langfuse span processor can attach to it.
+        elif settings.langfuse_base_url and _langfuse_reachable(settings.langfuse_base_url):
+            # No OTLP exporter, but Langfuse is configured and reachable —
+            # create a real TracerProvider so the Langfuse span processor can
+            # attach to it.
             from opentelemetry.sdk.resources import Resource
             from opentelemetry.sdk.trace import TracerProvider
 

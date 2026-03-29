@@ -91,6 +91,7 @@ def _run_setup_with_langfuse(
                 "langfuse._client.span_processor": fake_langfuse_mod,
             },
         ),
+        patch("src.middleware.telemetry._langfuse_reachable", return_value=True),
         patch("src.middleware.telemetry.trace") as mock_trace,
         patch("src.middleware.telemetry.FastAPIInstrumentor"),
     ):
@@ -133,6 +134,33 @@ def test_langfuse_span_processor_added_when_configured():
         should_export_span=mock_is_default,
     )
     mock_provider.add_span_processor.assert_called()
+
+
+def test_langfuse_span_processor_not_added_when_unreachable():
+    """Span processor is skipped when Langfuse is configured but not reachable."""
+    from src.middleware.telemetry import setup_telemetry
+
+    settings = _make_settings(
+        langfuse_base_url="http://langfuse:3000",
+        langfuse_public_key="pk-test",
+        langfuse_secret_key="sk-test",
+    )
+
+    with (
+        patch.dict("os.environ", {}, clear=False),
+        patch("src.middleware.telemetry._langfuse_reachable", return_value=False),
+        patch("src.middleware.telemetry.trace") as mock_trace,
+        patch("src.middleware.telemetry.FastAPIInstrumentor"),
+    ):
+        import os
+
+        os.environ.pop("APPLICATIONINSIGHTS_CONNECTION_STRING", None)
+        os.environ.pop("OTEL_EXPORTER_OTLP_ENDPOINT", None)
+        mock_provider = MagicMock()
+        mock_trace.get_tracer_provider.return_value = mock_provider
+        setup_telemetry(MagicMock(), settings)
+
+    mock_provider.add_span_processor.assert_not_called()
 
 
 def test_langfuse_span_processor_not_added_when_unconfigured():
@@ -206,11 +234,8 @@ async def test_langfuse_failure_doesnt_break_pipeline():
     with (
         patch("src.services.response_pipeline.get_langfuse", return_value=mock_langfuse),
         patch("src.services.response_pipeline.run_quality_gate", return_value=mock_gate),
-        patch("src.services.response_pipeline.get_settings", return_value=_make_settings()),
-        patch("src.services.response_pipeline._search_overrides") as mock_overrides,
         patch("src.services.response_pipeline.AgentRegistry"),
     ):
-        mock_overrides.get.return_value = None
         result, gate_result = await process_agent_response(agent_response, [], "test_agent")
 
     assert result is agent_response
@@ -234,11 +259,8 @@ async def test_langfuse_scoring_called_in_pipeline():
     with (
         patch("src.services.response_pipeline.get_langfuse", return_value=mock_langfuse),
         patch("src.services.response_pipeline.run_quality_gate", return_value=mock_gate),
-        patch("src.services.response_pipeline.get_settings", return_value=_make_settings()),
-        patch("src.services.response_pipeline._search_overrides") as mock_overrides,
         patch("src.services.response_pipeline.AgentRegistry"),
     ):
-        mock_overrides.get.return_value = None
         result, _ = await process_agent_response(agent_response, [], "test_agent")
 
     assert mock_langfuse.score_current_trace.call_count == 3
@@ -263,11 +285,8 @@ async def test_pipeline_works_without_langfuse():
     with (
         patch("src.services.response_pipeline.get_langfuse", return_value=None),
         patch("src.services.response_pipeline.run_quality_gate", return_value=mock_gate),
-        patch("src.services.response_pipeline.get_settings", return_value=_make_settings()),
-        patch("src.services.response_pipeline._search_overrides") as mock_overrides,
         patch("src.services.response_pipeline.AgentRegistry"),
     ):
-        mock_overrides.get.return_value = None
         result, gate_result = await process_agent_response(agent_response, [], "test_agent")
 
     assert result is agent_response

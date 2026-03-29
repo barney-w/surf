@@ -119,3 +119,5 @@ def setup_logging(log_level: str = "INFO") -> None:
     # Quieten noisy third-party loggers
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("azure").setLevel(logging.WARNING)
+    logging.getLogger("langfuse").setLevel(logging.ERROR)
+    logging.getLogger("opentelemetry.exporter.otlp").setLevel(logging.ERROR)
