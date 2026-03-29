@@ -384,6 +384,17 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         generating_announced = False
         message_id = str(uuid.uuid4())
 
+        # First-turn buffering for domain agents.
+        # When a domain agent starts generating, it may produce preliminary
+        # text before deciding to call a tool (e.g. search_knowledge_base).
+        # Rather than streaming that text and then sending a delta_reset to
+        # wipe it (jarring UX), we buffer extracted deltas during the first
+        # LLM turn. If a tool call arrives, we silently discard the buffer.
+        # If the turn completes without tool use, we flush the buffer as
+        # normal delta events. Subsequent turns stream without buffering.
+        domain_first_turn_buffering = True
+        domain_first_turn_delta_buf: list[str] = []
+
         # Queue used to multiplex workflow events and heartbeat ticks.
         # Items: ('event', event_obj) | ('heartbeat',) | ('done',) | ('error', exc)
         queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
@@ -469,8 +480,12 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                         )
                         coordinator_buf = ""
                     generating_announced = False
+                    # Reset first-turn buffering for the new domain agent.
+                    domain_first_turn_buffering = True
+                    domain_first_turn_delta_buf.clear()
                     yield sse({"type": "agent", "agent": routed_agent})
                     yield sse({"type": "phase", "phase": "generating"})
+                    await asyncio.sleep(0)  # flush agent+phase before first token
                     generating_announced = True
                     heartbeat_count = 0  # reset so we don't re-emit "waiting" mid-generation
 
@@ -484,24 +499,42 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
 
                     # Detect tool-use output (function_call content blocks).
                     # When a domain agent calls a tool (e.g. search_knowledge_base),
-                    # the first LLM turn may have emitted preliminary text that
-                    # the extractor already processed.  Reset the extractor and
-                    # tell the client to discard streamed deltas so the real
-                    # answer (from the post-tool-use turn) streams cleanly.
+                    # the first LLM turn may have produced preliminary text.
+                    # If we are still buffering (first turn), silently discard
+                    # the buffer — nothing was streamed to the client, so no
+                    # delta_reset is needed. If buffering has already been
+                    # released (shouldn't happen in practice), fall back to
+                    # delta_reset as a defensive measure.
                     if (
                         routed_agent != "coordinator"
                         and hasattr(data, "contents")
                         and any(getattr(c, "type", None) == "function_call" for c in data.contents)
                     ):
-                        if extractor._in_value or extractor._done:
-                            logger.debug(
-                                "Tool use detected after partial stream — "
-                                "resetting extractor and emitting delta_reset"
+                        if domain_first_turn_buffering:
+                            # First turn — nothing was streamed yet, discard silently.
+                            if domain_first_turn_delta_buf:
+                                logger.debug(
+                                    "Tool use during first turn — discarding %d buffered "
+                                    "delta chunks (not yet streamed to client)",
+                                    len(domain_first_turn_delta_buf),
+                                )
+                                domain_first_turn_delta_buf.clear()
+                            extractor = MessageFieldExtractor()
+                            domain_agent_json_buf = ""
+                            domain_first_turn_buffering = False
+                        elif extractor._in_value or extractor._done:
+                            # Defensive fallback: buffering was already released
+                            # but a tool call arrived (unexpected). Reset and
+                            # tell the client to discard what it received.
+                            logger.warning(
+                                "Tool use detected after first-turn buffer was flushed — "
+                                "emitting delta_reset as defensive fallback"
                             )
                             extractor = MessageFieldExtractor()
                             domain_agent_json_buf = ""
                             yield sse({"type": "delta_reset"})
                         yield sse({"type": "phase", "phase": "retrieving"})
+                        await asyncio.sleep(0)  # flush phase change through proxy chain
 
                     # Streaming token chunk (AgentResponseUpdate).
                     chunk = data.text if hasattr(data, "text") else None
@@ -521,10 +554,30 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                         domain_agent_json_buf += chunk
                         extracted = extractor.feed(chunk)
                         if extracted:
-                            if not generating_announced:
-                                yield sse({"type": "phase", "phase": "generating"})
-                                generating_announced = True
-                            yield sse({"type": "delta", "content": extracted})
+                            if domain_first_turn_buffering:
+                                # Still in first turn — buffer rather than stream
+                                # so we can discard silently if a tool call follows.
+                                domain_first_turn_delta_buf.append(extracted)
+                            else:
+                                if not generating_announced:
+                                    yield sse({"type": "phase", "phase": "generating"})
+                                    generating_announced = True
+                                yield sse({"type": "delta", "content": extracted})
+                                await asyncio.sleep(0)  # flush frame through proxy chain
+
+                        # Detect first-turn completion: the extractor has finished
+                        # reading the message value without a tool call intervening.
+                        # Flush the buffered deltas so the user sees the response.
+                        if domain_first_turn_buffering and extractor._done:
+                            domain_first_turn_buffering = False
+                            if domain_first_turn_delta_buf:
+                                if not generating_announced:
+                                    yield sse({"type": "phase", "phase": "generating"})
+                                    generating_announced = True
+                                for buffered in domain_first_turn_delta_buf:
+                                    yield sse({"type": "delta", "content": buffered})
+                                domain_first_turn_delta_buf.clear()
+                                await asyncio.sleep(0)  # flush buffered deltas
 
                 elif event.type == "failed":
                     details = event.details
@@ -555,6 +608,22 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         finally:
             heartbeat_task.cancel()
             workflow_task.cancel()
+
+        # Flush any remaining first-turn buffer.  This covers the case where
+        # the domain agent completed its response without calling any tools but
+        # the extractor didn't reach _done within the event loop (e.g. the
+        # closing quote arrived in the final chunk alongside the workflow
+        # completion signal).
+        if domain_first_turn_delta_buf:
+            domain_first_turn_buffering = False
+            if not generating_announced:
+                yield sse({"type": "agent", "agent": routed_agent})
+                yield sse({"type": "phase", "phase": "generating"})
+                generating_announced = True
+            for buffered in domain_first_turn_delta_buf:
+                yield sse({"type": "delta", "content": buffered})
+            domain_first_turn_delta_buf.clear()
+            await asyncio.sleep(0)  # flush buffered deltas
 
         # Flush buffered coordinator text if the coordinator answered directly
         # (no handoff occurred). Drip-feed the buffer as small delta events so
@@ -723,7 +792,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
     )
 
 
