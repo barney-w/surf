@@ -3,14 +3,11 @@
 import logging
 
 from src.agents._output import deduplicate_sources, extract_sources, strip_source_urls
-from src.agents._proofread import proofread_message
 from src.agents._registry import AgentRegistry
-from src.config.settings import get_settings
 from src.middleware.langfuse_utils import get_langfuse
 from src.middleware.telemetry import quality_gate_triggers
 from src.models.agent import AgentResponseModel
 from src.rag.quality_gate import QualityGateResult, run_quality_gate
-from src.rag.tools import _search_overrides
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +22,7 @@ async def process_agent_response(
     Steps:
     1. Quality gate (search-skipped, results-ignored checks)
     2. Source recovery from RAG outputs
-    3. Proofread (if enabled)
-    4. Per-agent post-processing (URL stripping)
+    3. Per-agent post-processing (URL stripping)
 
     Returns the processed response and the quality gate result.
     """
@@ -75,20 +71,7 @@ async def process_agent_response(
             agent_response = agent_response.model_copy(update={"sources": recovered})
             logger.info("injected %d recovered sources into response", len(recovered))
 
-    # 3. Proofread — respect per-request debug override if present.
-    settings = get_settings()
-    overrides = _search_overrides.get()
-    proofread_enabled = (
-        overrides.enable_proofread
-        if overrides and overrides.enable_proofread is not None
-        else settings.proofread_enabled
-    )
-    if proofread_enabled:
-        corrected = await proofread_message(agent_response.message, settings)
-        if corrected != agent_response.message:
-            agent_response = agent_response.model_copy(update={"message": corrected})
-
-    # 4. Per-agent post-processing
+    # 3. Per-agent post-processing
     agent_cls = AgentRegistry.get(routed_agent)
     if agent_cls is not None:
         agent_def = agent_cls()
