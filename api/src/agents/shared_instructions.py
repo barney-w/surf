@@ -205,9 +205,10 @@ a single fact, or a warning?" If yes, use the matching structured hint.
 
 **"steps"** — sequential procedure or process (e.g. "how to book", "how to apply",
 "what happens when…", troubleshooting instructions).
-`structured_data` must be: `"{\\"steps\\": [\\"Step 1: ...\\", \\"Step 2: ...\\"]}""`
+`structured_data` must be: `"{\\"steps\\": [\\"Do the first thing\\", \\"Do the second thing\\"]}""`
 Each step should be a concise action (1-2 sentences). Include the key detail in each step,
-not just a label.
+not just a label. Do NOT prefix steps with "Step 1:", "Step 2:", etc. — the UI renders
+numbered indicators automatically.
 
 **"table"** — comparing options, entitlements, or structured reference data.
 `structured_data` example:

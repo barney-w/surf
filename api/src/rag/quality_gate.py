@@ -69,7 +69,7 @@ def run_quality_gate(
     if routed_agent == "coordinator":
         return QualityGateResult("passed", agent_response, agent_response)
 
-    # Check 0: Infrastructure failure (highest priority — overrides everything)
+    # Check 0: Infrastructure failure — keep substantive answers with a warning
     has_infra_error = any(INFRA_ERROR_SENTINEL in output for output in rag_outputs)
     if has_infra_error:
         logger.error(
@@ -82,23 +82,48 @@ def run_quality_gate(
                 "has_infra_error": True,
             },
         )
-        remediated = agent_response.model_copy(
-            update={
-                "confidence": "low",
-                "message": (
-                    "I'm sorry, I'm currently experiencing a technical issue connecting "
-                    "to my knowledge base and cannot search for information to answer your "
-                    "question reliably. Please try again in a few minutes. If the issue "
-                    "persists, contact the support team for assistance."
-                ),
-                "sources": [],
-                "follow_up_suggestions": [
-                    "Try asking again",
-                    "Contact the support team",
-                    "Check back later",
-                ],
-            }
-        )
+        agent_msg = agent_response.message.strip()
+        # A message is substantive if it's long enough and doesn't *primarily*
+        # claim no knowledge.  The no-knowledge regex contains broad patterns
+        # (e.g. "no specific", "not available") that can match incidentally in
+        # longer answers, so only apply the regex to short messages (<150 chars)
+        # where a match is a strong signal the whole message is a disclaimer.
+        is_short_disclaimer = len(agent_msg) <= 150 and _message_claims_no_knowledge(agent_msg)
+        agent_has_substance = len(agent_msg) > 50 and not is_short_disclaimer
+
+        if agent_has_substance:
+            # The agent produced a useful answer despite the infra error — keep it
+            # but mark confidence low and note the limitation.
+            remediated = agent_response.model_copy(
+                update={
+                    "confidence": "low",
+                    "follow_up_suggestions": [
+                        "Note: search infrastructure was unavailable "
+                        "— this answer may not include the latest information",
+                        "Try asking again later for a more complete answer",
+                    ],
+                }
+            )
+        else:
+            # The agent's answer is empty or just an error echo — replace entirely
+            remediated = agent_response.model_copy(
+                update={
+                    "confidence": "low",
+                    "message": (
+                        "I'm sorry, I'm currently experiencing a technical issue "
+                        "connecting to my knowledge base and cannot search for "
+                        "information to answer your question reliably. Please try "
+                        "again in a few minutes. If the issue persists, contact "
+                        "the support team for assistance."
+                    ),
+                    "sources": [],
+                    "follow_up_suggestions": [
+                        "Try asking again",
+                        "Contact the support team",
+                        "Check back later",
+                    ],
+                }
+            )
         return QualityGateResult("search_infrastructure_error", agent_response, remediated)
 
     # Check 1: Search was skipped entirely
