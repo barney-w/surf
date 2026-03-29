@@ -198,8 +198,8 @@ class TestInfrastructureErrorCheck:
         assert "technical issue" in result.remediated.message
         assert result.remediated.sources == []
 
-    def test_infrastructure_error_overrides_agent_hallucination(self) -> None:
-        """Even if the agent provided sources, the infra error should override."""
+    def test_infrastructure_error_keeps_substantive_answer(self) -> None:
+        """When the agent produced a substantive answer despite infra error, keep it."""
         response = _make_response(
             message="Based on the recycling policy, you can put paper in your bin.",
             sources=[_make_source(title="Recycling Guide")],
@@ -210,7 +210,9 @@ class TestInfrastructureErrorCheck:
 
         assert result.check == "search_infrastructure_error"
         assert result.remediated.confidence == "low"
-        assert result.remediated.sources == []
+        # Substantive answer is preserved — sources kept, message unchanged
+        assert result.remediated.message == response.message
+        assert len(result.remediated.sources) == 1
 
     def test_infrastructure_error_takes_priority_over_search_skipped(self) -> None:
         """Infra error check runs before search_skipped."""
