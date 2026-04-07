@@ -384,14 +384,16 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         generating_announced = False
         message_id = str(uuid.uuid4())
 
-        # First-turn buffering for domain agents.
+        # Short buffering window for domain agents.
         # When a domain agent starts generating, it may produce preliminary
         # text before deciding to call a tool (e.g. search_knowledge_base).
         # Rather than streaming that text and then sending a delta_reset to
-        # wipe it (jarring UX), we buffer extracted deltas during the first
-        # LLM turn. If a tool call arrives, we silently discard the buffer.
-        # If the turn completes without tool use, we flush the buffer as
-        # normal delta events. Subsequent turns stream without buffering.
+        # wipe it (jarring UX), we buffer the first few extracted delta
+        # chunks. If a tool call arrives during the window, we silently
+        # discard the buffer. After the window expires (chunk count
+        # threshold), we flush and stream normally. If a tool call arrives
+        # after the window (rare), we fall back to delta_reset.
+        buffer_chunk_limit = 3  # flush after this many extracted chunks
         domain_first_turn_buffering = True
         domain_first_turn_delta_buf: list[str] = []
 
@@ -534,6 +536,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                             domain_agent_json_buf = ""
                             yield sse({"type": "delta_reset"})
                         yield sse({"type": "phase", "phase": "retrieving"})
+                        generating_announced = False  # re-emit generating when next deltas arrive
                         await asyncio.sleep(0)  # flush phase change through proxy chain
 
                     # Streaming token chunk (AgentResponseUpdate).
@@ -555,29 +558,29 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                         extracted = extractor.feed(chunk)
                         if extracted:
                             if domain_first_turn_buffering:
-                                # Still in first turn — buffer rather than stream
-                                # so we can discard silently if a tool call follows.
+                                # Buffer window — hold text briefly so we can
+                                # discard silently if a tool call follows.
                                 domain_first_turn_delta_buf.append(extracted)
+                                # Flush once the window expires or the message
+                                # completes, whichever comes first.
+                                if (
+                                    len(domain_first_turn_delta_buf) >= buffer_chunk_limit
+                                    or extractor._done
+                                ):
+                                    domain_first_turn_buffering = False
+                                    if not generating_announced:
+                                        yield sse({"type": "phase", "phase": "generating"})
+                                        generating_announced = True
+                                    for buffered in domain_first_turn_delta_buf:
+                                        yield sse({"type": "delta", "content": buffered})
+                                    domain_first_turn_delta_buf.clear()
+                                    await asyncio.sleep(0)  # flush buffered deltas
                             else:
                                 if not generating_announced:
                                     yield sse({"type": "phase", "phase": "generating"})
                                     generating_announced = True
                                 yield sse({"type": "delta", "content": extracted})
                                 await asyncio.sleep(0)  # flush frame through proxy chain
-
-                        # Detect first-turn completion: the extractor has finished
-                        # reading the message value without a tool call intervening.
-                        # Flush the buffered deltas so the user sees the response.
-                        if domain_first_turn_buffering and extractor._done:
-                            domain_first_turn_buffering = False
-                            if domain_first_turn_delta_buf:
-                                if not generating_announced:
-                                    yield sse({"type": "phase", "phase": "generating"})
-                                    generating_announced = True
-                                for buffered in domain_first_turn_delta_buf:
-                                    yield sse({"type": "delta", "content": buffered})
-                                domain_first_turn_delta_buf.clear()
-                                await asyncio.sleep(0)  # flush buffered deltas
 
                 elif event.type == "failed":
                     details = event.details

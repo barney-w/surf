@@ -23,8 +23,13 @@ def _make_context(
 
 class TestRAGCollectorMiddleware:
     @pytest.mark.asyncio
-    async def test_collects_rag_output(self):
-        """Middleware should append tool result to the rag_results_collector."""
+    async def test_does_not_collect_results(self):
+        """Middleware no longer collects results — the tool function handles it.
+
+        Result collection was moved into the tool function itself because the
+        orchestration framework drops FunctionMiddleware when cloning agents
+        for handoff routing.  The middleware remains for observability only.
+        """
         collector: list[str] = []
         rag_results_collector.set(collector)
 
@@ -39,50 +44,12 @@ class TestRAGCollectorMiddleware:
         middleware = RAGCollectorMiddleware()
         await middleware.process(ctx, call_next)
 
-        assert len(collector) == 1
-        assert collector[0] == rag_output
-
-    @pytest.mark.asyncio
-    async def test_collects_no_results_message(self):
-        """Middleware should collect 'no results' messages for quality gate awareness."""
-        collector: list[str] = []
-        rag_results_collector.set(collector)
-
-        ctx = _make_context()
-
-        async def call_next():
-            ctx.result = "No relevant documents found for this query."
-
-        middleware = RAGCollectorMiddleware()
-        await middleware.process(ctx, call_next)
-
-        assert len(collector) == 1
-        assert collector[0] == "No relevant documents found for this query."
-
-    @pytest.mark.asyncio
-    async def test_collects_infrastructure_error(self):
-        """Middleware should collect infrastructure error sentinel."""
-        collector: list[str] = []
-        rag_results_collector.set(collector)
-
-        error_msg = (
-            "SEARCH_INFRASTRUCTURE_ERROR: The knowledge base search system"
-            " is currently experiencing a technical issue."
-        )
-        ctx = _make_context()
-
-        async def call_next():
-            ctx.result = error_msg
-
-        middleware = RAGCollectorMiddleware()
-        await middleware.process(ctx, call_next)
-
-        assert len(collector) == 1
-        assert collector[0] == error_msg
+        # Middleware no longer appends — collection happens in the tool.
+        assert len(collector) == 0
 
     @pytest.mark.asyncio
     async def test_ignores_non_rag_tools(self):
-        """Middleware should pass through non-RAG tool calls without collecting."""
+        """Middleware should pass through non-RAG tool calls without processing."""
         collector: list[str] = []
         rag_results_collector.set(collector)
 
@@ -94,23 +61,6 @@ class TestRAGCollectorMiddleware:
 
         call_next.assert_awaited_once()
         assert len(collector) == 0
-
-    @pytest.mark.asyncio
-    async def test_handles_missing_collector_gracefully(self):
-        """Middleware should not raise when no collector context var is set."""
-        # Ensure no collector is set in this context
-        token = rag_results_collector.set([])
-        rag_results_collector.reset(token)
-
-        rag_output = '=== SOURCE 1 ===\ntitle: "Doc"\nCONTENT:\nText\n=== END SOURCE 1 ==='
-        ctx = _make_context()
-
-        async def call_next():
-            ctx.result = rag_output
-
-        middleware = RAGCollectorMiddleware()
-        # Should not raise
-        await middleware.process(ctx, call_next)
 
     @pytest.mark.asyncio
     async def test_calls_next_for_rag_tool(self):
@@ -132,23 +82,18 @@ class TestRAGCollectorMiddleware:
         assert called
 
     @pytest.mark.asyncio
-    async def test_counts_multiple_sources(self):
-        """Middleware should correctly count sources in multi-source output."""
-        collector: list[str] = []
-        rag_results_collector.set(collector)
+    async def test_handles_missing_collector_gracefully(self):
+        """Middleware should not raise when no collector context var is set."""
+        # Ensure no collector is set in this context
+        token = rag_results_collector.set([])
+        rag_results_collector.reset(token)
 
-        rag_output = (
-            '=== SOURCE 1 ===\ntitle: "A"\nCONTENT:\nA\n=== END SOURCE 1 ===\n\n'
-            '=== SOURCE 2 ===\ntitle: "B"\nCONTENT:\nB\n=== END SOURCE 2 ===\n\n'
-            '=== SOURCE 3 ===\ntitle: "C"\nCONTENT:\nC\n=== END SOURCE 3 ==='
-        )
+        rag_output = '=== SOURCE 1 ===\ntitle: "Doc"\nCONTENT:\nText\n=== END SOURCE 1 ==='
         ctx = _make_context()
 
         async def call_next():
             ctx.result = rag_output
 
         middleware = RAGCollectorMiddleware()
+        # Should not raise
         await middleware.process(ctx, call_next)
-
-        assert len(collector) == 1
-        assert collector[0] == rag_output

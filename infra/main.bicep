@@ -185,9 +185,10 @@ param enableMetricAlerts bool = true
 // ---------------------------------------------------------------------------
 
 var baseName = '${projectName}-${environmentName}'
+var shortName = take(projectName, 4)
 var tags = {
   project: projectName
-  environment: environmentName
+  Environment: 'Development'
 }
 
 // Unique suffix for globally-unique names
@@ -431,7 +432,7 @@ module aiSearch 'br/public:avm/res/search/search-service:0.12.0' = {
 module keyVault 'br/public:avm/res/key-vault/vault:0.13.3' = {
   name: 'deploy-key-vault'
   params: {
-    name: 'kv-${baseName}-${take(uniqueSuffix, 10)}'
+    name: 'kv-${shortName}-${environmentName}-${take(uniqueSuffix, 10)}'
     location: location
     tags: tags
     sku: keyVaultSku
@@ -621,7 +622,7 @@ module dnsZoneOpenAi 'br/public:avm/res/network/private-dns-zone:0.7.0' = {
 module storage 'br/public:avm/res/storage/storage-account:0.14.3' = {
   name: 'deploy-storage'
   params: {
-    name: 'st${projectName}${environmentName}${uniqueSuffix}'
+    name: 'st${shortName}${environmentName}${uniqueSuffix}'
     location: location
     tags: tags
     skuName: storageSku

@@ -15,7 +15,6 @@ from agent_framework import FunctionInvocationContext, FunctionMiddleware
 
 from src.middleware.langfuse_utils import get_langfuse
 from src.middleware.telemetry import rag_results_count, rag_search_duration
-from src.rag.tools import rag_results_collector
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +98,7 @@ class RAGCollectorMiddleware(FunctionMiddleware):
                     )
             lf_stack.close()
 
-        # Collect ALL tool outputs (not just those with sources) so the
-        # quality gate can distinguish skipped vs empty vs infra-error.
-        if result:
-            with contextlib.suppress(LookupError):
-                rag_results_collector.get().append(result)
+        # NOTE: Result collection is handled inside the tool function itself
+        # (via _collect_rag_output) to survive agent cloning during handoff
+        # orchestration, which drops FunctionMiddleware.  This middleware
+        # remains for observability (timing, source counting, Langfuse spans).

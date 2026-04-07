@@ -485,6 +485,19 @@ async def verify_rag_connectivity() -> dict[str, str]:
     return results
 
 
+def _collect_rag_output(output: str) -> None:
+    """Append tool output to the per-request RAG results collector.
+
+    This runs inside the tool function itself so that results are captured
+    even when the orchestration framework clones agents for handoff routing
+    (which drops FunctionMiddleware — see ``_clone_chat_agent`` in
+    ``agent_framework_orchestrations``).
+    """
+    if output:
+        with contextlib.suppress(LookupError):
+            rag_results_collector.get().append(output)
+
+
 def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
     """Factory that creates a scoped RAG search tool for an agent."""
 
@@ -639,20 +652,26 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
                     results = _merge_and_deduplicate(results, kw_results, top_k)
 
         except SearchIndexNotFoundError as exc:
-            return (
+            error_msg = (
                 "Knowledge search is unavailable because the configured Azure AI Search "
                 f"index could not be found. Details: {exc}"
             )
+            _collect_rag_output(error_msg)
+            return error_msg
         except SearchInfrastructureError as exc:
             logger.error("RAG infrastructure failure: %s", exc)
-            return (
+            error_msg = (
                 "SEARCH_INFRASTRUCTURE_ERROR: The knowledge base search system is currently "
                 "experiencing a technical issue and cannot retrieve documents. "
                 f"Error: {exc}"
             )
+            _collect_rag_output(error_msg)
+            return error_msg
 
         if not results:
-            return "No relevant documents found for this query."
+            no_results_msg = "No relevant documents found for this query."
+            _collect_rag_output(no_results_msg)
+            return no_results_msg
 
         # Chunk stitching (can be disabled via override).
         run_stitching = (
@@ -735,6 +754,7 @@ def create_rag_tool(scope: RAGScope | None = None) -> FunctionTool:
             )
         else:
             logger.info("search_knowledge_base returning %d results", len(results))
+        _collect_rag_output(output)
         return output
 
     return search_knowledge_base
