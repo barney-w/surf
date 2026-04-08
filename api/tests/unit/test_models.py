@@ -1,5 +1,6 @@
 """Tests for Pydantic models — validation edge cases and serialization round-trips."""
 
+import base64
 from datetime import UTC, datetime
 
 import pytest
@@ -16,6 +17,7 @@ from src.models import (
     Source,
 )
 from src.models.agent import EnrichedAgentResponse, enrich_agent_response
+from src.models.chat import MAX_ATTACHMENT_SIZE, MAX_ATTACHMENTS, Attachment
 
 # ---------------------------------------------------------------------------
 # Source.confidence bounds
@@ -41,6 +43,51 @@ class TestSourceConfidence:
 # ---------------------------------------------------------------------------
 # ChatRequest.message validation
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Attachment validation
+# ---------------------------------------------------------------------------
+
+
+class TestAttachmentContentType:
+    def test_rejects_unsupported_type(self):
+        data = base64.b64encode(b"fake").decode()
+        with pytest.raises(ValidationError, match="Unsupported file type"):
+            Attachment(filename="f.txt", content_type="text/plain", data=data)
+
+    def test_accepts_supported_types(self):
+        data = base64.b64encode(b"fake").decode()
+        for ct in ("image/png", "image/jpeg", "application/pdf"):
+            att = Attachment(filename="f", content_type=ct, data=data)
+            assert att.content_type == ct
+
+
+class TestAttachmentDataSize:
+    def test_rejects_invalid_base64(self):
+        with pytest.raises(ValidationError, match="Invalid base64"):
+            Attachment(filename="f.pdf", content_type="application/pdf", data="!!!")
+
+    def test_rejects_oversized_file(self):
+        big = base64.b64encode(b"x" * (MAX_ATTACHMENT_SIZE + 1)).decode()
+        with pytest.raises(ValidationError, match="limit"):
+            Attachment(filename="f.pdf", content_type="application/pdf", data=big)
+
+    def test_accepts_file_within_limit(self):
+        data = base64.b64encode(b"small").decode()
+        att = Attachment(filename="f.pdf", content_type="application/pdf", data=data)
+        assert att.data == data
+
+
+class TestAttachmentCount:
+    def test_rejects_too_many_attachments(self):
+        data = base64.b64encode(b"x").decode()
+        attachments = [
+            {"filename": f"f{i}.png", "content_type": "image/png", "data": data}
+            for i in range(MAX_ATTACHMENTS + 1)
+        ]
+        with pytest.raises(ValidationError, match="Too many"):
+            ChatRequest(message="hi", attachments=attachments)
 
 
 class TestChatRequestMessage:

@@ -17,7 +17,10 @@ from src.rag.search import (
     search_index,
 )
 from src.rag.tools import (
+    _bool_or_none,  # pyright: ignore[reportPrivateUsage]
     _extract_keywords,  # pyright: ignore[reportPrivateUsage]
+    _float_or_none,  # pyright: ignore[reportPrivateUsage]
+    _int_or_none,  # pyright: ignore[reportPrivateUsage]
     _merge_and_deduplicate,  # pyright: ignore[reportPrivateUsage]
     clear_search_clients,
     create_rag_tool,
@@ -26,6 +29,58 @@ from src.rag.tools import (
     set_search_client,
     stitch_adjacent_chunks,
 )
+
+# ---------------------------------------------------------------------------
+# Header parsing helpers
+# ---------------------------------------------------------------------------
+
+
+class TestIntOrNone:
+    def test_valid_int(self):
+        assert _int_or_none("42") == 42
+
+    def test_none_input(self):
+        assert _int_or_none(None) is None
+
+    def test_invalid_string(self):
+        assert _int_or_none("abc") is None
+
+    def test_float_string(self):
+        assert _int_or_none("3.14") is None
+
+
+class TestFloatOrNone:
+    def test_valid_float(self):
+        assert _float_or_none("3.14") == pytest.approx(3.14)
+
+    def test_none_input(self):
+        assert _float_or_none(None) is None
+
+    def test_invalid_string(self):
+        assert _float_or_none("abc") is None
+
+    def test_int_string(self):
+        assert _float_or_none("10") == pytest.approx(10.0)
+
+
+class TestBoolOrNone:
+    def test_true_values(self):
+        assert _bool_or_none("true") is True
+        assert _bool_or_none("1") is True
+
+    def test_false_values(self):
+        assert _bool_or_none("false") is False
+        assert _bool_or_none("0") is False
+
+    def test_none_input(self):
+        assert _bool_or_none(None) is None
+
+    def test_invalid_string(self):
+        assert _bool_or_none("maybe") is None
+
+    def test_case_insensitive(self):
+        assert _bool_or_none("TRUE") is True
+        assert _bool_or_none("False") is False
 
 
 def _invoke_text(result: list) -> str:
